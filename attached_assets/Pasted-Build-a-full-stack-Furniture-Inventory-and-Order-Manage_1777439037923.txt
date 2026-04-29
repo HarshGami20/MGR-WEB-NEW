@@ -1,0 +1,218 @@
+Build a full-stack Furniture Inventory and Order Management System with role-based access, GST and non-GST billing, supplier and manufacturer modules, and complete stock tracking.
+
+Tech Requirements:
+- Use modern full-stack architecture (Node.js + Express + Prisma + MySQL)
+- Frontend: React / Next.js (TypeScript preferred)
+- Authentication: JWT-based login
+- Role-based access control (RBAC)
+- Clean admin dashboard UI
+
+-----------------------------------
+CORE MODULES
+-----------------------------------
+
+1. AUTHENTICATION & USER MANAGEMENT
+- Login with mobile number + password
+- Super Admin can:
+  - Create users
+  - Assign roles
+  - Reset/change passwords
+  - Activate/Deactivate users
+- Role-based permissions:
+  - Modules access (CRUD level: View, Add, Edit, Delete)
+- Roles example:
+  - Super Admin
+  - Admin
+  - Manager
+  - Staff
+  - Supplier
+  - Manufacturer
+
+-----------------------------------
+
+2. ROLE & PERMISSION SYSTEM
+- Create custom roles
+- Assign module-level permissions:
+  - Products
+  - Orders
+  - Inventory
+  - Suppliers
+  - Manufacturers
+  - Reports
+  - Invoices
+- Toggle permissions (View/Add/Edit/Delete)
+
+-----------------------------------
+
+3. PRODUCT MANAGEMENT
+- Create Categories & Subcategories
+- Add Products with:
+  - Name
+  - SKU
+  - Category/Subcategory
+  - Price
+  - GST %
+  - Stock Quantity
+  - Low stock alert threshold
+- Product stock auto-updates on order
+
+-----------------------------------
+
+4. INVENTORY MANAGEMENT
+- Real-time stock tracking
+- Stock in/out logs
+- Low stock alerts
+- Manual stock adjustment
+- Inventory history per product
+
+-----------------------------------
+
+5. ORDER MANAGEMENT
+- Create Orders:
+  - GST Orders
+  - Non-GST Orders
+- Order fields:
+  - Customer details
+  - Product list
+  - Quantity
+  - Price
+  - Tax calculation (GST if applicable)
+- Order statuses:
+  - Pending
+  - Confirmed
+  - Processing
+  - Completed
+  - Cancelled
+
+-----------------------------------
+
+6. INVOICE MODULE
+- Auto-generate invoice from orders
+- GST invoice format:
+  - GST number
+  - Tax breakdown (CGST/SGST/IGST)
+- Non-GST invoice format
+- Download/Print invoice (PDF)
+
+-----------------------------------
+
+7. PAYMENT MANAGEMENT
+- Track payments per order
+- Payment modes:
+  - Cash
+  - Bank Transfer
+  - UPI
+- Partial & full payment support
+- Payment history tracking
+
+-----------------------------------
+
+8. SUPPLIER MANAGEMENT
+- Create supplier accounts
+- Supplier dashboard:
+  - View purchase orders
+  - Update order status
+- Admin can:
+  - Create supplier orders
+  - Track supplier delivery
+
+-----------------------------------
+
+9. MANUFACTURER MODULE
+- Separate manufacturer panel
+- Create manufacturing orders
+- Track production status:
+  - Pending
+  - In Production
+  - Completed
+- Update stock after production
+
+-----------------------------------
+
+10. PURCHASE / PROCUREMENT
+- Create orders to:
+  - Suppliers
+  - Manufacturers
+- Track:
+  - Order status
+  - Delivery status
+- Auto stock increase on completion
+
+-----------------------------------
+
+11. DASHBOARD & REPORTS
+- KPI Dashboard:
+  - Total Orders
+  - Revenue
+  - Pending Orders
+  - Low Stock Items
+- Reports:
+  - Sales report
+  - Inventory report
+  - Supplier report
+
+-----------------------------------
+
+12. ALERT SYSTEM
+- Low stock alerts
+- Pending payments alerts
+- Order status alerts
+
+-----------------------------------
+
+13. SYSTEM SETTINGS
+- GST configuration
+- Company details
+- Invoice settings
+
+-----------------------------------
+
+DATABASE DESIGN (IMPORTANT)
+-----------------------------------
+
+Entities:
+- Users
+- Roles
+- Permissions
+- Products
+- Categories
+- Subcategories
+- Orders
+- OrderItems
+- Invoices
+- Payments
+- Suppliers
+- Manufacturers
+- PurchaseOrders
+- InventoryLogs
+
+-----------------------------------
+
+UI REQUIREMENTS
+-----------------------------------
+
+- Admin dashboard with sidebar navigation
+- Responsive design (mobile + desktop)
+- Data tables with:
+  - Pagination
+  - Filters
+  - Search
+- Forms with validation
+- Clean professional UI
+
+-----------------------------------
+
+ADVANCED FEATURES (OPTIONAL BUT PREFERRED)
+-----------------------------------
+
+- Export reports (PDF/Excel)
+- Activity logs
+- Audit trail
+- Multi-branch support
+
+-----------------------------------
+
+GOAL
+-----------------------------------
+
+Build a scalable, modular ERP-style system for furniture business operations with complete inventory, supplier, and order lifecycle management.
