@@ -635,6 +635,91 @@ export const DeleteProductParams = zod.object({
 });
 
 /**
+ * @summary List variants for a product
+ */
+export const ListProductVariantsParams = zod.object({
+  productId: zod.coerce.number(),
+});
+
+export const ListProductVariantsResponseItem = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  sku: zod.string(),
+  price: zod.number().nullish(),
+  stockQty: zod.number(),
+  attributes: zod
+    .string()
+    .nullish()
+    .describe(
+      'JSON string of key-value attribute pairs e.g. {\"Size\":\"King\",\"Color\":\"Brown\"}',
+    ),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListProductVariantsResponse = zod.array(
+  ListProductVariantsResponseItem,
+);
+
+/**
+ * @summary Create a variant for a product
+ */
+export const CreateProductVariantParams = zod.object({
+  productId: zod.coerce.number(),
+});
+
+export const CreateProductVariantBody = zod.object({
+  name: zod.string(),
+  sku: zod.string(),
+  price: zod.number().nullish(),
+  stockQty: zod.number(),
+  attributes: zod.string().nullish(),
+  isActive: zod.boolean().optional(),
+});
+
+/**
+ * @summary Update a product variant
+ */
+export const UpdateProductVariantParams = zod.object({
+  productId: zod.coerce.number(),
+  variantId: zod.coerce.number(),
+});
+
+export const UpdateProductVariantBody = zod.object({
+  name: zod.string().optional(),
+  sku: zod.string().optional(),
+  price: zod.number().nullish(),
+  stockQty: zod.number().optional(),
+  attributes: zod.string().nullish(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateProductVariantResponse = zod.object({
+  id: zod.number(),
+  productId: zod.number(),
+  name: zod.string(),
+  sku: zod.string(),
+  price: zod.number().nullish(),
+  stockQty: zod.number(),
+  attributes: zod
+    .string()
+    .nullish()
+    .describe(
+      'JSON string of key-value attribute pairs e.g. {\"Size\":\"King\",\"Color\":\"Brown\"}',
+    ),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a product variant
+ */
+export const DeleteProductVariantParams = zod.object({
+  productId: zod.coerce.number(),
+  variantId: zod.coerce.number(),
+});
+
+/**
  * @summary List inventory logs
  */
 export const listInventoryLogsQueryPageDefault = 1;

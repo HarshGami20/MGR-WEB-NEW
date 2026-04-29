@@ -146,6 +146,37 @@ export interface ProductListResponse {
   limit: number;
 }
 
+export interface ProductVariant {
+  id: number;
+  productId: number;
+  name: string;
+  sku: string;
+  price?: number | null;
+  stockQty: number;
+  /** JSON string of key-value attribute pairs e.g. {"Size":"King","Color":"Brown"} */
+  attributes?: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateProductVariantBody {
+  name: string;
+  sku: string;
+  price?: number | null;
+  stockQty: number;
+  attributes?: string | null;
+  isActive?: boolean;
+}
+
+export interface UpdateProductVariantBody {
+  name?: string;
+  sku?: string;
+  price?: number | null;
+  stockQty?: number;
+  attributes?: string | null;
+  isActive?: boolean;
+}
+
 export type InventoryLogType =
   (typeof InventoryLogType)[keyof typeof InventoryLogType];
 

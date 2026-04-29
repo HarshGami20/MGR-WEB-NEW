@@ -518,6 +518,101 @@ paths:
         "200":
           description: Deleted
 
+  # PRODUCT VARIANTS
+  /products/{productId}/variants:
+    get:
+      operationId: listProductVariants
+      tags: [products]
+      summary: List variants for a product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Variants list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductVariant"
+
+    post:
+      operationId: createProductVariant
+      tags: [products]
+      summary: Create a variant for a product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductVariantBody"
+      responses:
+        "201":
+          description: Variant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductVariant"
+
+  /products/{productId}/variants/{variantId}:
+    patch:
+      operationId: updateProductVariant
+      tags: [products]
+      summary: Update a product variant
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductVariantBody"
+      responses:
+        "200":
+          description: Variant updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductVariant"
+
+    delete:
+      operationId: deleteProductVariant
+      tags: [products]
+      summary: Delete a product variant
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
   # INVENTORY
   /inventory/logs:
     get:
@@ -1664,6 +1759,71 @@ components:
         limit:
           type: integer
       required: [data, total, page, limit]
+
+    # PRODUCT VARIANTS
+    ProductVariant:
+      type: object
+      properties:
+        id:
+          type: integer
+        productId:
+          type: integer
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          nullable: true
+        stockQty:
+          type: integer
+        attributes:
+          type: string
+          nullable: true
+          description: JSON string of key-value attribute pairs e.g. {"Size":"King","Color":"Brown"}
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, productId, name, sku, stockQty, isActive, createdAt]
+
+    CreateProductVariantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          nullable: true
+        stockQty:
+          type: integer
+        attributes:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+      required: [name, sku, stockQty]
+
+    UpdateProductVariantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          nullable: true
+        stockQty:
+          type: integer
+        attributes:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
 
     # INVENTORY
     InventoryLog:

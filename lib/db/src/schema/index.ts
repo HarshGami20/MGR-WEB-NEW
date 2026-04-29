@@ -2,6 +2,7 @@ export * from "./branches";
 export * from "./users";
 export * from "./categories";
 export * from "./products";
+export * from "./productVariants";
 export * from "./inventory";
 export * from "./orders";
 export * from "./invoices";
