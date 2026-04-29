@@ -1,5 +1,5 @@
 import { Router, IRouter } from "express";
-import { db, usersTable, rolesTable } from "@workspace/db";
+import { db, usersTable, rolesTable, branchesTable } from "@workspace/db";
 import { eq, ilike, and } from "drizzle-orm";
 import { CreateUserBody, UpdateUserBody, GetUserParams, ResetUserPasswordBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
@@ -8,7 +8,7 @@ import { hashPassword } from "../lib/auth";
 const router: IRouter = Router();
 
 router.get("/users", requireAuth, async (req, res): Promise<void> => {
-  const { search, roleId, isActive, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { search, roleId, branchId, isActive, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -22,16 +22,22 @@ router.get("/users", requireAuth, async (req, res): Promise<void> => {
     );
   }
   if (roleId) allUsers = allUsers.filter(u => u.roleId === parseInt(roleId, 10));
+  if (branchId) allUsers = allUsers.filter(u => u.branchId === parseInt(branchId, 10));
   if (isActive !== undefined) allUsers = allUsers.filter(u => u.isActive === (isActive === "true"));
 
   const rolesMap: Record<number, any> = {};
   const roles = await db.select().from(rolesTable);
   for (const r of roles) rolesMap[r.id] = { ...r, permissions: JSON.parse(r.permissions) };
 
+  const branchesMap: Record<number, any> = {};
+  const branches = await db.select().from(branchesTable);
+  for (const b of branches) branchesMap[b.id] = b;
+
   const data = allUsers.map(u => ({
     ...u,
     passwordHash: undefined,
     role: u.roleId ? rolesMap[u.roleId] : null,
+    branch: u.branchId ? branchesMap[u.branchId] ?? null : null,
   }));
 
   res.json({ data, total: data.length, page: pageNum, limit: limitNum });
@@ -59,7 +65,12 @@ router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
     const [r] = await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId));
     if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
   }
-  res.json({ ...user, passwordHash: undefined, role });
+  let branch = null;
+  if (user.branchId) {
+    const [b] = await db.select().from(branchesTable).where(eq(branchesTable.id, user.branchId));
+    if (b) branch = b;
+  }
+  res.json({ ...user, passwordHash: undefined, role, branch });
 });
 
 router.put("/users/:id", requireAuth, async (req, res): Promise<void> => {

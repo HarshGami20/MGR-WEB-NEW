@@ -19,7 +19,10 @@ import type {
 import type {
   AdjustInventoryBody,
   AuthResponse,
+  Branch,
+  BranchListResponse,
   Category,
+  CreateBranchBody,
   CreateCategoryBody,
   CreateManufacturerBody,
   CreateOrderBody,
@@ -38,6 +41,7 @@ import type {
   InventoryLogListResponse,
   Invoice,
   InvoiceListResponse,
+  ListBranchesParams,
   ListInventoryLogsParams,
   ListInvoicesParams,
   ListManufacturersParams,
@@ -65,6 +69,7 @@ import type {
   StatusCount,
   Supplier,
   SupplierListResponse,
+  UpdateBranchBody,
   UpdateOrderBody,
   UpdateOrderStatusBody,
   UpdatePurchaseOrderBody,
@@ -5210,4 +5215,524 @@ export const useUpdateSettings = <
   TContext
 > => {
   return useMutation(getUpdateSettingsMutationOptions(options));
+};
+
+/**
+ * @summary List branches
+ */
+export const getListBranchesUrl = (params?: ListBranchesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/branches?${stringifiedParams}`
+    : `/api/branches`;
+};
+
+export const listBranches = async (
+  params?: ListBranchesParams,
+  options?: RequestInit,
+): Promise<BranchListResponse> => {
+  return customFetch<BranchListResponse>(getListBranchesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListBranchesQueryKey = (params?: ListBranchesParams) => {
+  return [`/api/branches`, ...(params ? [params] : [])] as const;
+};
+
+export const getListBranchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBranches>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListBranchesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBranches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListBranchesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listBranches>>> = ({
+    signal,
+  }) => listBranches(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBranches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBranchesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBranches>>
+>;
+export type ListBranchesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List branches
+ */
+
+export function useListBranches<
+  TData = Awaited<ReturnType<typeof listBranches>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListBranchesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBranches>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBranchesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create branch
+ */
+export const getCreateBranchUrl = () => {
+  return `/api/branches`;
+};
+
+export const createBranch = async (
+  createBranchBody: CreateBranchBody,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getCreateBranchUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createBranchBody),
+  });
+};
+
+export const getCreateBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBranch>>,
+    TError,
+    { data: BodyType<CreateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBranch>>,
+  TError,
+  { data: BodyType<CreateBranchBody> },
+  TContext
+> => {
+  const mutationKey = ["createBranch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBranch>>,
+    { data: BodyType<CreateBranchBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createBranch(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBranch>>
+>;
+export type CreateBranchMutationBody = BodyType<CreateBranchBody>;
+export type CreateBranchMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create branch
+ */
+export const useCreateBranch = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBranch>>,
+    TError,
+    { data: BodyType<CreateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createBranch>>,
+  TError,
+  { data: BodyType<CreateBranchBody> },
+  TContext
+> => {
+  return useMutation(getCreateBranchMutationOptions(options));
+};
+
+/**
+ * @summary Get branch by ID
+ */
+export const getGetBranchUrl = (id: number) => {
+  return `/api/branches/${id}`;
+};
+
+export const getBranch = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getGetBranchUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBranchQueryKey = (id: number) => {
+  return [`/api/branches/${id}`] as const;
+};
+
+export const getGetBranchQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBranch>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBranch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBranchQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBranch>>> = ({
+    signal,
+  }) => getBranch(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getBranch>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetBranchQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBranch>>
+>;
+export type GetBranchQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get branch by ID
+ */
+
+export function useGetBranch<
+  TData = Awaited<ReturnType<typeof getBranch>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBranch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBranchQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update branch
+ */
+export const getUpdateBranchUrl = (id: number) => {
+  return `/api/branches/${id}`;
+};
+
+export const updateBranch = async (
+  id: number,
+  updateBranchBody: UpdateBranchBody,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getUpdateBranchUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateBranchBody),
+  });
+};
+
+export const getUpdateBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBranch>>,
+    TError,
+    { id: number; data: BodyType<UpdateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateBranch>>,
+  TError,
+  { id: number; data: BodyType<UpdateBranchBody> },
+  TContext
+> => {
+  const mutationKey = ["updateBranch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateBranch>>,
+    { id: number; data: BodyType<UpdateBranchBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateBranch(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateBranch>>
+>;
+export type UpdateBranchMutationBody = BodyType<UpdateBranchBody>;
+export type UpdateBranchMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update branch
+ */
+export const useUpdateBranch = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBranch>>,
+    TError,
+    { id: number; data: BodyType<UpdateBranchBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateBranch>>,
+  TError,
+  { id: number; data: BodyType<UpdateBranchBody> },
+  TContext
+> => {
+  return useMutation(getUpdateBranchMutationOptions(options));
+};
+
+/**
+ * @summary Delete branch
+ */
+export const getDeleteBranchUrl = (id: number) => {
+  return `/api/branches/${id}`;
+};
+
+export const deleteBranch = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteBranchUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBranch>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteBranch>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteBranch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteBranch>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteBranch(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteBranch>>
+>;
+
+export type DeleteBranchMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete branch
+ */
+export const useDeleteBranch = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBranch>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteBranch>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteBranchMutationOptions(options));
+};
+
+/**
+ * @summary Activate or deactivate a branch
+ */
+export const getToggleBranchActiveUrl = (id: number) => {
+  return `/api/branches/${id}/toggle-active`;
+};
+
+export const toggleBranchActive = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Branch> => {
+  return customFetch<Branch>(getToggleBranchActiveUrl(id), {
+    ...options,
+    method: "PATCH",
+  });
+};
+
+export const getToggleBranchActiveMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof toggleBranchActive>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof toggleBranchActive>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["toggleBranchActive"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof toggleBranchActive>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return toggleBranchActive(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ToggleBranchActiveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof toggleBranchActive>>
+>;
+
+export type ToggleBranchActiveMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Activate or deactivate a branch
+ */
+export const useToggleBranchActive = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof toggleBranchActive>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof toggleBranchActive>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getToggleBranchActiveMutationOptions(options));
 };

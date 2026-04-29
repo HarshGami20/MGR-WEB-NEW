@@ -20,6 +20,7 @@ import Manufacturers from "@/pages/manufacturers";
 import Users from "@/pages/users";
 import Roles from "@/pages/roles";
 import Settings from "@/pages/settings";
+import Branches from "@/pages/branches";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ function Router() {
       <Route path="/purchase-orders"><ProtectedRoute component={PurchaseOrders} /></Route>
       <Route path="/suppliers"><ProtectedRoute component={Suppliers} /></Route>
       <Route path="/manufacturers"><ProtectedRoute component={Manufacturers} /></Route>
+      <Route path="/branches"><ProtectedRoute component={Branches} /></Route>
       <Route path="/users"><ProtectedRoute component={Users} /></Route>
       <Route path="/roles"><ProtectedRoute component={Roles} /></Route>
       <Route path="/settings"><ProtectedRoute component={Settings} /></Route>

@@ -1,5 +1,5 @@
 import { Router, IRouter } from "express";
-import { db, ordersTable, orderItemsTable, productsTable, inventoryLogsTable, invoicesTable, settingsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, productsTable, inventoryLogsTable, invoicesTable, settingsTable, branchesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
@@ -22,6 +22,11 @@ async function enrichOrder(order: any) {
       product: product ? { ...product, price: parseFloat(product.price), gstPercent: parseFloat(product.gstPercent) } : null,
     };
   }));
+  let branch = null;
+  if (order.branchId) {
+    const [b] = await db.select().from(branchesTable).where(eq(branchesTable.id, order.branchId));
+    if (b) branch = b;
+  }
   return {
     ...order,
     subtotal: parseFloat(order.subtotal),
@@ -29,11 +34,12 @@ async function enrichOrder(order: any) {
     totalAmount: parseFloat(order.totalAmount),
     paidAmount: parseFloat(order.paidAmount),
     items: enrichedItems,
+    branch,
   };
 }
 
 router.get("/orders", requireAuth, async (req, res): Promise<void> => {
-  const { search, status, isGst, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { search, status, isGst, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -42,6 +48,7 @@ router.get("/orders", requireAuth, async (req, res): Promise<void> => {
   if (search) orders = orders.filter(o => o.customerName.toLowerCase().includes(search.toLowerCase()) || o.orderNumber.includes(search));
   if (status) orders = orders.filter(o => o.status === status);
   if (isGst !== undefined) orders = orders.filter(o => o.isGst === (isGst === "true"));
+  if (branchId) orders = orders.filter(o => o.branchId === parseInt(branchId, 10));
 
   const data = await Promise.all(orders.map(enrichOrder));
   res.json({ data, total: data.length, page: pageNum, limit: limitNum });

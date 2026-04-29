@@ -22,6 +22,7 @@ tags:
   - name: purchase-orders
   - name: dashboard
   - name: settings
+  - name: branches
 
 paths:
   /healthz:
@@ -97,6 +98,10 @@ paths:
           schema:
             type: string
         - name: roleId
+          in: query
+          schema:
+            type: integer
+        - name: branchId
           in: query
           schema:
             type: integer
@@ -601,6 +606,10 @@ paths:
           in: query
           schema:
             type: boolean
+        - name: branchId
+          in: query
+          schema:
+            type: integer
         - name: page
           in: query
           schema:
@@ -1039,6 +1048,10 @@ paths:
           schema:
             type: string
             enum: [pending, confirmed, in_production, shipped, delivered, cancelled]
+        - name: branchId
+          in: query
+          schema:
+            type: integer
         - name: page
           in: query
           schema:
@@ -1259,6 +1272,133 @@ paths:
               schema:
                 $ref: "#/components/schemas/Settings"
 
+  # BRANCHES
+  /branches:
+    get:
+      operationId: listBranches
+      tags: [branches]
+      summary: List branches
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Branches list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BranchListResponse"
+
+    post:
+      operationId: createBranch
+      tags: [branches]
+      summary: Create branch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBranchBody"
+      responses:
+        "201":
+          description: Branch created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
+  /branches/{id}:
+    get:
+      operationId: getBranch
+      tags: [branches]
+      summary: Get branch by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Branch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
+    put:
+      operationId: updateBranch
+      tags: [branches]
+      summary: Update branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBranchBody"
+      responses:
+        "200":
+          description: Branch updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
+    delete:
+      operationId: deleteBranch
+      tags: [branches]
+      summary: Delete branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
+  /branches/{id}/toggle-active:
+    patch:
+      operationId: toggleBranchActive
+      tags: [branches]
+      summary: Activate or deactivate a branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
 components:
   schemas:
     HealthStatus:
@@ -1321,6 +1461,12 @@ components:
         role:
           $ref: "#/components/schemas/Role"
           nullable: true
+        branchId:
+          type: integer
+          nullable: true
+        branch:
+          $ref: "#/components/schemas/Branch"
+          nullable: true
         isActive:
           type: boolean
         createdAt:
@@ -1342,6 +1488,9 @@ components:
           type: string
         roleId:
           type: integer
+        branchId:
+          type: integer
+          nullable: true
       required: [name, mobile, password, roleId]
 
     UpdateUserBody:
@@ -1356,6 +1505,9 @@ components:
           nullable: true
         roleId:
           type: integer
+        branchId:
+          type: integer
+          nullable: true
 
     UserListResponse:
       type: object
@@ -1626,6 +1778,12 @@ components:
         notes:
           type: string
           nullable: true
+        branchId:
+          type: integer
+          nullable: true
+        branch:
+          $ref: "#/components/schemas/Branch"
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -1667,6 +1825,9 @@ components:
             $ref: "#/components/schemas/CreateOrderItemBody"
         notes:
           type: string
+          nullable: true
+        branchId:
+          type: integer
           nullable: true
       required: [customerName, isGst, items]
 
@@ -1991,6 +2152,12 @@ components:
         notes:
           type: string
           nullable: true
+        branchId:
+          type: integer
+          nullable: true
+        branch:
+          $ref: "#/components/schemas/Branch"
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -2029,6 +2196,9 @@ components:
           nullable: true
         notes:
           type: string
+          nullable: true
+        branchId:
+          type: integer
           nullable: true
       required: [type, items]
 
@@ -2158,3 +2328,97 @@ components:
           type: number
         invoicePrefix:
           type: string
+
+    # BRANCHES
+    Branch:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, code, isActive, createdAt]
+
+    CreateBranchBody:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+      required: [name, code]
+
+    UpdateBranchBody:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+
+    BranchListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Branch"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [data, total, page, limit]

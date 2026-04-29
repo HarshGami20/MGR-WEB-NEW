@@ -35,6 +35,19 @@ export interface Role {
   createdAt: string;
 }
 
+export interface Branch {
+  id: number;
+  name: string;
+  code: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface User {
   id: number;
   name: string;
@@ -42,6 +55,8 @@ export interface User {
   email?: string | null;
   roleId: number;
   role?: Role | null;
+  branchId?: number | null;
+  branch?: Branch | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -61,6 +76,7 @@ export interface CreateUserBody {
   email?: string | null;
   password: string;
   roleId: number;
+  branchId?: number | null;
 }
 
 export interface UpdateUserBody {
@@ -68,6 +84,7 @@ export interface UpdateUserBody {
   mobile?: string;
   email?: string | null;
   roleId?: number;
+  branchId?: number | null;
 }
 
 export interface UserListResponse {
@@ -206,6 +223,8 @@ export interface Order {
   totalAmount: number;
   paidAmount: number;
   notes?: string | null;
+  branchId?: number | null;
+  branch?: Branch | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -224,6 +243,7 @@ export interface CreateOrderBody {
   customerGstNumber?: string | null;
   items: CreateOrderItemBody[];
   notes?: string | null;
+  branchId?: number | null;
 }
 
 export interface UpdateOrderBody {
@@ -412,6 +432,8 @@ export interface PurchaseOrder {
   totalAmount: number;
   expectedDelivery?: string | null;
   notes?: string | null;
+  branchId?: number | null;
+  branch?: Branch | null;
   createdAt: string;
 }
 
@@ -436,6 +458,7 @@ export interface CreatePurchaseOrderBody {
   items: CreatePurchaseOrderItemBody[];
   expectedDelivery?: string | null;
   notes?: string | null;
+  branchId?: number | null;
 }
 
 export interface UpdatePurchaseOrderBody {
@@ -510,9 +533,37 @@ export interface UpdateSettingsBody {
   invoicePrefix?: string;
 }
 
+export interface CreateBranchBody {
+  name: string;
+  code: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export interface UpdateBranchBody {
+  name?: string;
+  code?: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+export interface BranchListResponse {
+  data: Branch[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export type ListUsersParams = {
   search?: string;
   roleId?: number;
+  branchId?: number;
   isActive?: boolean;
   page?: number;
   limit?: number;
@@ -546,6 +597,7 @@ export type ListOrdersParams = {
   search?: string;
   status?: ListOrdersStatus;
   isGst?: boolean;
+  branchId?: number;
   page?: number;
   limit?: number;
 };
@@ -588,6 +640,7 @@ export type ListManufacturersParams = {
 export type ListPurchaseOrdersParams = {
   type?: ListPurchaseOrdersType;
   status?: ListPurchaseOrdersStatus;
+  branchId?: number;
   page?: number;
   limit?: number;
 };
@@ -618,4 +671,11 @@ export type GetRecentOrdersParams = {
 
 export type GetSalesReportParams = {
   year?: number;
+};
+
+export type ListBranchesParams = {
+  search?: string;
+  isActive?: boolean;
+  page?: number;
+  limit?: number;
 };

@@ -1,5 +1,5 @@
 import { Router, IRouter } from "express";
-import { db, purchaseOrdersTable, purchaseOrderItemsTable, productsTable, suppliersTable, manufacturersTable } from "@workspace/db";
+import { db, purchaseOrdersTable, purchaseOrderItemsTable, productsTable, suppliersTable, manufacturersTable, branchesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody, GetPurchaseOrderParams } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth";
@@ -26,17 +26,23 @@ async function enrichPO(po: any) {
     const [m] = await db.select().from(manufacturersTable).where(eq(manufacturersTable.id, po.manufacturerId));
     manufacturer = m || null;
   }
-  return { ...po, totalAmount: parseFloat(po.totalAmount), items: enrichedItems, supplier, manufacturer };
+  let branch = null;
+  if (po.branchId) {
+    const [b] = await db.select().from(branchesTable).where(eq(branchesTable.id, po.branchId));
+    if (b) branch = b;
+  }
+  return { ...po, totalAmount: parseFloat(po.totalAmount), items: enrichedItems, supplier, manufacturer, branch };
 }
 
 router.get("/purchase-orders", requireAuth, async (req, res): Promise<void> => {
-  const { type, status, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { type, status, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
   let pos = await db.select().from(purchaseOrdersTable).offset(offset).limit(limitNum);
   if (type) pos = pos.filter(p => p.type === type);
   if (status) pos = pos.filter(p => p.status === status);
+  if (branchId) pos = pos.filter(p => p.branchId === parseInt(branchId, 10));
   const data = await Promise.all(pos.map(enrichPO));
   res.json({ data, total: data.length, page: pageNum, limit: limitNum });
 });

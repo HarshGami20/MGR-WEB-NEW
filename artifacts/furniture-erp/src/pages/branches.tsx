@@ -1,0 +1,367 @@
+import { useState } from "react";
+import {
+  useListBranches,
+  useCreateBranch,
+  useUpdateBranch,
+  useDeleteBranch,
+  useToggleBranchActive,
+  getListBranchesQueryKey,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Badge } from "@/components/ui/badge";
+
+const branchSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  code: z.string().min(1, "Branch code is required"),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
+});
+
+type BranchFormValues = z.infer<typeof branchSchema>;
+
+const emptyForm: BranchFormValues = {
+  name: "",
+  code: "",
+  address: "",
+  city: "",
+  state: "",
+  phone: "",
+  email: "",
+};
+
+export default function Branches() {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: branchesData, isLoading } = useListBranches({
+    search: search || undefined,
+    page,
+    limit: 15,
+  });
+
+  const createBranch = useCreateBranch({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
+        toast({ title: "Branch created successfully" });
+        setIsDialogOpen(false);
+      },
+      onError: (e: any) => toast({ title: "Error", description: e.data?.error || e.message, variant: "destructive" }),
+    },
+  });
+
+  const updateBranch = useUpdateBranch({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
+        toast({ title: "Branch updated successfully" });
+        setIsDialogOpen(false);
+      },
+      onError: (e: any) => toast({ title: "Error", description: e.data?.error || e.message, variant: "destructive" }),
+    },
+  });
+
+  const deleteBranch = useDeleteBranch({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
+        toast({ title: "Branch deleted" });
+      },
+      onError: (e: any) => toast({ title: "Error", description: e.data?.error || e.message, variant: "destructive" }),
+    },
+  });
+
+  const toggleActive = useToggleBranchActive({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBranchesQueryKey() });
+        toast({ title: "Branch status updated" });
+      },
+    },
+  });
+
+  const form = useForm<BranchFormValues>({
+    resolver: zodResolver(branchSchema),
+    defaultValues: emptyForm,
+  });
+
+  const openCreateDialog = () => {
+    setEditingId(null);
+    form.reset(emptyForm);
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (branch: any) => {
+    setEditingId(branch.id);
+    form.reset({
+      name: branch.name,
+      code: branch.code,
+      address: branch.address || "",
+      city: branch.city || "",
+      state: branch.state || "",
+      phone: branch.phone || "",
+      email: branch.email || "",
+    });
+    setIsDialogOpen(true);
+  };
+
+  const onSubmit = (data: BranchFormValues) => {
+    const payload = {
+      ...data,
+      address: data.address || null,
+      city: data.city || null,
+      state: data.state || null,
+      phone: data.phone || null,
+      email: data.email || null,
+    };
+    if (editingId) {
+      updateBranch.mutate({ id: editingId, data: payload });
+    } else {
+      createBranch.mutate({ data: payload });
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Delete this branch? Users/orders assigned to it will lose their branch.")) {
+      deleteBranch.mutate({ id });
+    }
+  };
+
+  const branches = branchesData?.data ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Branches</h2>
+          <p className="text-muted-foreground">Manage your business locations and branches</p>
+        </div>
+        <Button onClick={openCreateDialog}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Branch
+        </Button>
+      </div>
+
+      <div className="flex items-center bg-card p-4 rounded-lg border">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name or code..."
+            className="pl-8"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="bg-card rounded-lg border shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Code</TableHead>
+              <TableHead>City / State</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-[120px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
+              </TableRow>
+            ) : branches.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No branches found.</TableCell>
+              </TableRow>
+            ) : (
+              branches.map((branch) => (
+                <TableRow key={branch.id}>
+                  <TableCell className="font-medium">{branch.name}</TableCell>
+                  <TableCell>
+                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{branch.code}</span>
+                  </TableCell>
+                  <TableCell>
+                    {[branch.city, branch.state].filter(Boolean).join(", ") || "-"}
+                  </TableCell>
+                  <TableCell>{branch.phone || "-"}</TableCell>
+                  <TableCell className="text-sm">{branch.email || "-"}</TableCell>
+                  <TableCell>
+                    {branch.isActive ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={branch.isActive ? "Deactivate" : "Activate"}
+                        onClick={() => toggleActive.mutate({ id: branch.id })}
+                      >
+                        {branch.isActive
+                          ? <ToggleRight className="h-4 w-4 text-green-600" />
+                          : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(branch)}>
+                        <Edit className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(branch.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+
+        {branchesData && branchesData.total > branchesData.limit && (
+          <div className="p-4 border-t flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Page {page} · {branchesData.total} total
+            </span>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                Previous
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * branchesData.limit >= branchesData.total}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Branch" : "Add Branch"}</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Branch Name *</FormLabel>
+                      <FormControl><Input placeholder="e.g. Head Office" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Branch Code *</FormLabel>
+                      <FormControl><Input placeholder="e.g. HO-001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl><Input placeholder="Street address" {...field} value={field.value || ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl><Input type="tel" {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl><Input type="email" {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createBranch.isPending || updateBranch.isPending}>
+                  {editingId ? "Update Branch" : "Create Branch"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

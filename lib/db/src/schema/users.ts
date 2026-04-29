@@ -1,6 +1,7 @@
 import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { branchesTable } from "./branches";
 
 export const rolesTable = pgTable("roles", {
   id: serial("id").primaryKey(),
@@ -20,6 +21,7 @@ export const usersTable = pgTable("users", {
   email: text("email"),
   passwordHash: text("password_hash").notNull(),
   roleId: integer("role_id").references(() => rolesTable.id),
+  branchId: integer("branch_id").references(() => branchesTable.id),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

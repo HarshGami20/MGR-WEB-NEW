@@ -14,6 +14,7 @@ import manufacturersRouter from "./manufacturers";
 import purchaseOrdersRouter from "./purchaseOrders";
 import dashboardRouter from "./dashboard";
 import settingsRouter from "./settings";
+import branchesRouter from "./branches";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(manufacturersRouter);
 router.use(purchaseOrdersRouter);
 router.use(dashboardRouter);
 router.use(settingsRouter);
+router.use(branchesRouter);
 
 export default router;

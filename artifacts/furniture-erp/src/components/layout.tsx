@@ -13,7 +13,9 @@ import {
   Settings,
   LogOut,
   Building2,
-  Factory
+  Factory,
+  GitBranch,
+  ShieldCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,7 +48,9 @@ export default function Layout({ children }: LayoutProps) {
     { label: "Suppliers", href: "/suppliers", icon: Building2 },
     { label: "Manufacturers", href: "/manufacturers", icon: Factory },
     { type: "divider", label: "Administration" },
+    { label: "Branches", href: "/branches", icon: GitBranch },
     { label: "Users", href: "/users", icon: Users },
+    { label: "Roles", href: "/roles", icon: ShieldCheck },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
 
@@ -93,6 +97,12 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex flex-col">
               <span className="text-sm font-medium">{user?.name}</span>
               <span className="text-xs text-muted-foreground">{user?.role?.name}</span>
+              {(user as any)?.branch?.name && (
+                <span className="text-xs text-primary/80 flex items-center gap-1 mt-0.5">
+                  <GitBranch className="h-3 w-3" />
+                  {(user as any).branch.name}
+                </span>
+              )}
             </div>
           </div>
           <Button variant="outline" className="w-full justify-start text-destructive" onClick={handleLogout}>

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { suppliersTable } from "./suppliers";
 import { manufacturersTable } from "./manufacturers";
 import { productsTable } from "./products";
+import { branchesTable } from "./branches";
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
@@ -15,6 +16,7 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   expectedDelivery: timestamp("expected_delivery", { withTimezone: true }),
   notes: text("notes"),
+  branchId: integer("branch_id").references(() => branchesTable.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

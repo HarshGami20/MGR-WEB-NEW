@@ -46,6 +46,21 @@ export const LoginResponse = zod.object({
         createdAt: zod.coerce.date(),
       })
       .nullish(),
+    branchId: zod.number().nullish(),
+    branch: zod
+      .object({
+        id: zod.number(),
+        name: zod.string(),
+        code: zod.string(),
+        address: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod.string().nullish(),
+        phone: zod.string().nullish(),
+        email: zod.string().nullish(),
+        isActive: zod.boolean(),
+        createdAt: zod.coerce.date(),
+      })
+      .nullish(),
     isActive: zod.boolean(),
     createdAt: zod.coerce.date(),
   }),
@@ -76,6 +91,21 @@ export const GetMeResponse = zod.object({
       createdAt: zod.coerce.date(),
     })
     .nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
@@ -89,6 +119,7 @@ export const listUsersQueryLimitDefault = 20;
 export const ListUsersQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   roleId: zod.coerce.number().optional(),
+  branchId: zod.coerce.number().optional(),
   isActive: zod.coerce.boolean().optional(),
   page: zod.coerce.number().default(listUsersQueryPageDefault),
   limit: zod.coerce.number().default(listUsersQueryLimitDefault),
@@ -118,6 +149,21 @@ export const ListUsersResponse = zod.object({
           createdAt: zod.coerce.date(),
         })
         .nullish(),
+      branchId: zod.number().nullish(),
+      branch: zod
+        .object({
+          id: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          address: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          phone: zod.string().nullish(),
+          email: zod.string().nullish(),
+          isActive: zod.boolean(),
+          createdAt: zod.coerce.date(),
+        })
+        .nullish(),
       isActive: zod.boolean(),
       createdAt: zod.coerce.date(),
     }),
@@ -136,6 +182,7 @@ export const CreateUserBody = zod.object({
   email: zod.string().nullish(),
   password: zod.string(),
   roleId: zod.number(),
+  branchId: zod.number().nullish(),
 });
 
 /**
@@ -167,6 +214,21 @@ export const GetUserResponse = zod.object({
       createdAt: zod.coerce.date(),
     })
     .nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
 });
@@ -183,6 +245,7 @@ export const UpdateUserBody = zod.object({
   mobile: zod.string().optional(),
   email: zod.string().nullish(),
   roleId: zod.number().optional(),
+  branchId: zod.number().nullish(),
 });
 
 export const UpdateUserResponse = zod.object({
@@ -204,6 +267,21 @@ export const UpdateUserResponse = zod.object({
           delete: zod.boolean(),
         }),
       ),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
       createdAt: zod.coerce.date(),
     })
     .nullish(),
@@ -244,6 +322,21 @@ export const ToggleUserActiveResponse = zod.object({
           delete: zod.boolean(),
         }),
       ),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
       createdAt: zod.coerce.date(),
     })
     .nullish(),
@@ -675,6 +768,7 @@ export const ListOrdersQueryParams = zod.object({
     .enum(["pending", "confirmed", "processing", "completed", "cancelled"])
     .optional(),
   isGst: zod.coerce.boolean().optional(),
+  branchId: zod.coerce.number().optional(),
   page: zod.coerce.number().default(listOrdersQueryPageDefault),
   limit: zod.coerce.number().default(listOrdersQueryLimitDefault),
 });
@@ -734,6 +828,21 @@ export const ListOrdersResponse = zod.object({
       totalAmount: zod.number(),
       paidAmount: zod.number(),
       notes: zod.string().nullish(),
+      branchId: zod.number().nullish(),
+      branch: zod
+        .object({
+          id: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          address: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          phone: zod.string().nullish(),
+          email: zod.string().nullish(),
+          isActive: zod.boolean(),
+          createdAt: zod.coerce.date(),
+        })
+        .nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -760,6 +869,7 @@ export const CreateOrderBody = zod.object({
     }),
   ),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
 });
 
 /**
@@ -822,6 +932,21 @@ export const GetOrderResponse = zod.object({
   totalAmount: zod.number(),
   paidAmount: zod.number(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -893,6 +1018,21 @@ export const UpdateOrderResponse = zod.object({
   totalAmount: zod.number(),
   paidAmount: zod.number(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -974,6 +1114,21 @@ export const UpdateOrderStatusResponse = zod.object({
   totalAmount: zod.number(),
   paidAmount: zod.number(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1050,6 +1205,21 @@ export const ListInvoicesResponse = zod.object({
           totalAmount: zod.number(),
           paidAmount: zod.number(),
           notes: zod.string().nullish(),
+          branchId: zod.number().nullish(),
+          branch: zod
+            .object({
+              id: zod.number(),
+              name: zod.string(),
+              code: zod.string(),
+              address: zod.string().nullish(),
+              city: zod.string().nullish(),
+              state: zod.string().nullish(),
+              phone: zod.string().nullish(),
+              email: zod.string().nullish(),
+              isActive: zod.boolean(),
+              createdAt: zod.coerce.date(),
+            })
+            .nullish(),
           createdAt: zod.coerce.date(),
           updatedAt: zod.coerce.date(),
         })
@@ -1132,6 +1302,21 @@ export const GetInvoiceResponse = zod.object({
       totalAmount: zod.number(),
       paidAmount: zod.number(),
       notes: zod.string().nullish(),
+      branchId: zod.number().nullish(),
+      branch: zod
+        .object({
+          id: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          address: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          phone: zod.string().nullish(),
+          email: zod.string().nullish(),
+          isActive: zod.boolean(),
+          createdAt: zod.coerce.date(),
+        })
+        .nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     })
@@ -1394,6 +1579,7 @@ export const ListPurchaseOrdersQueryParams = zod.object({
       "cancelled",
     ])
     .optional(),
+  branchId: zod.coerce.number().optional(),
   page: zod.coerce.number().default(listPurchaseOrdersQueryPageDefault),
   limit: zod.coerce.number().default(listPurchaseOrdersQueryLimitDefault),
 });
@@ -1474,6 +1660,21 @@ export const ListPurchaseOrdersResponse = zod.object({
       totalAmount: zod.number(),
       expectedDelivery: zod.coerce.date().nullish(),
       notes: zod.string().nullish(),
+      branchId: zod.number().nullish(),
+      branch: zod
+        .object({
+          id: zod.number(),
+          name: zod.string(),
+          code: zod.string(),
+          address: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          phone: zod.string().nullish(),
+          email: zod.string().nullish(),
+          isActive: zod.boolean(),
+          createdAt: zod.coerce.date(),
+        })
+        .nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
@@ -1498,6 +1699,7 @@ export const CreatePurchaseOrderBody = zod.object({
   ),
   expectedDelivery: zod.coerce.date().nullish(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
 });
 
 /**
@@ -1581,6 +1783,21 @@ export const GetPurchaseOrderResponse = zod.object({
   totalAmount: zod.number(),
   expectedDelivery: zod.coerce.date().nullish(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1670,6 +1887,21 @@ export const UpdatePurchaseOrderResponse = zod.object({
   totalAmount: zod.number(),
   expectedDelivery: zod.coerce.date().nullish(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1772,6 +2004,21 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
   totalAmount: zod.number(),
   expectedDelivery: zod.coerce.date().nullish(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1851,6 +2098,21 @@ export const GetRecentOrdersResponseItem = zod.object({
   totalAmount: zod.number(),
   paidAmount: zod.number(),
   notes: zod.string().nullish(),
+  branchId: zod.number().nullish(),
+  branch: zod
+    .object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    })
+    .nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1919,4 +2181,127 @@ export const UpdateSettingsResponse = zod.object({
   defaultGstPercent: zod.number(),
   invoicePrefix: zod.string(),
   updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List branches
+ */
+export const listBranchesQueryPageDefault = 1;
+export const listBranchesQueryLimitDefault = 50;
+
+export const ListBranchesQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  isActive: zod.coerce.boolean().optional(),
+  page: zod.coerce.number().default(listBranchesQueryPageDefault),
+  limit: zod.coerce.number().default(listBranchesQueryLimitDefault),
+});
+
+export const ListBranchesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      code: zod.string(),
+      address: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      isActive: zod.boolean(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  limit: zod.number(),
+});
+
+/**
+ * @summary Create branch
+ */
+export const CreateBranchBody = zod.object({
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  email: zod.string().nullish(),
+});
+
+/**
+ * @summary Get branch by ID
+ */
+export const GetBranchParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetBranchResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  email: zod.string().nullish(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update branch
+ */
+export const UpdateBranchParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateBranchBody = zod.object({
+  name: zod.string().optional(),
+  code: zod.string().optional(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  email: zod.string().nullish(),
+});
+
+export const UpdateBranchResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  email: zod.string().nullish(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete branch
+ */
+export const DeleteBranchParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Activate or deactivate a branch
+ */
+export const ToggleBranchActiveParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ToggleBranchActiveResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  state: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  email: zod.string().nullish(),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
 });
