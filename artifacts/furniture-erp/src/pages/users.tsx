@@ -9,6 +9,7 @@ import {
   useListBranches,
   getListUsersQueryKey 
 } from "@workspace/api-client-react";
+import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,18 +40,18 @@ const emptyForm: UserFormValues = { name: "", mobile: "", email: "", password: "
 export default function Users() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<number | undefined>();
-  const [branchFilter, setBranchFilter] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { selectedBranchId, setSelectedBranchId } = useBranch();
 
   const { data: usersData, isLoading } = useListUsers({
     search: search || undefined,
     roleId: roleFilter,
-    branchId: branchFilter,
+    branchId: selectedBranchId ?? undefined,
     page,
     limit: 10,
   });
@@ -176,8 +177,8 @@ export default function Users() {
           </SelectContent>
         </Select>
         <Select
-          value={branchFilter?.toString() ?? "all"}
-          onValueChange={(v) => setBranchFilter(v === "all" ? undefined : parseInt(v))}
+          value={selectedBranchId?.toString() ?? "all"}
+          onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v))}
         >
           <SelectTrigger className="w-[170px]">
             <SelectValue placeholder="Filter by Branch" />

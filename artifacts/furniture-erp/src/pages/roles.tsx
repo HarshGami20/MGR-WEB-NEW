@@ -155,12 +155,12 @@ export default function Roles() {
               <TableRow>
                 <TableCell colSpan={3} className="h-24 text-center">Loading...</TableCell>
               </TableRow>
-            ) : rolesData?.data?.length === 0 ? (
+            ) : (rolesData as any[])?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No roles found.</TableCell>
               </TableRow>
             ) : (
-              rolesData?.data?.map((role: any) => (
+              (rolesData as any[])?.map((role: any) => (
                 <TableRow key={role.id}>
                   <TableCell className="font-medium">{role.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">

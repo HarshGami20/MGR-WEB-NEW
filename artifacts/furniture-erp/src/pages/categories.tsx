@@ -106,7 +106,7 @@ export default function Categories() {
     return result;
   };
 
-  const flatCategories = flattenCategories(categoriesData?.data || []);
+  const flatCategories = flattenCategories((categoriesData as any) || []);
 
   return (
     <div className="space-y-6">
@@ -201,9 +201,9 @@ export default function Categories() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">None (Top Level)</SelectItem>
-                        {categoriesData?.data
-                          ?.filter((c) => c.id !== editingId)
-                          .map((c) => (
+                        {((categoriesData as any) as any[])
+                          ?.filter((c: any) => c.id !== editingId)
+                          .map((c: any) => (
                             <SelectItem key={c.id} value={c.id.toString()}>
                               {c.name}
                             </SelectItem>

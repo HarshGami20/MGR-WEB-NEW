@@ -8,6 +8,7 @@ import {
   useListProducts,
   getListOrdersQueryKey
 } from "@workspace/api-client-react";
+import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,11 +53,13 @@ export default function Orders() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { selectedBranchId } = useBranch();
 
   const { data: ordersData, isLoading } = useListOrders({
     search: search || undefined,
     status: status !== "all" ? (status as any) : undefined,
     isGst: isGst !== "all" ? isGst === "true" : undefined,
+    branchId: selectedBranchId ?? undefined,
     page,
     limit: 10,
   });

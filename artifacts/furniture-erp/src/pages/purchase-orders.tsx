@@ -8,6 +8,7 @@ import {
   useListProducts,
   getListPurchaseOrdersQueryKey
 } from "@workspace/api-client-react";
+import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -47,10 +48,12 @@ export default function PurchaseOrders() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { selectedBranchId } = useBranch();
 
   const { data: poData, isLoading } = useListPurchaseOrders({
     type: type !== "all" ? (type as any) : undefined,
     status: status !== "all" ? (status as any) : undefined,
+    branchId: selectedBranchId ?? undefined,
     page,
     limit: 10,
   });
