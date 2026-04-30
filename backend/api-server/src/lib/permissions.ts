@@ -32,7 +32,7 @@ export function normalizeRolePermissions(json: string | null | undefined): Recor
   return out;
 }
 
-export function isSuperAdminRole(user: { role?: { name: string | null } | null }): boolean {
+export function isSuperAdminRole(user: { role?: { name?: string | null } | null }): boolean {
   return user.role?.name === "Super Admin";
 }
 
