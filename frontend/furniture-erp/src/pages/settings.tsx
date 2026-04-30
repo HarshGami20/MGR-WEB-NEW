@@ -1,0 +1,474 @@
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { 
+  useGetSettings, 
+  useUpdateSettings,
+  getGetSettingsQueryKey
+} from "@/api-client";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { customFetch } from "@/api-client/custom-fetch";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Building, FileText, Settings2, UserCircle2, Upload, ChevronDown } from "lucide-react";
+import { usePermissions } from "@/lib/permissions";
+import { useAuth } from "@/lib/auth";
+
+const settingsSchema = z.object({
+  companyName: z.string().min(1, "Company Name is required"),
+  gstNumber: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
+  defaultGstPercent: z.coerce.number().min(0).max(100),
+  invoicePrefix: z.string().min(1, "Prefix is required"),
+});
+
+type SettingsFormValues = z.infer<typeof settingsSchema>;
+const profileSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  mobile: z.string().min(1, "Mobile is required"),
+  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
+  avatarUrl: z
+    .string()
+    .optional()
+    .nullable()
+    .or(z.literal(""))
+    .refine((value) => {
+      if (!value) return true;
+      if (value.startsWith("/uploads/")) return true;
+      try {
+        // eslint-disable-next-line no-new
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Avatar URL must be valid"),
+});
+type ProfileFormValues = z.infer<typeof profileSchema>;
+
+export default function Settings() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const canEdit = can("settings", "edit");
+
+  const { data: settingsData, isLoading } = useGetSettings();
+
+  const updateSettings = useUpdateSettings({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+        toast({ title: "Settings updated successfully" });
+      },
+    },
+  });
+
+  const form = useForm<SettingsFormValues>({
+    resolver: zodResolver(settingsSchema),
+    defaultValues: {
+      companyName: "",
+      gstNumber: "",
+      address: "",
+      phone: "",
+      email: "",
+      defaultGstPercent: 18,
+      invoicePrefix: "INV-",
+    },
+  });
+  const profileForm = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      name: "",
+      mobile: "",
+      email: "",
+      avatarUrl: "",
+    },
+  });
+  const avatarUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const avatarChoices = useMemo(() => {
+    const base = profileForm.watch("name") || user?.name || "user";
+    return Array.from({ length: 24 }, (_, i) => avatarUrlForName(`${base}-${i + 1}`));
+  }, [profileForm.watch("name"), user?.name]);
+
+  useEffect(() => {
+    if (settingsData) {
+      form.reset({
+        companyName: settingsData.companyName,
+        gstNumber: settingsData.gstNumber || "",
+        address: settingsData.address || "",
+        phone: settingsData.phone || "",
+        email: settingsData.email || "",
+        defaultGstPercent: settingsData.defaultGstPercent,
+        invoicePrefix: settingsData.invoicePrefix,
+      });
+    }
+  }, [settingsData, form]);
+  useEffect(() => {
+    if (!user) return;
+    profileForm.reset({
+      name: user.name || "",
+      mobile: user.mobile || "",
+      email: user.email || "",
+      avatarUrl: (user as any).avatarUrl || "",
+    });
+  }, [user, profileForm]);
+
+  const onSubmit = (data: SettingsFormValues) => {
+    updateSettings.mutate({ data });
+  };
+  const onSubmitProfile = async (data: ProfileFormValues) => {
+    try {
+      await customFetch("/api/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: data.name,
+          mobile: data.mobile,
+          email: data.email || null,
+          avatarUrl: data.avatarUrl || null,
+        }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
+      toast({ title: "Profile updated successfully" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to update profile",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please upload an image file", variant: "destructive" });
+      return;
+    }
+    if (file.size > 1024 * 1024 * 2) {
+      toast({ title: "Image too large (max 2MB)", variant: "destructive" });
+      return;
+    }
+    const formData = new FormData();
+    formData.append("avatar", file);
+    try {
+      setIsAvatarUploading(true);
+      const response = await customFetch<{ avatarUrl: string }>("/api/auth/me/avatar", {
+        method: "POST",
+        body: formData,
+      });
+      profileForm.setValue("avatarUrl", response.avatarUrl, { shouldValidate: true, shouldDirty: true });
+      toast({ title: "Avatar uploaded" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to upload avatar",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAvatarUploading(false);
+    }
+    event.currentTarget.value = "";
+  };
+
+  if (isLoading) {
+    return <div className="p-8">Loading settings...</div>;
+  }
+
+  return (
+    <div className="space-y-6 max-w-4xl pb-10">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <Settings2 className="h-6 w-6 text-primary" />
+          System Settings
+        </h2>
+        <p className="text-muted-foreground">Manage your company profile and application preferences</p>
+        {!canEdit && (
+          <p className="text-sm text-muted-foreground mt-2 rounded-md border bg-muted/40 px-3 py-2">
+            You have read-only access. Editing requires Settings → Edit permission.
+          </p>
+        )}
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={canEdit ? form.handleSubmit(onSubmit) : (e) => e.preventDefault()} className="space-y-8">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <UserCircle2 className="h-5 w-5 text-muted-foreground" />
+                My Profile
+              </CardTitle>
+              <CardDescription>
+                Update your own details and optional avatar image.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...profileForm}>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-14 w-14 border border-border/60">
+                      <AvatarImage
+                        src={profileForm.watch("avatarUrl") || avatarUrlForName(profileForm.watch("name") || user?.name || "")}
+                        alt={profileForm.watch("name") || user?.name || "User"}
+                      />
+                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                        {initials(profileForm.watch("name") || user?.name || "")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <input
+                      ref={avatarUploadInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" className=" rounded-full">
+                          {isAvatarUploading ? "Uploading..." : "Select Avatar"}
+                          <ChevronDown className="h-4 w-4 ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-[320px] p-3">
+                        <p className="text-xs text-muted-foreground mb-2">First option uploads your own image</p>
+                        <div className="grid grid-cols-6 gap-2">
+                          <button
+                            type="button"
+                            className="size-11.5 p-0.5 rounded-full border border-dashed border-primary/40 hover:border-primary transition-colors"
+                            onClick={() => avatarUploadInputRef.current?.click()}
+                          >
+                            <div className="h-10 w-10 rounded-full bg-primary/8 text-primary flex items-center justify-center">
+                              <Upload className="h-4 w-4" />
+                            </div>
+                          </button>
+                          {avatarChoices.map((url) => {
+                            const active = (profileForm.watch("avatarUrl") || "") === url;
+                            return (
+                              <button
+                                key={url}
+                                type="button"
+                                className={`rounded-full p-0.5 border ${active ? "border-primary" : "border-transparent"} transition-colors`}
+                                onClick={() => profileForm.setValue("avatarUrl", url, { shouldDirty: true })}
+                              >
+                                <Avatar className="h-10 w-10">
+                                  <AvatarImage src={url} alt="Avatar option" />
+                                  <AvatarFallback>?</AvatarFallback>
+                                </Avatar>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={profileForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Name</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="mobile"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Mobile</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={profileForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl><Input type="email" {...field} value={field.value || ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" onClick={profileForm.handleSubmit(onSubmitProfile)}>Save Profile</Button>
+                  </div>
+                </div>
+              </Form>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Building className="h-5 w-5 text-muted-foreground" />
+                Company Profile
+              </CardTitle>
+              <CardDescription>
+                This information appears on your invoices and reports.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="companyName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} disabled={!canEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gstNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>GSTIN</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} value={field.value || ""} disabled={!canEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Registered Address</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                Billing & Invoice Preferences
+              </CardTitle>
+              <CardDescription>
+                Configure how your invoices and taxes are generated.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="invoicePrefix"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Invoice Prefix</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g. INV-2024-" disabled={!canEdit} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Resulting invoice: {field.value}0001
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="defaultGstPercent"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default GST Rate (%)</FormLabel>
+                      <FormControl>
+                        <Input type="number" {...field} disabled={!canEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {canEdit && (
+          <div className="flex justify-end">
+            <Button type="submit" size="lg" disabled={updateSettings.isPending}>
+              {updateSettings.isPending ? "Saving..." : "Save Settings"}
+            </Button>
+          </div>
+          )}
+        </form>
+      </Form>
+    </div>
+  );
+}
+
+function avatarUrlForName(name: string) {
+  return `https://api.dicebear.com/9.x/adventurer/svg?seed=${encodeURIComponent(name || "user")}&radius=50&backgroundColor=f8d1d1,cfe7b2,c8ccff,f5dfbf,bfe3ff,d9c6ff`;
+}
+
+function initials(name: string) {
+  return (name || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+}

@@ -1,0 +1,160 @@
+import { Router, IRouter } from "express";
+import { LoginBody } from "../zod";
+import { comparePassword, signToken } from "../lib/auth";
+import { requireAuth } from "../middlewares/auth";
+import { prisma } from "../lib/prisma";
+import { loadUserPublicById } from "../lib/public-user";
+import { z } from "zod";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
+
+const router: IRouter = Router();
+const avatarUploadDir = path.resolve(process.cwd(), "uploads", "avatars");
+if (!fs.existsSync(avatarUploadDir)) fs.mkdirSync(avatarUploadDir, { recursive: true });
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, avatarUploadDir),
+    filename: (req, file, cb) => {
+      const user = (req as any).user;
+      const ext = path.extname(file.originalname || "").toLowerCase() || ".png";
+      cb(null, `user-${user?.id ?? "x"}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image uploads are allowed"));
+  },
+});
+const UpdateMyProfileBody = z.object({
+  name: z.string().min(1).optional(),
+  mobile: z.string().min(1).optional(),
+  email: z.string().email().nullable().optional().or(z.literal("")),
+  avatarUrl: z
+    .string()
+    .nullable()
+    .optional()
+    .or(z.literal(""))
+    .refine((value) => {
+      if (!value) return true;
+      if (value.startsWith("/uploads/")) return true;
+      return z.string().url().safeParse(value).success;
+    }, "Invalid avatar URL"),
+});
+
+router.post("/auth/login", async (req, res): Promise<void> => {
+  const parsed = LoginBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { mobile, password } = parsed.data;
+  const user = await prisma.user.findUnique({ where: { mobile } });
+  if (!user || !user.isActive) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+  const ok = await comparePassword(password, user.passwordHash);
+  if (!ok) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+  const token = signToken({ userId: user.id, roleId: user.roleId });
+  let role: any = null;
+  if (user.roleId) {
+    const r = await prisma.role.findUnique({ where: { id: user.roleId } });
+    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
+  }
+  const publicUser = await loadUserPublicById(user.id);
+  if (!publicUser) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+  res.json({ token, user: { ...publicUser, role } });
+});
+
+router.post("/auth/logout", (_req, res): void => {
+  res.json({ success: true });
+});
+
+router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
+  const user = (req as any).user;
+  let role: any = null;
+  if (user.roleId) {
+    const r = await prisma.role.findUnique({ where: { id: user.roleId } });
+    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
+  }
+  const publicUser = await loadUserPublicById(user.id);
+  if (!publicUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  res.json({ ...publicUser, role });
+});
+
+router.patch("/auth/me", requireAuth, async (req, res): Promise<void> => {
+  const user = (req as any).user;
+  const parsed = UpdateMyProfileBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const data = parsed.data;
+  const payload = {
+    ...(data.name !== undefined ? { name: data.name } : {}),
+    ...(data.mobile !== undefined ? { mobile: data.mobile } : {}),
+    ...(data.email !== undefined ? { email: data.email || null } : {}),
+    ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl || null } : {}),
+  };
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: payload,
+  }).catch((e: any) => {
+    if (e?.code === "P2002") return "duplicate";
+    return null;
+  });
+
+  if (updated === "duplicate") {
+    res.status(409).json({ error: "Mobile or email already exists" });
+    return;
+  }
+  if (!updated) {
+    res.status(400).json({ error: "Failed to update profile" });
+    return;
+  }
+
+  const publicUser = await loadUserPublicById(user.id);
+  if (!publicUser) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  let role: any = null;
+  if (publicUser.roleId) {
+    const r = await prisma.role.findUnique({ where: { id: publicUser.roleId } });
+    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
+  }
+  res.json({ ...publicUser, role });
+});
+
+router.post("/auth/me/avatar", requireAuth, avatarUpload.single("avatar"), async (req, res): Promise<void> => {
+  const user = (req as any).user;
+  if (!req.file) {
+    res.status(400).json({ error: "Avatar file is required" });
+    return;
+  }
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { avatarUrl },
+  }).catch(() => null);
+  if (!updated) {
+    res.status(400).json({ error: "Failed to save avatar" });
+    return;
+  }
+  res.json({ avatarUrl });
+});
+
+export default router;
