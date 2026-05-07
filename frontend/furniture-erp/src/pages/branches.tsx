@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import {
   useListBranches,
   useCreateBranch,
@@ -10,7 +12,6 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
@@ -147,6 +148,80 @@ export default function Branches() {
 
   const branches = branchesData?.data ?? [];
 
+  const columns = useMemo<ColumnDef<(typeof branches)[number]>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "code",
+        header: "Code",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{row.original.code}</span>
+        ),
+      },
+      {
+        id: "cityState",
+        header: "City / State",
+        cell: ({ row }) =>
+          [row.original.city, row.original.state].filter(Boolean).join(", ") || "—",
+      },
+      {
+        accessorKey: "phone",
+        header: "Phone",
+        cell: ({ row }) => row.original.phone || "—",
+      },
+      {
+        accessorKey: "email",
+        header: "Email",
+        cell: ({ row }) => <span className="text-sm">{row.original.email || "—"}</span>,
+      },
+      {
+        accessorKey: "isActive",
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.isActive ? (
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[140px]", cellClassName: "text-right" },
+        cell: ({ row }) => {
+          const branch = row.original;
+          return (
+            <div className="flex items-center justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                title={branch.isActive ? "Deactivate" : "Activate"}
+                onClick={() => toggleActive.mutate({ id: branch.id })}
+              >
+                {branch.isActive ? (
+                  <ToggleRight className="h-4 w-4 text-green-600" />
+                ) : (
+                  <ToggleLeft className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => openEditDialog(branch)}>
+                <Edit className="h-4 w-4 text-muted-foreground" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => handleDelete(branch.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [openEditDialog, handleDelete, toggleActive.mutate],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -173,87 +248,29 @@ export default function Branches() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>City / State</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[120px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : branches.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No branches found.</TableCell>
-              </TableRow>
-            ) : (
-              branches.map((branch) => (
-                <TableRow key={branch.id}>
-                  <TableCell className="font-medium">{branch.name}</TableCell>
-                  <TableCell>
-                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{branch.code}</span>
-                  </TableCell>
-                  <TableCell>
-                    {[branch.city, branch.state].filter(Boolean).join(", ") || "-"}
-                  </TableCell>
-                  <TableCell>{branch.phone || "-"}</TableCell>
-                  <TableCell className="text-sm">{branch.email || "-"}</TableCell>
-                  <TableCell>
-                    {branch.isActive ? (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={branch.isActive ? "Deactivate" : "Activate"}
-                        onClick={() => toggleActive.mutate({ id: branch.id })}
-                      >
-                        {branch.isActive
-                          ? <ToggleRight className="h-4 w-4 text-green-600" />
-                          : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(branch)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(branch.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-
-        {branchesData && branchesData.total > branchesData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Page {page} · {branchesData.total} total
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * branchesData.limit >= branchesData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={branches}
+          isLoading={isLoading}
+          emptyMessage="No branches found."
+          footer={
+            branchesData && branchesData.total > branchesData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Page {page} · {branchesData.total} total
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * branchesData.limit >= branchesData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

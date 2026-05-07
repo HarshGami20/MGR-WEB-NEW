@@ -51,6 +51,19 @@ export function hasStdPermission(
   return !!row[action];
 }
 
+/** Products image upload — allowed when user can create or edit products */
+export function requireProductsCreateOrUpdate(req: Request, res: Response, next: NextFunction): void {
+  const matrix = (req as { permissionMatrix?: Record<string, NormalizedModulePerms> }).permissionMatrix ?? {};
+  const user = (req as { user?: unknown }).user;
+  const canCreate = hasStdPermission(matrix, user, "products", "create");
+  const canUpdate = hasStdPermission(matrix, user, "products", "update");
+  if (!canCreate && !canUpdate) {
+    res.status(403).json({ error: "Forbidden", message: "Insufficient permission" });
+    return;
+  }
+  next();
+}
+
 export function requirePermission(module: string, action: StdPermission) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const matrix = (req as { permissionMatrix?: Record<string, NormalizedModulePerms> }).permissionMatrix ?? {};

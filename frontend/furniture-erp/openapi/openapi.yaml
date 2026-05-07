@@ -12,6 +12,7 @@ tags:
   - name: users
   - name: roles
   - name: categories
+  - name: attributeCatalog
   - name: products
   - name: inventory
   - name: orders
@@ -406,12 +407,81 @@ paths:
         "200":
           description: Deleted
 
+  /attribute-catalog:
+    get:
+      operationId: listAttributeCatalog
+      tags: [attributeCatalog]
+      summary: List attribute keys and values for variant dropdowns
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeCatalogResponse"
+
+  /attribute-catalog/keys:
+    post:
+      operationId: createAttributeKey
+      tags: [attributeCatalog]
+      summary: Create or return existing attribute key (e.g. Color)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAttributeKeyBody"
+      responses:
+        "200":
+          description: Existing key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeKeyWithValues"
+        "201":
+          description: Key created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeKeyWithValues"
+
+  /attribute-catalog/keys/{keyId}/options:
+    post:
+      operationId: createAttributeOption
+      tags: [attributeCatalog]
+      summary: Add a value option for an attribute key
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAttributeOptionBody"
+      responses:
+        "200":
+          description: Option already existed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeOptionListResponse"
+        "201":
+          description: Option created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeOptionListResponse"
+
   # PRODUCTS
   /products:
     get:
       operationId: listProducts
       tags: [products]
-      summary: List products
+      summary: List products (with categoryPath and variantCount)
       parameters:
         - name: search
           in: query
@@ -460,6 +530,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Product"
+        "409":
+          description: Duplicate SKU
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /products/upload-image:
+    post:
+      operationId: uploadProductImage
+      tags: [products]
+      summary: Upload image for product or variant (returns path under /uploads)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Path relative to origin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductImageUploadResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /products/{id}:
     get:
@@ -483,7 +589,7 @@ paths:
     put:
       operationId: updateProduct
       tags: [products]
-      summary: Update product
+      summary: Update product (full replace — same body as create)
       parameters:
         - name: id
           in: path
@@ -495,7 +601,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateProductBody"
+              $ref: "#/components/schemas/UpdateProductBody"
       responses:
         "200":
           description: Updated
@@ -503,6 +609,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Product"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Duplicate SKU
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
     delete:
       operationId: deleteProduct
@@ -1561,6 +1679,9 @@ components:
         email:
           type: string
           nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
         roleId:
           type: integer
           nullable: true
@@ -1725,6 +1846,60 @@ components:
           nullable: true
       required: [name]
 
+    AttributeCatalogResponse:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttributeKeyWithValues"
+      required: [keys]
+
+    AttributeKeyWithValues:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        values:
+          type: array
+          items:
+            type: string
+      required: [id, name, values]
+
+    CreateAttributeKeyBody:
+      type: object
+      properties:
+        name:
+          type: string
+      required: [name]
+
+    CreateAttributeOptionBody:
+      type: object
+      properties:
+        value:
+          type: string
+      required: [value]
+
+    AttributeOptionListResponse:
+      type: object
+      properties:
+        keyId:
+          type: integer
+        values:
+          type: array
+          items:
+            type: string
+      required: [keyId, values]
+
+    ProductImageUploadResponse:
+      type: object
+      properties:
+        imageUrl:
+          type: string
+      required: [imageUrl]
+
     # PRODUCTS
     Product:
       type: object
@@ -1735,12 +1910,26 @@ components:
           type: string
         sku:
           type: string
+        imageUrl:
+          type: string
+          nullable: true
         categoryId:
           type: integer
           nullable: true
         category:
           $ref: "#/components/schemas/Category"
           nullable: true
+        categoryPath:
+          type: string
+          nullable: true
+          description: Display path e.g. "Parent · Child" when category has parentId
+        variantCount:
+          type: integer
+          description: Number of product variants (from DB aggregate)
+        isLowStock:
+          type: boolean
+          nullable: true
+          description: True when simple SKU is below threshold or any variant is below its threshold
         price:
           type: number
         gstPercent:
@@ -1767,18 +1956,85 @@ components:
         categoryId:
           type: integer
           nullable: true
+        imageUrl:
+          type: string
+          nullable: true
         price:
           type: number
         gstPercent:
           type: number
-        stockQty:
-          type: integer
         lowStockThreshold:
           type: integer
         description:
           type: string
           nullable: true
-      required: [name, sku, price, gstPercent, stockQty, lowStockThreshold]
+        inventoryMode:
+          type: string
+          enum: [simple, variants]
+          default: simple
+        stockQty:
+          type: integer
+          description: On-hand units when inventoryMode is simple
+        initialVariants:
+          type: array
+          items:
+            $ref: "#/components/schemas/InitialVariantInput"
+      required: [name, sku, price, gstPercent, lowStockThreshold]
+      description: >
+        Use inventoryMode simple with stockQty for a single SKU. Use variants with initialVariants to create variants in one request.
+        When variants exist, product stockQty is the sum of variant stocks.
+
+    InitialVariantInput:
+      type: object
+      required: [name, sku]
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          nullable: true
+        stockQty:
+          type: integer
+          default: 0
+        lowStockThreshold:
+          type: integer
+          default: 10
+        attributes:
+          type: string
+          nullable: true
+          description: JSON object string e.g. {"Color":"Red"}
+        imageUrl:
+          type: string
+          nullable: true
+
+    UpdateProductBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        categoryId:
+          type: integer
+          nullable: true
+        price:
+          type: number
+        gstPercent:
+          type: number
+        lowStockThreshold:
+          type: integer
+        description:
+          type: string
+          nullable: true
+        stockQty:
+          type: integer
+          description: Only applied when the product has no variants
+        imageUrl:
+          type: string
+          nullable: true
+      required: [name, sku, price, gstPercent, lowStockThreshold]
 
     ProductListResponse:
       type: object
@@ -1807,10 +2063,15 @@ components:
           type: string
         sku:
           type: string
+        imageUrl:
+          type: string
+          nullable: true
         price:
           type: number
           nullable: true
         stockQty:
+          type: integer
+        lowStockThreshold:
           type: integer
         attributes:
           type: string
@@ -1821,7 +2082,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, productId, name, sku, stockQty, isActive, createdAt]
+      required: [id, productId, name, sku, stockQty, lowStockThreshold, isActive, createdAt]
 
     CreateProductVariantBody:
       type: object
@@ -1830,17 +2091,22 @@ components:
           type: string
         sku:
           type: string
+        imageUrl:
+          type: string
+          nullable: true
         price:
           type: number
           nullable: true
         stockQty:
+          type: integer
+        lowStockThreshold:
           type: integer
         attributes:
           type: string
           nullable: true
         isActive:
           type: boolean
-      required: [name, sku, stockQty]
+      required: [name, sku]
 
     UpdateProductVariantBody:
       type: object
@@ -1849,10 +2115,15 @@ components:
           type: string
         sku:
           type: string
+        imageUrl:
+          type: string
+          nullable: true
         price:
           type: number
           nullable: true
         stockQty:
+          type: integer
+        lowStockThreshold:
           type: integer
         attributes:
           type: string
@@ -1868,6 +2139,12 @@ components:
           type: integer
         productId:
           type: integer
+        variantId:
+          type: integer
+          nullable: true
+        variant:
+          $ref: "#/components/schemas/ProductVariant"
+          nullable: true
         product:
           $ref: "#/components/schemas/Product"
           nullable: true
@@ -1889,6 +2166,9 @@ components:
       properties:
         productId:
           type: integer
+        variantId:
+          type: integer
+          nullable: true
         type:
           type: string
           enum: [in, out, adjustment]

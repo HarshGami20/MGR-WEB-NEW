@@ -1,46 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListOrders, 
-  useCreateOrder, 
-  useUpdateOrder, 
   useDeleteOrder, 
   useUpdateOrderStatus,
-  useListProducts,
   getListOrdersQueryKey
 } from "@/api-client";
 import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
-import { z } from "zod";
-import { useForm, useFieldArray } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-
-const orderItemSchema = z.object({
-  productId: z.coerce.number().min(1, "Product is required"),
-  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
-});
-
-const orderSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
-  customerMobile: z.string().optional().nullable(),
-  customerAddress: z.string().optional().nullable(),
-  isGst: z.boolean(),
-  customerGstNumber: z.string().optional().nullable(),
-  items: z.array(orderItemSchema).min(1, "At least one item is required"),
-  notes: z.string().optional().nullable(),
-});
-
-type OrderFormValues = z.infer<typeof orderSchema>;
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -49,10 +24,7 @@ export default function Orders() {
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
   const [page, setPage] = useState(1);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
+  const [, setLocation] = useLocation();
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -75,43 +47,6 @@ export default function Orders() {
     limit: 10,
   });
 
-  const { data: productsData } = useListProducts({ limit: 1000 });
-
-  const createOrder = useCreateOrder({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        toast({ title: "Order created successfully" });
-        setIsDialogOpen(false);
-        setEditingOrderId(null);
-      },
-      onError: (error: any) => {
-        toast({
-          title: "Failed to create order",
-          description: error?.response?.data?.error ?? error?.message ?? "Please try again.",
-          variant: "destructive",
-        });
-      },
-    },
-  });
-
-  const updateOrder = useUpdateOrder({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        toast({ title: "Order updated successfully" });
-        setIsDialogOpen(false);
-        setEditingOrderId(null);
-      },
-      onError: (error: any) => {
-        toast({
-          title: "Failed to update order",
-          description: error?.response?.data?.error ?? error?.message ?? "Please try again.",
-          variant: "destructive",
-        });
-      },
-    },
-  });
 
   const deleteOrder = useDeleteOrder({
     mutation: {
@@ -131,85 +66,9 @@ export default function Orders() {
     },
   });
 
-  const form = useForm<OrderFormValues>({
-    resolver: zodResolver(orderSchema),
-    defaultValues: {
-      customerName: "",
-      customerMobile: "",
-      customerAddress: "",
-      isGst: false,
-      customerGstNumber: "",
-      items: [{ productId: 0, quantity: 1, unitPrice: 0 }],
-      notes: "",
-    },
-  });
-
-  const { fields, append, remove } = useFieldArray({
-    control: form.control,
-    name: "items",
-  });
-
-  const openCreateDialog = () => {
-    setEditingOrderId(null);
-    form.reset({
-      customerName: "",
-      customerMobile: "",
-      customerAddress: "",
-      isGst: false,
-      customerGstNumber: "",
-      items: [{ productId: 0, quantity: 1, unitPrice: 0 }],
-      notes: "",
-    });
-    setIsDialogOpen(true);
-  };
-
-  const openEditDialog = (order: any) => {
-    setEditingOrderId(order.id);
-    form.reset({
-      customerName: order.customerName ?? "",
-      customerMobile: order.customerMobile ?? "",
-      customerAddress: order.customerAddress ?? "",
-      isGst: !!order.isGst,
-      customerGstNumber: order.customerGstNumber ?? "",
-      items: order.items?.length
-        ? order.items.map((item: any) => ({
-            productId: item.productId ?? item.product?.id ?? 0,
-            quantity: item.quantity ?? 1,
-            unitPrice: item.unitPrice ?? item.product?.price ?? 0,
-          }))
-        : [{ productId: 0, quantity: 1, unitPrice: 0 }],
-      notes: order.notes ?? "",
-    });
-    setIsDialogOpen(true);
-  };
-
-  const openViewDialog = (order: any) => {
-    setSelectedOrder(order);
-    setIsViewDialogOpen(true);
-  };
-
-  const onSubmit = (data: OrderFormValues) => {
-    const payload = {
-      customerName: data.customerName,
-      customerMobile: data.customerMobile || null,
-      customerAddress: data.customerAddress || null,
-      isGst: !!data.isGst,
-      customerGstNumber: data.customerGstNumber || null,
-      items: data.items.map((item) => ({
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-      })),
-      notes: data.notes || null,
-    };
-
-    if (editingOrderId) {
-      // Use the same order update API endpoint with full editable payload.
-      updateOrder.mutate({ id: editingOrderId, data: payload as any });
-      return;
-    }
-    createOrder.mutate({ data: payload as any });
-  };
+  const openCreatePage = () => setLocation("/orders/new");
+  const openEditPage = (order: any) => setLocation(`/orders/${order.id}/edit`);
+  const openDetailPage = (order: any) => setLocation(`/orders/${order.id}`);
 
   const handleDelete = (id: number) => {
     if (confirm("Are you sure you want to delete this order?")) {
@@ -228,14 +87,103 @@ export default function Orders() {
     }
   };
 
-  const handleProductSelect = (index: number, productIdStr: string) => {
-    const productId = parseInt(productIdStr);
-    const product = productsData?.data?.find(p => p.id === productId);
-    if (product) {
-      form.setValue(`items.${index}.productId`, productId);
-      form.setValue(`items.${index}.unitPrice`, product.price);
-    }
-  };
+  const orders = ordersData?.data ?? [];
+
+  const columns = useMemo<ColumnDef<(typeof orders)[number]>[]>(
+    () => [
+      {
+        accessorKey: "orderNumber",
+        header: "Order #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-medium">{row.original.orderNumber}</span>
+        ),
+      },
+      {
+        id: "customer",
+        header: "Customer",
+        cell: ({ row }) => (
+          <div className="flex flex-col">
+            <span className="font-medium">{row.original.customerName}</span>
+            <span className="text-xs text-muted-foreground">{row.original.customerMobile}</span>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Select
+            value={row.original.status}
+            onValueChange={(val: any) =>
+              updateStatus.mutate({ id: row.original.id, data: { status: val } })
+            }
+          >
+            <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+              {getStatusBadge(row.original.status)}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="processing">Processing</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        ),
+      },
+      {
+        accessorKey: "totalAmount",
+        header: () => <span className="text-right block w-full">Total Amount (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+      },
+      {
+        id: "balance",
+        header: () => <span className="text-right block w-full">Balance (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right" },
+        cell: ({ row }) => {
+          const ord = row.original;
+          const bal = ord.totalAmount - ord.paidAmount;
+          return (
+            <span className={bal > 0 ? "text-destructive" : "text-green-600"}>
+              ₹{bal.toLocaleString()}
+            </span>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[110px]", cellClassName: "text-right" },
+        cell: ({ row }) => {
+          const ord = row.original;
+          return (
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="icon" onClick={() => openDetailPage(ord)}>
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => openEditPage(ord)}>
+                <Edit className="h-4 w-4 text-primary" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => handleDelete(ord.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [getStatusBadge, updateStatus, openDetailPage, openEditPage, handleDelete],
+  );
 
   return (
     <div className="space-y-6">
@@ -244,7 +192,7 @@ export default function Orders() {
           <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
           <p className="text-muted-foreground">Manage customer sales orders</p>
         </div>
-        <Button onClick={openCreateDialog}>
+        <Button onClick={openCreatePage}>
           <Plus className="mr-2 h-4 w-4" />
           Create Order
         </Button>
@@ -288,338 +236,31 @@ export default function Orders() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total Amount (₹)</TableHead>
-              <TableHead className="text-right">Balance (₹)</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : ordersData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No orders found.</TableCell>
-              </TableRow>
-            ) : (
-              ordersData?.data?.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-mono text-sm font-medium">{order.orderNumber}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{order.customerName}</span>
-                      <span className="text-xs text-muted-foreground">{order.customerMobile}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(order.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <Select 
-                      value={order.status} 
-                      onValueChange={(val: any) => updateStatus.mutate({ id: order.id, data: { status: val } })}
-                    >
-                      <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
-                        {getStatusBadge(order.status)}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="processing">Processing</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">₹{order.totalAmount.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">
-                    <span className={order.totalAmount - order.paidAmount > 0 ? "text-destructive" : "text-green-600"}>
-                      ₹{(order.totalAmount - order.paidAmount).toLocaleString()}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openViewDialog(order)}>
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(order)}>
-                        <Edit className="h-4 w-4 text-primary" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(order.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {ordersData && ordersData.total > ordersData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * ordersData.limit + 1} to {Math.min(page * ordersData.limit, ordersData.total)} of {ordersData.total} orders
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * ordersData.limit >= ordersData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Create Order Dialog */}
-      <Dialog
-        open={isDialogOpen}
-        onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) setEditingOrderId(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingOrderId ? "Edit Order" : "Create New Order"}</DialogTitle>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="customerName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Customer Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="customerMobile"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Mobile</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="isGst"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-[68px]">
-                      <div className="space-y-0.5">
-                        <FormLabel>GST Invoice</FormLabel>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="customerGstNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>GST Number</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} disabled={!form.watch("isGst")} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="customerAddress"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Address</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium">Order Items</h4>
-                  <Button type="button" variant="outline" size="sm" onClick={() => append({ productId: 0, quantity: 1, unitPrice: 0 })}>
-                    <Plus className="h-4 w-4 mr-2" /> Add Item
+        <DataTable
+          columns={columns}
+          data={orders}
+          isLoading={isLoading}
+          emptyMessage="No orders found."
+          footer={
+            ordersData && ordersData.total > ordersData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * ordersData.limit + 1} to {Math.min(page * ordersData.limit, ordersData.total)} of {ordersData.total} orders
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * ordersData.limit >= ordersData.total}>
+                    Next
                   </Button>
                 </div>
-                
-                {fields.map((field, index) => (
-                  <div key={field.id} className="flex gap-2 items-start border p-3 rounded-md">
-                    <div className="flex-1 space-y-4">
-                      <FormField
-                        control={form.control}
-                        name={`items.${index}.productId`}
-                        render={({ field: productField }) => (
-                          <FormItem>
-                            <FormLabel className="sr-only">Product</FormLabel>
-                            <Select
-                              value={productField.value ? productField.value.toString() : ""}
-                              onValueChange={(val) => handleProductSelect(index, val)}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select Product" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {productsData?.data?.map(p => (
-                                  <SelectItem key={p.id} value={p.id.toString()}>{p.name} - ₹{p.price}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.quantity`}
-                          render={({ field: qtyField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Quantity</FormLabel>
-                              <FormControl>
-                                <Input type="number" min="1" {...qtyField} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.unitPrice`}
-                          render={({ field: priceField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Unit Price (₹)</FormLabel>
-                              <FormControl>
-                                <Input type="number" min="0" step="0.01" {...priceField} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-1" disabled={fields.length === 1}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
               </div>
+            ) : undefined
+          }
+        />
+      </div>
 
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createOrder.isPending || updateOrder.isPending}>
-                  {editingOrderId ? "Update Order" : "Create Order"}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      {/* View Order Dialog */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-[700px]">
-          <DialogHeader>
-            <DialogTitle>Order Details</DialogTitle>
-          </DialogHeader>
-          {selectedOrder && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-start border-b pb-4">
-                <div>
-                  <h3 className="font-bold text-lg">{selectedOrder.orderNumber}</h3>
-                  <p className="text-sm text-muted-foreground">{new Date(selectedOrder.createdAt).toLocaleString()}</p>
-                </div>
-                {getStatusBadge(selectedOrder.status)}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-semibold mb-1">Customer Details</h4>
-                  <p className="text-sm">{selectedOrder.customerName}</p>
-                  <p className="text-sm text-muted-foreground">{selectedOrder.customerMobile}</p>
-                  <p className="text-sm text-muted-foreground">{selectedOrder.customerAddress}</p>
-                  {selectedOrder.isGst && <p className="text-sm font-mono mt-1">GST: {selectedOrder.customerGstNumber}</p>}
-                </div>
-                <div className="text-right">
-                  <h4 className="text-sm font-semibold mb-1">Payment Summary</h4>
-                  <p className="text-sm">Total: ₹{selectedOrder.totalAmount.toLocaleString()}</p>
-                  <p className="text-sm text-green-600">Paid: ₹{selectedOrder.paidAmount.toLocaleString()}</p>
-                  <p className="text-sm font-medium mt-1">Balance: ₹{(selectedOrder.totalAmount - selectedOrder.paidAmount).toLocaleString()}</p>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Order Items</h4>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedOrder.items?.map((item: any) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.product?.name}</TableCell>
-                        <TableCell className="text-right">{item.quantity}</TableCell>
-                        <TableCell className="text-right">₹{item.unitPrice.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-medium">₹{item.totalPrice.toLocaleString()}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              
-              <div className="flex justify-end pt-4">
-                <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>Close</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

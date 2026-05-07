@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { useListCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, getListCategoriesQueryKey } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -108,6 +109,36 @@ export default function Categories() {
 
   const flatCategories = flattenCategories((categoriesData as any) || []);
 
+  const columns = useMemo<ColumnDef<(typeof flatCategories)[number]>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Category Name",
+        cell: ({ row }) => (
+          <div style={{ paddingLeft: `${row.original.level * 24}px` }} className="flex items-center">
+            <span className="font-medium">{row.original.name}</span>
+          </div>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="icon" onClick={() => openEditDialog(row.original)}>
+              <Edit className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => handleDelete(row.original.id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [openEditDialog, handleDelete],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -122,45 +153,13 @@ export default function Categories() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Category Name</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={2} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : flatCategories.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={2} className="h-24 text-center text-muted-foreground">No categories found.</TableCell>
-              </TableRow>
-            ) : (
-              flatCategories.map((category) => (
-                <TableRow key={category.id}>
-                  <TableCell>
-                    <div style={{ paddingLeft: `${category.level * 24}px` }} className="flex items-center">
-                      <span className="font-medium">{category.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(category)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(category.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <DataTable
+          columns={columns}
+          data={flatCategories}
+          isLoading={isLoading}
+          emptyMessage="No categories found."
+          getRowId={(row) => String(row.id)}
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

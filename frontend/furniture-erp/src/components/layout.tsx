@@ -72,7 +72,7 @@ const staffNavSections: StaffSection[] = [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
       { label: "Products", href: "/products", icon: Package },
-      { label: "Categories", href: "/categories", icon: Tags },
+      // { label: "Categories", href: "/categories", icon: Tags },
       { label: "Inventory", href: "/inventory", icon: Archive },
     ],
   },
@@ -112,7 +112,13 @@ function getPageTitle(location: string, partnerUser: boolean): string {
   if (partnerUser) return found?.label ?? "MGR Casa";
   const flat = staffNavSections.flatMap((s) => s.items);
   const hit = flat.find((item) => item.href === location);
-  return hit?.label ?? "MGR Casa";
+  if (hit) return hit.label;
+  if (location.startsWith("/products/")) {
+    if (location === "/products/new") return "Add Product";
+    if (location.endsWith("/edit")) return "Edit Product";
+    return "Product";
+  }
+  return "MGR Casa";
 }
 
 function getInitials(name: string | undefined): string {
@@ -223,7 +229,9 @@ export default function Layout({ children }: LayoutProps) {
               </p>
               <div className="space-y-1">
                 {section.items.map((item) => {
-                  const isActive = location === item.href;
+                  const isActive =
+                    location === item.href ||
+                    (item.href === "/products" && location.startsWith("/products"));
                   const Icon = item.icon;
                   const badge =
                     item.showPendingBadge && pendingOrdersBadge ? (
@@ -293,7 +301,7 @@ export default function Layout({ children }: LayoutProps) {
         </button>
 
         {showSidebarAppPromo ? (
-        <div className="relative overflow-hidden rounded-[1.65rem] mt-5 bg-[linear-gradient(145deg,hsl(164_30%_5%)_0%,hsl(160_45%_11%)_48%,hsl(111_56%_22%)_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(5,14,11,0.3)]">
+        <div className="relative overflow-hidden rounded-[1.65rem] mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
           <div className="absolute right-2 top-2 z-[2]">
 
           <Button
@@ -301,7 +309,7 @@ export default function Layout({ children }: LayoutProps) {
             variant="ghost"
             size="icon"
             aria-label="Close app promo"
-            className="absolute cursor-pointer right-2 top-2 z-[2] h-8 w-8 rounded-full text-emerald-100/90 hover:bg-white/10 hover:text-white"
+            className="absolute cursor-pointer right-2 top-2 z-[2] h-8 w-8 rounded-full text-white/85 hover:bg-white/10 hover:text-white"
             onClick={dismissSidebarAppPromo}
             >
             <X className="h-4 w-4" />
@@ -310,16 +318,16 @@ export default function Layout({ children }: LayoutProps) {
           <div
             className="pointer-events-none absolute inset-0 opacity-40"
             style={{
-              backgroundImage: `radial-gradient(ellipse at 102% 100%, rgba(80,210,116,.42) 0%, rgba(80,210,116,0) 58%)`,
+              backgroundImage: `radial-gradient(ellipse at 102% 100%, rgba(176,138,218,.42) 0%, rgba(176,138,218,0) 58%)`,
             }}
           />
-          <div className="pointer-events-none absolute -left-7 top-10 h-56 w-56 rounded-full border-2 border-emerald-200/25" />
-          <div className="pointer-events-none absolute left-10 top-16 h-60 w-60 rounded-full border-2 border-emerald-200/20" />
-          <div className="pointer-events-none absolute right-[-118px] top-20 h-72 w-72 rounded-full border-2 border-emerald-200/25" />
-          <div className="pointer-events-none absolute right-[-66px] top-28 h-56 w-56 rounded-full border-2 border-emerald-200/20" />
+          <div className="pointer-events-none absolute -left-7 top-10 h-56 w-56 rounded-full border-2 border-white/20" />
+          <div className="pointer-events-none absolute left-10 top-16 h-60 w-60 rounded-full border-2 border-white/15" />
+          <div className="pointer-events-none absolute right-[-118px] top-20 h-72 w-72 rounded-full border-2 border-white/20" />
+          <div className="pointer-events-none absolute right-[-66px] top-28 h-56 w-56 rounded-full border-2 border-white/15" />
 
           <div className="relative z-[1]">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-[hsl(160_45%_11%)]">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-primary">
               <BadgeCheck className="h-5 w-5" />
             </span>
             <p className="mt-3 text-[1.025rem] font-semibold leading-tight">
@@ -327,12 +335,12 @@ export default function Layout({ children }: LayoutProps) {
               <br />
               Mobile App
             </p>
-            <p className="text-xs text-emerald-100/90 mt-2.5 leading-relaxed">Get easy in another way</p>
+            <p className="text-xs text-white/80 mt-2.5 leading-relaxed">Get easy in another way</p>
           </div>
           <Button
             type="button"
             size="sm"
-            className="relative z-[1] mt-5 rounded-full bg-[hsl(155_38%_33%)] text-white hover:bg-[hsl(155_38%_37%)] font-semibold w-full h-11 shadow-sm border-0"
+            className="relative z-[1] mt-5 rounded-full bg-white text-primary hover:bg-white/90 font-semibold w-full h-11 shadow-sm border-0"
             onClick={() => window.scrollTo({ top: 0 })}
           >
             Download
@@ -400,7 +408,7 @@ export default function Layout({ children }: LayoutProps) {
   );
 
   return (
-    <div className={cn("flex h-screen bg-[hsl(150_20%_97%)] overflow-hidden")}>
+    <div className={cn("flex h-screen bg-background overflow-hidden")}>
       {!partnerUser ? (
         <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">{renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]", staff: true })}</div>
       ) : (

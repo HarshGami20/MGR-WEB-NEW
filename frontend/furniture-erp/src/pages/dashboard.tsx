@@ -30,9 +30,9 @@ import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { cn } from "@/lib/utils";
 
-const forest = "hsl(158 64% 28%)";
-const teal = "hsl(168 52% 42%)";
-const pendingGrey = "hsl(160 14% 62%)";
+const chartOrders = "hsl(var(--chart-1))";
+const chartRevenue = "hsl(var(--chart-2))";
+const chartPending = "hsl(var(--chart-3))";
 
 function statusCount(orderStatus: { status: string; count: number }[] | undefined, key: string) {
   return orderStatus?.find((s) => s.status === key)?.count ?? 0;
@@ -128,9 +128,9 @@ function StaffDashboard() {
 
   const pendingTotal = pending + cancelled;
   const donutData = [
-    { name: "Completed", value: completed, fill: forest },
-    { name: "In progress", value: activePipeline, fill: "hsl(158 52% 20%)" },
-    { name: "Pending", value: pendingTotal, fill: pendingGrey },
+    { name: "Completed", value: completed, fill: chartOrders },
+    { name: "In progress", value: activePipeline, fill: "hsl(var(--chart-2))" },
+    { name: "Pending", value: pendingTotal, fill: chartPending },
   ];
   const donutTotal = Math.max(completed + activePipeline + pendingTotal, 1);
   const completedPct = Math.round((completed / donutTotal) * 100);
@@ -199,7 +199,7 @@ function StaffDashboard() {
       case "processing":
         return <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">Processing</Badge>;
       case "completed":
-        return <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-emerald-700">Completed</Badge>;
+        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Completed</Badge>;
       case "cancelled":
         return <Badge variant="outline" className="rounded-full border-rose-200 bg-rose-50 text-rose-700">Cancelled</Badge>;
       default:
@@ -213,7 +213,7 @@ function StaffDashboard() {
         Inactive
       </Badge>
     ) : (
-      <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-emerald-700 capitalize">
+      <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary capitalize">
         Active
       </Badge>
     );
@@ -229,7 +229,7 @@ function StaffDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 shrink-0">
-          <Button asChild size="lg" className="rounded-full bg-[hsl(158_64%_24%)] hover:bg-[hsl(158_64%_20%)] text-primary-foreground shadow-md">
+          <Button asChild size="lg" className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
             <Link href="/orders">
               <Plus className="h-4 w-4 mr-2" aria-hidden />
               New order
@@ -250,12 +250,12 @@ function StaffDashboard() {
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[132px] rounded-3xl" />)
         ) : (
           <>
-            <div className="rounded-3xl bg-[linear-gradient(145deg,hsl(158_66%_20%)_0%,hsl(160_63%_17%)_42%,hsl(164_58%_13%)_100%)] text-primary-foreground p-6 shadow-[0_14px_34px_rgba(10,36,27,0.28)] relative overflow-hidden border border-emerald-200/10">
+            <div className="rounded-3xl bg-[linear-gradient(145deg,hsl(var(--primary))_0%,hsl(var(--primary-dim))_42%,hsl(var(--primary-deep))_100%)] text-primary-foreground p-6 shadow-[0_14px_34px_rgba(56,39,67,0.28)] relative overflow-hidden border border-primary/15">
               <div
                 className="pointer-events-none absolute inset-0 opacity-55"
                 style={{
                   backgroundImage:
-                    "radial-gradient(circle at 14% 12%, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 35%), radial-gradient(circle at 88% 86%, rgba(64,212,130,0.34) 0%, rgba(64,212,130,0) 46%), linear-gradient(130deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 34%)",
+                    "radial-gradient(circle at 14% 12%, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 35%), radial-gradient(circle at 88% 86%, rgba(188,154,226,0.35) 0%, rgba(188,154,226,0) 46%), linear-gradient(130deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 34%)",
                 }}
               />
               <div
@@ -325,8 +325,8 @@ function StaffDashboard() {
                 <BarChart data={orderAnalyticsData} barCategoryGap="22%" margin={{ top: 16, bottom: 0, left: 0, right: 0 }}>
                   <defs>
                     <pattern id="pending-orders-pattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                      <rect width="8" height="8" fill="hsl(150 24% 92%)" />
-                      <rect width="4" height="8" fill="hsl(160 14% 62%)" />
+                      <rect width="8" height="8" fill="hsl(var(--chart-pattern-bg))" />
+                      <rect width="4" height="8" fill="hsl(var(--chart-pattern-stripe))" />
                     </pattern>
                   </defs>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -334,14 +334,14 @@ function StaffDashboard() {
                     dataKey="label"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "hsl(160 12% 45%)", fontSize: 12 }}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                   />
                   <YAxis
                     yAxisId="orders"
                     tickLine={false}
                     axisLine={false}
                     width={30}
-                    tick={{ fill: "hsl(160 12% 45%)", fontSize: 11 }}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                     allowDecimals={false}
                   />
                   <YAxis
@@ -350,11 +350,11 @@ function StaffDashboard() {
                     tickLine={false}
                     axisLine={false}
                     width={56}
-                    tick={{ fill: "hsl(160 12% 45%)", fontSize: 11 }}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                     tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
                   />
                   <RechartsTooltip
-                    cursor={{ fill: "hsl(150 35% 95%)", radius: 12 }}
+                    cursor={{ fill: "hsl(var(--accent))", radius: 12 }}
                     content={({ payload }: { payload?: Array<{ payload: { label: string; orderCount: number; pendingCount: number; revenue: number } }> }) =>
                       payload?.length ? (
                         <div className="rounded-2xl border bg-card px-3 py-2 text-sm shadow-md">
@@ -372,17 +372,17 @@ function StaffDashboard() {
                       ) : null
                     }
                   />
-                  <Bar yAxisId="orders" dataKey="orderCount" name="Orders" fill={forest} radius={[12, 12, 0, 0]} maxBarSize={26} />
+                  <Bar yAxisId="orders" dataKey="orderCount" name="Orders" fill={chartOrders} radius={[12, 12, 0, 0]} maxBarSize={26} />
                   <Bar yAxisId="orders" dataKey="pendingCount" name="Pending orders" fill="url(#pending-orders-pattern)" radius={[12, 12, 0, 0]} maxBarSize={26} />
-                  <Bar yAxisId="revenue" dataKey="revenue" name="Revenue" fill={teal} radius={[12, 12, 0, 0]} maxBarSize={26} />
+                  <Bar yAxisId="revenue" dataKey="revenue" name="Revenue" fill={chartRevenue} radius={[12, 12, 0, 0]} maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
           <div className="flex w-full justify-center flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
-            <LegendDot color={forest} label="Orders" />
+            <LegendDot color={chartOrders} label="Orders" />
             <LegendDot pattern label="Pending orders" />
-            <LegendDot color={teal} label="Revenue" />
+            <LegendDot color={chartRevenue} label="Revenue" />
           </div>
         </div>
 
@@ -399,7 +399,7 @@ function StaffDashboard() {
               </Badge>
             </div>
             <p className="text-sm mt-4 text-muted-foreground">{reminder.meta}</p>
-            <Button className="mt-6 w-full rounded-full bg-[hsl(158_64%_24%)] hover:bg-[hsl(158_64%_20%)] text-primary-foreground" size="lg" asChild>
+            <Button className="mt-6 w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" asChild>
               <Link href="/orders">
                 <Video className="h-4 w-4 mr-2" aria-hidden />
                 Open orders
@@ -418,8 +418,8 @@ function StaffDashboard() {
               )}
             </div>
             <div className="flex flex-wrap justify-center gap-x-7 gap-y-2 mt-1 text-[11px] text-muted-foreground">
-              <LegendDot color={forest} label="Completed" />
-              <LegendDot color="hsl(158 52% 20%)" label="In progress" />
+              <LegendDot color={chartOrders} label="Completed" />
+              <LegendDot color="hsl(var(--chart-2))" label="In progress" />
               <LegendDot pattern label="Pending" />
             </div>
           </div>
@@ -549,7 +549,7 @@ function StaffDashboard() {
               <div className="relative mt-6 h-[232px]">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[220px] w-[220px] rounded-full bg-[hsl(158_60%_88%/.26)] transition-transform duration-300 hover:scale-[1.03] z-10 cursor-default">
+                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[220px] w-[220px] rounded-full bg-brand-200/26 transition-transform duration-300 hover:scale-[1.03] z-10 cursor-default">
                       <p className="absolute left-1/2 top-[7%] -translate-x-1/2 text-sm font-semibold text-foreground">
                         ₹{formatCompactCurrency(quarterTotals[0])}
                       </p>
@@ -560,7 +560,7 @@ function StaffDashboard() {
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[176px] w-[176px] rounded-full bg-[hsl(158_58%_72%/.30)] transition-transform duration-300 hover:scale-[1.04] z-20 cursor-default">
+                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[176px] w-[176px] rounded-full bg-brand-300/30 transition-transform duration-300 hover:scale-[1.04] z-20 cursor-default">
                       <p className="absolute left-1/2 top-[8%] -translate-x-1/2 text-sm font-semibold text-foreground">
                         ₹{formatCompactCurrency(quarterTotals[1])}
                       </p>
@@ -571,7 +571,7 @@ function StaffDashboard() {
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[136px] w-[136px] rounded-full bg-[hsl(158_56%_52%/.34)] transition-transform duration-300 hover:scale-[1.05] z-30 cursor-default">
+                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[136px] w-[136px] rounded-full bg-brand-400/34 transition-transform duration-300 hover:scale-[1.05] z-30 cursor-default">
                       <p className="absolute left-1/2 top-[10%] -translate-x-1/2 text-sm font-semibold text-foreground">
                         ₹{formatCompactCurrency(quarterTotals[2])}
                       </p>
@@ -582,7 +582,7 @@ function StaffDashboard() {
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[88px] w-[88px] rounded-full bg-[hsl(158_64%_34%)] shadow-md transition-transform duration-300 hover:scale-[1.08] z-40 cursor-default">
+                    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 h-[88px] w-[88px] rounded-full bg-brand-600 shadow-md transition-transform duration-300 hover:scale-[1.08] z-40 cursor-default">
                       <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[1.23rem] font-bold leading-none tracking-tight text-white">
                         ₹{formatCompactCurrency(annualRevenue)}
                       </p>
@@ -637,9 +637,9 @@ function LegendDot({
   pattern?: boolean;
 }) {
   const patternStyle: React.CSSProperties = {
-    backgroundColor: "hsl(150 24% 92%)",
+    backgroundColor: "hsl(var(--chart-pattern-bg))",
     backgroundImage:
-      "repeating-linear-gradient(135deg, hsl(160 14% 62%) 0 2px, transparent 2px 6px)",
+      "repeating-linear-gradient(135deg, hsl(var(--chart-pattern-stripe)) 0 2px, transparent 2px 6px)",
     backgroundSize: "8px 8px",
   };
 
@@ -700,8 +700,8 @@ function FulfillmentGauge({
       <svg viewBox="0 0 420 320" className="h-full w-full" aria-label="Project progress gauge">
         <defs>
           <pattern id="pending-stripes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="9" height="8" fill="hsl(150 24% 92%)" />
-            <rect width="4" height="8" fill="hsl(160 14% 68%)" />
+            <rect width="9" height="8" fill="hsl(var(--chart-pattern-bg))" />
+            <rect width="4" height="8" fill="hsl(var(--chart-pattern-stripe))" />
           </pattern>
         </defs>
         {arcRenderOrder.map((arc, idx) => (
@@ -718,7 +718,7 @@ function FulfillmentGauge({
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pt-14">
         <p className="text-[3rem] font-semibold leading-[0.92] tracking-tight text-black tabular-nums">{completedPct}%</p>
-        <p className="text-[1.05rem] leading-none text-[hsl(158_64%_28%)] mt-1">Order Completed</p>
+        <p className="text-[1.05rem] leading-none text-primary mt-1">Order Completed</p>
       </div>
     </div>
   );

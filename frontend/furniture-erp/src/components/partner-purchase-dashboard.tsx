@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import {
   type User,
   type UpdatePurchaseOrderStatusBodyStatus,
@@ -11,14 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { partnerPortalLabel } from "@/lib/partner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Factory, Truck } from "lucide-react";
@@ -100,6 +94,82 @@ export default function PartnerPurchaseDashboard() {
   const canEditRow = (s: string) =>
     !["cancelled", "delivered"].includes(s);
 
+  const partnerPos = (poData?.data ?? []) as any[];
+
+  const columns = useMemo<ColumnDef<(typeof partnerPos)[number]>[]>(
+    () => [
+      {
+        accessorKey: "poNumber",
+        header: "PO #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-medium">{row.original.poNumber}</span>
+        ),
+      },
+      {
+        id: "branch",
+        header: "Branch",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{row.original.branch?.name ?? "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "totalAmount",
+        header: () => <span className="text-right block w-full">Amount (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        cell: ({ row }) => `₹${Number(row.original.totalAmount).toLocaleString()}`,
+      },
+      {
+        accessorKey: "expectedDelivery",
+        header: "Expected",
+        cell: ({ row }) =>
+          row.original.expectedDelivery ? (
+            <span className="text-muted-foreground text-sm">
+              {new Date(row.original.expectedDelivery).toLocaleDateString()}
+            </span>
+          ) : (
+            "—"
+          ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => {
+          const po = row.original;
+          return canEditRow(po.status) ? (
+            <Select
+              value={po.status}
+              onValueChange={(val: string) =>
+                updateStatus.mutate({
+                  id: po.id,
+                  data: { status: val as UpdatePurchaseOrderStatusBodyStatus },
+                })
+              }
+            >
+              <SelectTrigger className="h-8 w-[164px] border-none bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:shrink-0">
+                <SelectValue asChild>
+                  <span className="inline-flex">{getStatusBadge(po.status)}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {[po.status, ...PARTNER_ALLOWED]
+                  .filter((v, i, a) => a.indexOf(v) === i)
+                  .filter((v) => v === po.status || PARTNER_ALLOWED.includes(v as any))
+                  .map((s) => (
+                    <SelectItem key={s} value={s} className="capitalize">
+                      {s.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            getStatusBadge(po.status)
+          );
+        },
+      },
+    ],
+    [updateStatus, getStatusBadge],
+  );
+
   const orgLabel = user ? partnerPortalLabel(user as User) : "";
   const isSupplierPortal = !!user?.supplierId;
   const Icon = isSupplierPortal ? Truck : Factory;
@@ -144,76 +214,12 @@ export default function PartnerPurchaseDashboard() {
             </SelectContent>
           </Select>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>PO #</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead className="text-right">Amount (₹)</TableHead>
-                <TableHead>Expected</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : poData?.data?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    No purchase orders yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                poData?.data?.map((po: any) => (
-                  <TableRow key={po.id}>
-                    <TableCell className="font-mono text-sm font-medium">{po.poNumber}</TableCell>
-                    <TableCell className="text-muted-foreground">{po.branch?.name ?? "—"}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      ₹{Number(po.totalAmount).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {canEditRow(po.status) ? (
-                        <Select
-                          value={po.status}
-                          onValueChange={(val: string) =>
-                            updateStatus.mutate({
-                              id: po.id,
-                              data: { status: val as UpdatePurchaseOrderStatusBodyStatus },
-                            })
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-[164px] border-none bg-transparent shadow-none p-0 focus:ring-0 [&>svg]:shrink-0">
-                            <SelectValue asChild>
-                              <span className="inline-flex">{getStatusBadge(po.status)}</span>
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {[po.status, ...PARTNER_ALLOWED]
-                              .filter((v, i, a) => a.indexOf(v) === i)
-                              .filter((v) => v === po.status || PARTNER_ALLOWED.includes(v as any))
-                              .map((s) => (
-                                <SelectItem key={s} value={s} className="capitalize">
-                                  {s.replace(/_/g, " ")}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        getStatusBadge(po.status)
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={partnerPos}
+            isLoading={isLoading}
+            emptyMessage="No purchase orders yet."
+          />
 
           {poData && poData.total > poData.limit && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-sm text-muted-foreground">

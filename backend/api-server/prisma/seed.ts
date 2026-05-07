@@ -6,6 +6,7 @@
  */
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { decrementProductStock, syncProductStockFromVariants } from "../src/lib/product-stock";
 
 const prisma = new PrismaClient();
 
@@ -124,7 +125,7 @@ async function main() {
   const catBed = await prisma.category.create({
     data: { name: "Bedroom" },
   });
-  await prisma.category.create({
+  const catSofas = await prisma.category.create({
     data: { name: "Sofas", parentId: catLiving.id },
   });
   await prisma.category.create({
@@ -138,7 +139,7 @@ async function main() {
       categoryId: catLiving.id,
       price: D(45999),
       gstPercent: D(18),
-      stockQty: 12,
+      stockQty: 0,
       lowStockThreshold: 3,
       description: "Solid oak frame, fabric upholstery",
     },
@@ -174,11 +175,25 @@ async function main() {
       name: "Charcoal Grey",
       sku: "SOFA-OAK-3S-CG",
       price: D(46999),
-      stockQty: 4,
-      attributes: JSON.stringify({ color: "Charcoal Grey" }),
+      stockQty: 7,
+      lowStockThreshold: 3,
+      attributes: JSON.stringify({ Color: "Charcoal Grey" }),
       isActive: true,
     },
   });
+  await prisma.productVariant.create({
+    data: {
+      productId: p1.id,
+      name: "Sand Beige",
+      sku: "SOFA-OAK-3S-SB",
+      price: D(45999),
+      stockQty: 5,
+      lowStockThreshold: 3,
+      attributes: JSON.stringify({ Color: "Sand Beige" }),
+      isActive: true,
+    },
+  });
+  await syncProductStockFromVariants(p1.id);
 
   const supplier = await prisma.supplier.create({
     data: {
@@ -261,10 +276,7 @@ async function main() {
     },
   });
 
-  await prisma.product.update({
-    where: { id: p1.id },
-    data: { stockQty: 11 },
-  });
+  await decrementProductStock(p1.id, 1);
   await prisma.inventoryLog.create({
     data: {
       productId: p1.id,

@@ -131,12 +131,46 @@ export interface CreateCategoryBody {
   parentId?: number | null;
 }
 
+export interface AttributeKeyWithValues {
+  id: number;
+  name: string;
+  values: string[];
+}
+
+export interface AttributeCatalogResponse {
+  keys: AttributeKeyWithValues[];
+}
+
+export interface CreateAttributeKeyBody {
+  name: string;
+}
+
+export interface CreateAttributeOptionBody {
+  value: string;
+}
+
+export interface AttributeOptionListResponse {
+  keyId: number;
+  values: string[];
+}
+
+export interface ProductImageUploadResponse {
+  imageUrl: string;
+}
+
 export interface Product {
   id: number;
   name: string;
   sku: string;
+  imageUrl?: string | null;
   categoryId?: number | null;
   category?: Category | null;
+  /** Display path e.g. "Parent · Child" when category has parentId */
+  categoryPath?: string | null;
+  /** Number of product variants (from DB aggregate) */
+  variantCount?: number;
+  /** True when simple SKU is below threshold or any variant is below its threshold */
+  isLowStock?: boolean | null;
   price: number;
   gstPercent: number;
   stockQty: number;
@@ -145,15 +179,55 @@ export interface Product {
   createdAt: string;
 }
 
+export type CreateProductBodyInventoryMode = typeof CreateProductBodyInventoryMode[keyof typeof CreateProductBodyInventoryMode];
+
+
+export const CreateProductBodyInventoryMode = {
+  simple: 'simple',
+  variants: 'variants',
+} as const;
+
+export interface InitialVariantInput {
+  name: string;
+  sku: string;
+  price?: number | null;
+  stockQty?: number;
+  lowStockThreshold?: number;
+  /** JSON object string e.g. {"Color":"Red"} */
+  attributes?: string | null;
+  imageUrl?: string | null;
+}
+
+/**
+ * Use inventoryMode simple with stockQty for a single SKU. Use variants with initialVariants to create variants in one request. When variants exist, product stockQty is the sum of variant stocks.
+
+ */
 export interface CreateProductBody {
+  name: string;
+  sku: string;
+  categoryId?: number | null;
+  imageUrl?: string | null;
+  price: number;
+  gstPercent: number;
+  lowStockThreshold: number;
+  description?: string | null;
+  inventoryMode?: CreateProductBodyInventoryMode;
+  /** On-hand units when inventoryMode is simple */
+  stockQty?: number;
+  initialVariants?: InitialVariantInput[];
+}
+
+export interface UpdateProductBody {
   name: string;
   sku: string;
   categoryId?: number | null;
   price: number;
   gstPercent: number;
-  stockQty: number;
   lowStockThreshold: number;
   description?: string | null;
+  /** Only applied when the product has no variants */
+  stockQty?: number;
+  imageUrl?: string | null;
 }
 
 export interface ProductListResponse {
@@ -168,8 +242,10 @@ export interface ProductVariant {
   productId: number;
   name: string;
   sku: string;
+  imageUrl?: string | null;
   price?: number | null;
   stockQty: number;
+  lowStockThreshold: number;
   /** JSON string of key-value attribute pairs e.g. {"Size":"King","Color":"Brown"} */
   attributes?: string | null;
   isActive: boolean;
@@ -179,8 +255,10 @@ export interface ProductVariant {
 export interface CreateProductVariantBody {
   name: string;
   sku: string;
+  imageUrl?: string | null;
   price?: number | null;
-  stockQty: number;
+  stockQty?: number;
+  lowStockThreshold?: number;
   attributes?: string | null;
   isActive?: boolean;
 }
@@ -188,8 +266,10 @@ export interface CreateProductVariantBody {
 export interface UpdateProductVariantBody {
   name?: string;
   sku?: string;
+  imageUrl?: string | null;
   price?: number | null;
   stockQty?: number;
+  lowStockThreshold?: number;
   attributes?: string | null;
   isActive?: boolean;
 }
@@ -206,6 +286,8 @@ export const InventoryLogType = {
 export interface InventoryLog {
   id: number;
   productId: number;
+  variantId?: number | null;
+  variant?: ProductVariant | null;
   product?: Product | null;
   type: InventoryLogType;
   quantity: number;
@@ -224,6 +306,7 @@ export const AdjustInventoryBodyType = {
 
 export interface AdjustInventoryBody {
   productId: number;
+  variantId?: number | null;
   type: AdjustInventoryBodyType;
   quantity: number;
   notes?: string | null;
@@ -625,6 +708,10 @@ categoryId?: number;
 lowStock?: boolean;
 page?: number;
 limit?: number;
+};
+
+export type UploadProductImageBody = {
+  image: Blob;
 };
 
 export type ListInventoryLogsParams = {

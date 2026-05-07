@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListInvoices, 
   useGetInvoice,
@@ -32,6 +34,63 @@ export default function Invoices() {
     setIsViewDialogOpen(true);
   };
 
+  const invoices = invoicesData?.data ?? [];
+
+  const columns = useMemo<ColumnDef<(typeof invoices)[number]>[]>(
+    () => [
+      {
+        accessorKey: "invoiceNumber",
+        header: "Invoice #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-medium text-primary">{row.original.invoiceNumber}</span>
+        ),
+      },
+      {
+        id: "orderNumber",
+        header: "Order #",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">{row.original.order?.orderNumber}</span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "isGst",
+        header: "Type",
+        cell: ({ row }) =>
+          row.original.isGst ? (
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">GST</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Standard</Badge>
+          ),
+      },
+      {
+        accessorKey: "totalAmount",
+        header: () => <span className="text-right block w-full">Total Amount (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[80px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <Button variant="ghost" size="icon" onClick={() => openViewDialog(row.original.id)}>
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        ),
+      },
+    ],
+    [openViewDialog],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -42,70 +101,29 @@ export default function Invoices() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Invoice #</TableHead>
-              <TableHead>Order #</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Total Amount (₹)</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : invoicesData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No invoices found.</TableCell>
-              </TableRow>
-            ) : (
-              invoicesData?.data?.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-mono text-sm font-medium text-primary">{invoice.invoiceNumber}</TableCell>
-                  <TableCell className="font-mono text-xs">{invoice.order?.orderNumber}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(invoice.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {invoice.isGst ? (
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">GST</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Standard</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">₹{invoice.totalAmount.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openViewDialog(invoice.id)}>
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {invoicesData && invoicesData.total > invoicesData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * invoicesData.limit + 1} to {Math.min(page * invoicesData.limit, invoicesData.total)} of {invoicesData.total} invoices
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * invoicesData.limit >= invoicesData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={invoices}
+          isLoading={isLoading}
+          emptyMessage="No invoices found."
+          footer={
+            invoicesData && invoicesData.total > invoicesData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * invoicesData.limit + 1} to {Math.min(page * invoicesData.limit, invoicesData.total)} of {invoicesData.total} invoices
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * invoicesData.limit >= invoicesData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

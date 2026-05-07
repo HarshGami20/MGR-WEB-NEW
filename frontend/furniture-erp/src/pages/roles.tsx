@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListRoles, 
   useCreateRole, 
@@ -9,7 +11,6 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Edit, Trash2 } from "lucide-react";
@@ -17,6 +18,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/lib/permissions";
 
@@ -140,6 +142,47 @@ export default function Roles() {
     }
   };
 
+  const rolesList = (Array.isArray(rolesData) ? rolesData : (rolesData as any)?.data ?? []) as any[];
+
+  const columns = useMemo<ColumnDef<(typeof rolesList)[number]>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Role Name",
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        id: "overview",
+        header: "Permissions Overview",
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            Custom configuration across {Object.keys(row.original.permissions || {}).length} modules
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            {can("roles", "edit") && (
+              <Button variant="ghost" size="icon" onClick={() => openEditDialog(row.original)}>
+                <Edit className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            )}
+            {can("roles", "delete") && (
+              <Button variant="ghost" size="icon" onClick={() => handleDelete(row.original.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [can, openEditDialog, handleDelete],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -156,49 +199,12 @@ export default function Roles() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Role Name</TableHead>
-              <TableHead>Permissions Overview</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : (rolesData as any[])?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No roles found.</TableCell>
-              </TableRow>
-            ) : (
-              (rolesData as any[])?.map((role: any) => (
-                <TableRow key={role.id}>
-                  <TableCell className="font-medium">{role.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    Custom configuration across {Object.keys(role.permissions || {}).length} modules
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      {can("roles", "edit") && (
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(role)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      )}
-                      {can("roles", "delete") && (
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(role.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <DataTable
+          columns={columns}
+          data={rolesList}
+          isLoading={isLoading}
+          emptyMessage="No roles found."
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

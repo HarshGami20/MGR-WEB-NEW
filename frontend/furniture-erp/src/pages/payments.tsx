@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListPayments, 
   useCreatePayment,
@@ -8,7 +10,6 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -96,12 +97,54 @@ export default function Payments() {
 
   const getModeBadge = (mode: string) => {
     switch (mode) {
-      case "cash": return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Cash</Badge>;
+      case "cash": return <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">Cash</Badge>;
       case "bank_transfer": return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Bank Transfer</Badge>;
       case "upi": return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">UPI</Badge>;
       default: return <Badge variant="outline">{mode}</Badge>;
     }
   };
+
+  const payments = (paymentsData?.data ?? []) as any[];
+
+  const columns = useMemo<ColumnDef<(typeof payments)[number]>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "orderNum",
+        header: "Order #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm">{row.original.order?.orderNumber}</span>
+        ),
+      },
+      {
+        id: "customer",
+        header: "Customer",
+        cell: ({ row }) => (
+          <span className="font-medium">{row.original.order?.customerName}</span>
+        ),
+      },
+      {
+        accessorKey: "mode",
+        header: "Payment Mode",
+        cell: ({ row }) => getModeBadge(row.original.mode),
+      },
+      {
+        accessorKey: "amount",
+        header: () => <span className="text-right block w-full">Amount (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-bold text-green-600" },
+        cell: ({ row }) => `+₹${row.original.amount.toLocaleString()}`,
+      },
+    ],
+    [getModeBadge],
+  );
 
   return (
     <div className="space-y-6">
@@ -117,58 +160,29 @@ export default function Payments() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Order #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Payment Mode</TableHead>
-              <TableHead className="text-right">Amount (₹)</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : paymentsData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No payments found.</TableCell>
-              </TableRow>
-            ) : (
-              paymentsData?.data?.map((payment: any) => (
-                <TableRow key={payment.id}>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(payment.createdAt).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{payment.order?.orderNumber}</TableCell>
-                  <TableCell className="font-medium">{payment.order?.customerName}</TableCell>
-                  <TableCell>{getModeBadge(payment.mode)}</TableCell>
-                  <TableCell className="text-right font-bold text-green-600">
-                    +₹{payment.amount.toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {paymentsData && paymentsData.total > paymentsData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * paymentsData.limit + 1} to {Math.min(page * paymentsData.limit, paymentsData.total)} of {paymentsData.total} payments
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * paymentsData.limit >= paymentsData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={payments}
+          isLoading={isLoading}
+          emptyMessage="No payments found."
+          footer={
+            paymentsData && paymentsData.total > paymentsData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * paymentsData.limit + 1} to {Math.min(page * paymentsData.limit, paymentsData.total)} of {paymentsData.total} payments
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * paymentsData.limit >= paymentsData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

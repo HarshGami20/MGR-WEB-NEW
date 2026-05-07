@@ -42,7 +42,7 @@ npm run dev
 
 ```bash
 npm run build
-npm start
+npm startt
 ```
 
 API routes are mounted under `/api`.

@@ -7,13 +7,28 @@ const router: IRouter = Router();
 
 router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "read"), async (_req, res): Promise<void> => {
   const orders = await prisma.order.findMany();
-  const products = await prisma.product.findMany();
+  const products = await prisma.product.findMany({ include: { _count: { select: { variants: true } } } });
   const suppliers = await prisma.supplier.findMany();
+
+  const idsWithVariants = products.filter((p) => p._count.variants > 0).map((p) => p.id);
+  const productLowFromVariant = new Set<number>();
+  if (idsWithVariants.length) {
+    const vrows = await prisma.productVariant.findMany({
+      where: { productId: { in: idsWithVariants } },
+      select: { productId: true, stockQty: true, lowStockThreshold: true },
+    });
+    for (const v of vrows) {
+      if (v.stockQty <= v.lowStockThreshold) productLowFromVariant.add(v.productId);
+    }
+  }
 
   const totalOrders = orders.length;
   const totalRevenue = orders.filter(o => o.status === "completed").reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
   const pendingOrders = orders.filter(o => o.status === "pending").length;
-  const lowStockCount = products.filter(p => p.stockQty <= p.lowStockThreshold).length;
+  const lowStockCount = products.filter((p) => {
+    if (p._count.variants === 0) return p.stockQty <= p.lowStockThreshold;
+    return productLowFromVariant.has(p.id);
+  }).length;
   const totalProducts = products.length;
   const totalSuppliers = suppliers.length;
 

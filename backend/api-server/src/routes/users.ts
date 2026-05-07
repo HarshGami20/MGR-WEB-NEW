@@ -73,12 +73,12 @@ router.get("/users/:id", requireAuth, requirePermission("users", "read"), async 
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const publicUser = await loadUserPublicById(params.data.id);
   if (!publicUser) { res.status(404).json({ error: "User not found" }); return; }
-  let role = null;
+  let role: (NonNullable<Awaited<ReturnType<typeof prisma.role.findUnique>>> & { permissions: unknown }) | null = null;
   if (publicUser.roleId) {
     const r = await prisma.role.findUnique({ where: { id: publicUser.roleId } });
     if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
   }
-  let branch = null;
+  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
   if (publicUser.branchId) {
     const b = await prisma.branch.findUnique({ where: { id: publicUser.branchId } });
     if (b) branch = b;

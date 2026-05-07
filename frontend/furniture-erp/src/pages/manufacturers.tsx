@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { useListManufacturers, useCreateManufacturer, useUpdateManufacturer, useDeleteManufacturer, getListManufacturersQueryKey } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2 } from "lucide-react";
@@ -120,6 +121,59 @@ export default function Manufacturers() {
     }
   };
 
+  const manufacturers = manufacturersData?.data ?? [];
+
+  const columns = useMemo<ColumnDef<(typeof manufacturers)[number]>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "contactPerson",
+        header: "Contact Person",
+        cell: ({ row }) => row.original.contactPerson || "—",
+      },
+      {
+        accessorKey: "mobile",
+        header: "Mobile",
+        cell: ({ row }) => row.original.mobile || "—",
+      },
+      {
+        accessorKey: "specialization",
+        header: "Specialization",
+        cell: ({ row }) => row.original.specialization || "—",
+      },
+      {
+        accessorKey: "isActive",
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.isActive ? (
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="icon" onClick={() => openEditDialog(row.original)}>
+              <Edit className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => handleDelete(row.original.id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [openEditDialog, handleDelete],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -146,71 +200,29 @@ export default function Manufacturers() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Contact Person</TableHead>
-              <TableHead>Mobile</TableHead>
-              <TableHead>Specialization</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : manufacturersData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No manufacturers found.</TableCell>
-              </TableRow>
-            ) : (
-              manufacturersData?.data?.map((manufacturer) => (
-                <TableRow key={manufacturer.id}>
-                  <TableCell className="font-medium">{manufacturer.name}</TableCell>
-                  <TableCell>{manufacturer.contactPerson || "-"}</TableCell>
-                  <TableCell>{manufacturer.mobile || "-"}</TableCell>
-                  <TableCell>{manufacturer.specialization || "-"}</TableCell>
-                  <TableCell>
-                    {manufacturer.isActive ? (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(manufacturer)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(manufacturer.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {manufacturersData && manufacturersData.total > manufacturersData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * manufacturersData.limit + 1} to {Math.min(page * manufacturersData.limit, manufacturersData.total)} of {manufacturersData.total} manufacturers
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * manufacturersData.limit >= manufacturersData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={manufacturers}
+          isLoading={isLoading}
+          emptyMessage="No manufacturers found."
+          footer={
+            manufacturersData && manufacturersData.total > manufacturersData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * manufacturersData.limit + 1} to {Math.min(page * manufacturersData.limit, manufacturersData.total)} of {manufacturersData.total} manufacturers
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * manufacturersData.limit >= manufacturersData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

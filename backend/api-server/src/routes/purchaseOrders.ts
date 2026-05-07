@@ -3,6 +3,7 @@ import { Router, IRouter } from "express";
 import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody, GetPurchaseOrderParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { prisma, toNumber } from "../lib/prisma";
+import { incrementProductStock } from "../lib/product-stock";
 import { getPartnerScope, purchaseOrderMatchesScope, PARTNER_ALLOWED_PO_STATUSES } from "../lib/partner-scope";
 import { requirePermission } from "../lib/permissions";
 
@@ -18,16 +19,17 @@ async function enrichPO(po: any) {
     const product = await prisma.product.findUnique({ where: { id: item.productId } });
     return { ...item, unitPrice: toNumber(item.unitPrice), product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null };
   }));
-  let supplier = null, manufacturer = null;
+  let supplier: Awaited<ReturnType<typeof prisma.supplier.findUnique>> = null;
+  let manufacturer: Awaited<ReturnType<typeof prisma.manufacturer.findUnique>> = null;
   if (po.supplierId) {
     const s = await prisma.supplier.findUnique({ where: { id: po.supplierId } });
-    supplier = s || null;
+    supplier = s ?? null;
   }
   if (po.manufacturerId) {
     const m = await prisma.manufacturer.findUnique({ where: { id: po.manufacturerId } });
-    manufacturer = m || null;
+    manufacturer = m ?? null;
   }
-  let branch = null;
+  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
   if (po.branchId) {
     const b = await prisma.branch.findUnique({ where: { id: po.branchId } });
     if (b) branch = b;
@@ -167,21 +169,31 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
     res.status(403).json({ error: "That status cannot be set from the supplier/manufacturer portal" });
     return;
   }
-  const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } }).catch(() => null);
-  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
-
-  // Auto-increase stock on delivery
-  if (parsed.data.status === "delivered") {
-    const items = await prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: id } });
-    for (const item of items) {
-      const product = await prisma.product.findUnique({ where: { id: item.productId } });
-      if (product) {
-        await prisma.product.update({ where: { id: item.productId }, data: { stockQty: product.stockQty + item.quantity } });
-        await prisma.inventoryLog.create({ data: { productId: item.productId, type: "in", quantity: item.quantity, notes: `PO ${po.poNumber} delivered` } });
+  try {
+    const po = await prisma.$transaction(async (tx) => {
+      const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } });
+      const applyInbound = parsed.data.status === "delivered" && existing.status !== "delivered";
+      if (applyInbound) {
+        const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: id } });
+        for (const item of items) {
+          await incrementProductStock(item.productId, item.quantity, tx);
+          await tx.inventoryLog.create({
+            data: {
+              productId: item.productId,
+              type: "in",
+              quantity: item.quantity,
+              notes: `PO ${updated.poNumber} delivered`,
+            },
+          });
+        }
       }
-    }
+      return updated;
+    });
+    res.json(await enrichPO(po));
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(400).json({ error: msg });
   }
-  res.json(await enrichPO(po));
 });
 
 export default router;

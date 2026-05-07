@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListPurchaseOrders, 
   useCreatePurchaseOrder, 
@@ -11,7 +13,6 @@ import {
 import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -143,6 +144,82 @@ export default function PurchaseOrders() {
 
   const watchType = form.watch("type");
 
+  const pos = (poData?.data ?? []) as any[];
+
+  const columns = useMemo<ColumnDef<(typeof pos)[number]>[]>(
+    () => [
+      {
+        accessorKey: "poNumber",
+        header: "PO #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-medium">{row.original.poNumber}</span>
+        ),
+      },
+      {
+        accessorKey: "type",
+        header: "Type",
+        cell: ({ row }) => <span className="capitalize">{row.original.type}</span>,
+      },
+      {
+        id: "vendor",
+        header: "Vendor",
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.type === "supplier"
+              ? row.original.supplier?.name
+              : row.original.manufacturer?.name}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => {
+          const po = row.original;
+          return can("purchaseOrders", "edit") ? (
+            <Select
+              value={po.status}
+              onValueChange={(val: any) => updateStatus.mutate({ id: po.id, data: { status: val } })}
+            >
+              <SelectTrigger className="h-8 w-[140px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+                {getStatusBadge(po.status)}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
+                <SelectItem value="in_production">In Production</SelectItem>
+                <SelectItem value="shipped">Shipped</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            getStatusBadge(po.status)
+          );
+        },
+      },
+      {
+        accessorKey: "totalAmount",
+        header: () => <span className="text-right block w-full">Amount (₹)</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+      },
+      {
+        accessorKey: "expectedDelivery",
+        header: "Expected",
+        cell: ({ row }) =>
+          row.original.expectedDelivery ? (
+            <span className="text-muted-foreground">
+              {new Date(row.original.expectedDelivery).toLocaleDateString()}
+            </span>
+          ) : (
+            "—"
+          ),
+      },
+    ],
+    [can, getStatusBadge, updateStatus],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -186,81 +263,29 @@ export default function PurchaseOrders() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>PO #</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Vendor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Amount (₹)</TableHead>
-              <TableHead>Expected</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : poData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No purchase orders found.</TableCell>
-              </TableRow>
-            ) : (
-              poData?.data?.map((po: any) => (
-                <TableRow key={po.id}>
-                  <TableCell className="font-mono text-sm font-medium">{po.poNumber}</TableCell>
-                  <TableCell className="capitalize">{po.type}</TableCell>
-                  <TableCell className="font-medium">
-                    {po.type === "supplier" ? po.supplier?.name : po.manufacturer?.name}
-                  </TableCell>
-                  <TableCell>
-                    {can("purchaseOrders", "edit") ? (
-                    <Select 
-                      value={po.status} 
-                      onValueChange={(val: any) => updateStatus.mutate({ id: po.id, data: { status: val } })}
-                    >
-                      <SelectTrigger className="h-8 w-[140px] border-none bg-transparent shadow-none p-0 focus:ring-0">
-                        {getStatusBadge(po.status)}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="in_production">In Production</SelectItem>
-                        <SelectItem value="shipped">Shipped</SelectItem>
-                        <SelectItem value="delivered">Delivered</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    ) : (
-                      getStatusBadge(po.status)
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">₹{po.totalAmount.toLocaleString()}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : "-"}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {poData && poData.total > poData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * poData.limit + 1} to {Math.min(page * poData.limit, poData.total)} of {poData.total} POs
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * poData.limit >= poData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={pos}
+          isLoading={isLoading}
+          emptyMessage="No purchase orders found."
+          footer={
+            poData && poData.total > poData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * poData.limit + 1} to {Math.min(page * poData.limit, poData.total)} of {poData.total} POs
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * poData.limit >= poData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

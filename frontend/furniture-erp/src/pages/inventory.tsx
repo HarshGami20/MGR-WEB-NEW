@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { 
   useListInventoryLogs, 
   useAdjustInventory, 
   useGetLowStockProducts, 
+  useListProducts,
+  useListProductVariants,
   getListInventoryLogsQueryKey,
   getListProductsQueryKey,
   getGetLowStockProductsQueryKey
@@ -10,20 +14,23 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw, ChevronsUpDown, Check } from "lucide-react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const adjustSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
+  variantId: z.coerce.number().optional().nullable(),
   type: z.enum(["in", "out", "adjustment"]),
   quantity: z.coerce.number().min(1, "Quantity must be positive"),
   notes: z.string().optional().nullable(),
@@ -34,7 +41,9 @@ type AdjustFormValues = z.infer<typeof adjustSchema>;
 export default function Inventory() {
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [filterType, setFilterType] = useState<"all" | "in" | "out" | "adjustment">("all");
+  const [filterSource, setFilterSource] = useState<"all" | "manual" | "order" | "product" | "variant" | "other">("all");
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -46,6 +55,8 @@ export default function Inventory() {
   });
 
   const { data: lowStockData } = useGetLowStockProducts();
+  const { data: productsData } = useListProducts({ page: 1, limit: 500 });
+  const productOptions = productsData?.data ?? [];
 
   const adjustInventory = useAdjustInventory({
     mutation: {
@@ -54,6 +65,7 @@ export default function Inventory() {
         queryClient.invalidateQueries({ queryKey: getGetLowStockProductsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
         toast({ title: "Inventory adjusted successfully" });
+        setPage(1);
         setIsDialogOpen(false);
       },
       onError: (e: any) => {
@@ -66,15 +78,27 @@ export default function Inventory() {
     resolver: zodResolver(adjustSchema),
     defaultValues: {
       productId: 0,
+      variantId: null,
       type: "in",
       quantity: 1,
       notes: "",
     },
   });
 
+  const selectedProductId = Number(form.watch("productId") ?? 0);
+  const selectedVariantId = Number(form.watch("variantId") ?? 0);
+
+  const { data: variantsData, isLoading: variantsLoading } = useListProductVariants(
+    selectedProductId > 0 ? selectedProductId : (undefined as any),
+    { query: { enabled: selectedProductId > 0 } }
+  );
+  const variants = variantsData ?? [];
+  const hasVariants = variants.length > 0;
+
   const openAdjustDialog = (productId?: number) => {
     form.reset({
       productId: productId || 0,
+      variantId: null,
       type: "in",
       quantity: 1,
       notes: "",
@@ -83,6 +107,10 @@ export default function Inventory() {
   };
 
   const onSubmit = (data: AdjustFormValues) => {
+    if (hasVariants && !data.variantId) {
+      form.setError("variantId", { message: "Variant is required for this product" });
+      return;
+    }
     adjustInventory.mutate({ data });
   };
 
@@ -103,6 +131,102 @@ export default function Inventory() {
       default: return <Badge variant="outline">{type}</Badge>;
     }
   };
+
+  const getLogSource = (notes?: string | null): "manual" | "order" | "product" | "variant" | "other" => {
+    const n = (notes || "").toLowerCase();
+    if (!n) return "manual";
+    if (n.includes("order ")) return "order";
+    if (n.includes("variant")) return "variant";
+    if (n.includes("product")) return "product";
+    if (n.includes("restock") || n.includes("damaged") || n.includes("manual")) return "manual";
+    return "other";
+  };
+
+  const getSourceBadge = (source: ReturnType<typeof getLogSource>) => {
+    switch (source) {
+      case "manual":
+        return <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200">Manual</Badge>;
+      case "order":
+        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">Order</Badge>;
+      case "product":
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Product</Badge>;
+      case "variant":
+        return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Variant</Badge>;
+      default:
+        return <Badge variant="outline">Other</Badge>;
+    }
+  };
+
+  const logs = logsData?.data ?? [];
+  const filteredLogs =
+    filterSource === "all"
+      ? logs
+      : logs.filter((log) => getLogSource(log.notes) === filterSource);
+
+  const columns = useMemo<ColumnDef<(typeof logs)[number]>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-sm text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "product",
+        header: "Product",
+        cell: ({ row }) => (
+          <div className="min-w-0">
+            <div className="font-medium truncate">
+              {row.original.product?.name || "Unknown Product"}
+            </div>
+            {(row.original as any).variant?.name ? (
+              <div className="text-xs text-muted-foreground truncate">
+                Variant: {(row.original as any).variant.name}
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "type",
+        header: "Type",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            {getTypeIcon(row.original.type)}
+            {getTypeBadge(row.original.type)}
+          </div>
+        ),
+      },
+      {
+        id: "source",
+        header: "Source",
+        cell: ({ row }) => getSourceBadge(getLogSource(row.original.notes)),
+      },
+      {
+        accessorKey: "quantity",
+        header: () => <span className="text-right block w-full">Quantity</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        cell: ({ row }) =>
+          `${row.original.type === "out" ? "-" : "+"}${row.original.quantity}`,
+      },
+      {
+        accessorKey: "notes",
+        header: "Notes",
+        cell: ({ row }) => {
+          const n = row.original.notes || "";
+          return (
+            <span className="text-muted-foreground text-sm max-w-[200px] truncate block" title={n || undefined}>
+              {n || "—"}
+            </span>
+          );
+        },
+      },
+    ],
+    [getTypeIcon, getTypeBadge],
+  );
 
   return (
     <div className="space-y-6">
@@ -160,69 +284,49 @@ export default function Inventory() {
               <SelectItem value="adjustment">Adjustments</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={filterSource}
+            onValueChange={(val: any) => { setFilterSource(val); setPage(1); }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by source" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              <SelectItem value="manual">Manual</SelectItem>
+              <SelectItem value="order">Order</SelectItem>
+              <SelectItem value="product">Product</SelectItem>
+              <SelectItem value="variant">Variant</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Quantity</TableHead>
-              <TableHead>Notes</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : logsData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No inventory logs found.</TableCell>
-              </TableRow>
-            ) : (
-              logsData?.data?.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                    {new Date(log.createdAt).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="font-medium">{log.product?.name || "Unknown Product"}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {getTypeIcon(log.type)}
-                      {getTypeBadge(log.type)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {log.type === "out" ? "-" : "+"}{log.quantity}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate" title={log.notes || ""}>
-                    {log.notes || "-"}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {logsData && logsData.total > logsData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * logsData.limit + 1} to {Math.min(page * logsData.limit, logsData.total)} of {logsData.total} logs
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * logsData.limit >= logsData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={filteredLogs}
+          isLoading={isLoading}
+          emptyMessage="No inventory history found for selected filters."
+          footer={
+            logsData && logsData.total > logsData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * logsData.limit + 1} to {Math.min(page * logsData.limit, logsData.total)} of {logsData.total} logs
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * logsData.limit >= logsData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -238,14 +342,92 @@ export default function Inventory() {
                 name="productId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Product ID</FormLabel>
+                    <FormLabel>Product</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} />
+                      <Popover open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={productPickerOpen}
+                            className="w-full justify-between font-normal"
+                          >
+                            {field.value && field.value > 0
+                              ? (() => {
+                                  const selected = productOptions.find((p) => p.id === Number(field.value));
+                                  return selected ? `${selected.name} (${selected.sku})` : "Select product";
+                                })()
+                              : "Select product"}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[360px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search product by name or SKU..." />
+                            <CommandList>
+                              <CommandEmpty>No product found.</CommandEmpty>
+                              <CommandGroup>
+                                {productOptions.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={`${p.name} ${p.sku}`}
+                                    onSelect={() => {
+                                      field.onChange(p.id);
+                                      form.setValue("variantId", null);
+                                      setProductPickerOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        Number(field.value) === p.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                    <span className="truncate">{p.name}</span>
+                                    <span className="ml-2 text-xs text-muted-foreground font-mono">{p.sku}</span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
+              {hasVariants && (
+                <FormField
+                  control={form.control}
+                  name="variantId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Variant</FormLabel>
+                      <Select
+                        value={field.value != null ? String(field.value) : ""}
+                        onValueChange={(val) => field.onChange(val ? parseInt(val, 10) : null)}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={variantsLoading ? "Loading variants..." : "Select variant"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {variants.map((v: any) => (
+                            <SelectItem key={v.id} value={String(v.id)}>
+                              {v.name} ({v.sku}) · Stock {v.stockQty}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField

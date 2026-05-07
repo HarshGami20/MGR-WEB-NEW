@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import { useListSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, getListSuppliersQueryKey } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2 } from "lucide-react";
@@ -120,6 +121,61 @@ export default function Suppliers() {
     }
   };
 
+  const suppliers = suppliersData?.data ?? [];
+
+  const columns = useMemo<ColumnDef<(typeof suppliers)[number]>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "contactPerson",
+        header: "Contact Person",
+        cell: ({ row }) => row.original.contactPerson || "—",
+      },
+      {
+        accessorKey: "mobile",
+        header: "Mobile",
+        cell: ({ row }) => row.original.mobile || "—",
+      },
+      {
+        accessorKey: "gstNumber",
+        header: "GST Number",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">{row.original.gstNumber || "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "isActive",
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.isActive ? (
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="icon" onClick={() => openEditDialog(row.original)}>
+              <Edit className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => handleDelete(row.original.id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [openEditDialog, handleDelete],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -146,71 +202,29 @@ export default function Suppliers() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Contact Person</TableHead>
-              <TableHead>Mobile</TableHead>
-              <TableHead>GST Number</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : suppliersData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No suppliers found.</TableCell>
-              </TableRow>
-            ) : (
-              suppliersData?.data?.map((supplier) => (
-                <TableRow key={supplier.id}>
-                  <TableCell className="font-medium">{supplier.name}</TableCell>
-                  <TableCell>{supplier.contactPerson || "-"}</TableCell>
-                  <TableCell>{supplier.mobile || "-"}</TableCell>
-                  <TableCell className="font-mono text-xs">{supplier.gstNumber || "-"}</TableCell>
-                  <TableCell>
-                    {supplier.isActive ? (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(supplier)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(supplier.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        
-        {suppliersData && suppliersData.total > suppliersData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {(page - 1) * suppliersData.limit + 1} to {Math.min(page * suppliersData.limit, suppliersData.total)} of {suppliersData.total} suppliers
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * suppliersData.limit >= suppliersData.total}>
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={suppliers}
+          isLoading={isLoading}
+          emptyMessage="No suppliers found."
+          footer={
+            suppliersData && suppliersData.total > suppliersData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Showing {(page - 1) * suppliersData.limit + 1} to {Math.min(page * suppliersData.limit, suppliersData.total)} of {suppliersData.total} suppliers
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * suppliersData.limit >= suppliersData.total}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

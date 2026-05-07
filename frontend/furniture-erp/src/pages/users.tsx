@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable } from "@/components/data-table";
 import {
   useListUsers,
   useCreateUser,
@@ -15,7 +17,6 @@ import { useBranch } from "@/lib/branch-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -162,6 +163,130 @@ export default function Users() {
     }
   };
 
+  const users = usersData?.data ?? [];
+
+  const columns = useMemo<ColumnDef<(typeof users)[number]>[]>(
+    () => [
+      {
+        id: "nameCol",
+        header: "Name",
+        cell: ({ row }) => {
+          const user = row.original;
+          return (
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar className="h-9 w-9 rounded-full border border-border/60 shrink-0">
+                <AvatarImage src={user.avatarUrl || avatarUrlForName(user.name)} alt={user.name} />
+                <AvatarFallback className="text-xs bg-primary/12 text-primary font-semibold">
+                  {initials(user.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <div className="font-medium truncate">{user.name}</div>
+                <div className="text-xs text-muted-foreground truncate">{user.email || user.mobile}</div>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "mobile",
+        header: "Mobile",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm">{row.original.mobile}</span>
+        ),
+      },
+      {
+        id: "role",
+        header: "Role",
+        cell: ({ row }) => (
+          <Badge variant="secondary" className="flex w-fit items-center gap-1">
+            <Shield className="h-3 w-3" />
+            {row.original.role?.name || "—"}
+          </Badge>
+        ),
+      },
+      {
+        id: "branch",
+        header: "Branch",
+        cell: ({ row }) => {
+          const b = row.original.branch;
+          return b ? (
+            <Badge variant="outline" className="flex w-fit items-center gap-1">
+              <GitBranch className="h-3 w-3" />
+              {b.name}
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground text-sm">—</span>
+          );
+        },
+      },
+      {
+        id: "portal",
+        header: "Portal",
+        cell: ({ row }) => {
+          const user = row.original;
+          return user.supplier?.name ? (
+            <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
+              <Building2 className="h-3 w-3 shrink-0" />
+              <span className="truncate">{user.supplier.name}</span>
+            </Badge>
+          ) : user.manufacturer?.name ? (
+            <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
+              <Factory className="h-3 w-3 shrink-0" />
+              <span className="truncate">{user.manufacturer.name}</span>
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground text-sm">—</span>
+          );
+        },
+      },
+      {
+        accessorKey: "isActive",
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.isActive ? (
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="text-right block w-full">Actions</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right" },
+        cell: ({ row }) => {
+          const user = row.original;
+          return (
+            <div className="flex items-center justify-end gap-1">
+              {can("users", "edit") && (
+                <Button variant="ghost" size="icon" title="Toggle Status" onClick={() => toggleUser.mutate({ id: user.id })}>
+                  <Power className={`h-4 w-4 ${user.isActive ? "text-green-600" : "text-gray-400"}`} />
+                </Button>
+              )}
+              {can("users", "edit") && (
+                <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
+                  <Edit className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              )}
+              {can("users", "delete") && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    if (confirm("Delete this user?")) deleteUser.mutate({ id: user.id });
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [can, toggleUser, deleteUser, openEditDialog],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -220,121 +345,25 @@ export default function Users() {
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Mobile</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Branch</TableHead>
-              <TableHead>Portal</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
-              </TableRow>
-            ) : usersData?.data?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No users found.</TableCell>
-              </TableRow>
-            ) : (
-              usersData?.data?.map((user: any) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar className="h-9 w-9 rounded-full border border-border/60 shrink-0">
-                        <AvatarImage src={user.avatarUrl || avatarUrlForName(user.name)} alt={user.name} />
-                        <AvatarFallback className="text-xs bg-primary/12 text-primary font-semibold">
-                          {initials(user.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{user.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{user.email || user.mobile}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{user.mobile}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="flex w-fit items-center gap-1">
-                      <Shield className="h-3 w-3" />
-                      {user.role?.name || "—"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {user.branch ? (
-                      <Badge variant="outline" className="flex w-fit items-center gap-1">
-                        <GitBranch className="h-3 w-3" />
-                        {user.branch.name}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {user.supplier?.name ? (
-                      <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
-                        <Building2 className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{user.supplier.name}</span>
-                      </Badge>
-                    ) : user.manufacturer?.name ? (
-                      <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
-                        <Factory className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{user.manufacturer.name}</span>
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {user.isActive ? (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      {can("users", "edit") && (
-                      <Button variant="ghost" size="icon" title="Toggle Status" onClick={() => toggleUser.mutate({ id: user.id })}>
-                        <Power className={`h-4 w-4 ${user.isActive ? "text-green-600" : "text-gray-400"}`} />
-                      </Button>
-                      )}
-                      {can("users", "edit") && (
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
-                        <Edit className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                      )}
-                      {can("users", "delete") && (
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        if (confirm("Delete this user?")) deleteUser.mutate({ id: user.id });
-                      }}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-
-        {usersData && usersData.total > usersData.limit && (
-          <div className="p-4 border-t flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Page {page} · {usersData.total} total
-            </span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * usersData.limit >= usersData.total}>Next</Button>
-            </div>
-          </div>
-        )}
+        <DataTable
+          columns={columns}
+          data={users}
+          isLoading={isLoading}
+          emptyMessage="No users found."
+          footer={
+            usersData && usersData.total > usersData.limit ? (
+              <div className="p-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Page {page} · {usersData.total} total
+                </span>
+                <div className="flex items-center space-x-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * usersData.limit >= usersData.total}>Next</Button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

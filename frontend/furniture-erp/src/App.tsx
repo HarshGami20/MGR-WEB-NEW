@@ -12,9 +12,14 @@ import { usePermissions } from "@/lib/permissions";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Products from "@/pages/products";
+import ProductNew from "@/pages/product-new";
+import ProductEdit from "@/pages/product-edit";
+import ProductDetail from "@/pages/product-detail";
 import Categories from "@/pages/categories";
 import Inventory from "@/pages/inventory";
 import Orders from "@/pages/orders";
+import { OrderCreatePage, OrderEditPage } from "@/pages/order-form-page";
+import OrderDetailPage from "@/pages/order-detail-page";
 import Invoices from "@/pages/invoices";
 import Payments from "@/pages/payments";
 import PurchaseOrders from "@/pages/purchase-orders";
@@ -115,17 +120,35 @@ function Router() {
       <Route path="/dashboard">
         <ProtectedRoute viewModule="dashboard" component={Dashboard} />
       </Route>
+      <Route path="/products/new">
+        <ProtectedRoute viewModule="products" component={ProductNew} />
+      </Route>
+      <Route path="/products/:id/edit">
+        <ProtectedRoute viewModule="products" component={ProductEdit} />
+      </Route>
+      <Route path="/products/:id">
+        <ProtectedRoute viewModule="products" component={ProductDetail} />
+      </Route>
       <Route path="/products">
         <ProtectedRoute viewModule="products" component={Products} />
       </Route>
-      <Route path="/categories">
+      {/* <Route path="/categories">
         <ProtectedRoute viewModule="categories" component={Categories} />
-      </Route>
+      </Route> */}
       <Route path="/inventory">
         <ProtectedRoute viewModule="inventory" component={Inventory} />
       </Route>
       <Route path="/orders">
         <ProtectedRoute viewModule="orders" component={Orders} />
+      </Route>
+      <Route path="/orders/new">
+        <ProtectedRoute viewModule="orders" component={OrderCreatePage} />
+      </Route>
+      <Route path="/orders/:id/edit">
+        <ProtectedRoute viewModule="orders" component={OrderEditPage} />
+      </Route>
+      <Route path="/orders/:id">
+        <ProtectedRoute viewModule="orders" component={OrderDetailPage} />
       </Route>
       <Route path="/invoices">
         <ProtectedRoute viewModule="invoices" component={Invoices} />

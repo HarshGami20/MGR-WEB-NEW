@@ -3,6 +3,7 @@ import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
+import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 
 const router: IRouter = Router();
 
@@ -22,7 +23,7 @@ async function enrichOrder(order: any) {
       product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null,
     };
   }));
-  let branch = null;
+  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
   if (order.branchId) {
     const b = await prisma.branch.findUnique({ where: { id: order.branchId } });
     if (b) branch = b;
@@ -77,50 +78,68 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const totalAmount = subtotal + taxAmount;
   const orderNumber = generateOrderNumber();
 
-  const order = await prisma.order.create({ data: {
-    ...orderData,
-    orderNumber,
-    subtotal: String(subtotal),
-    taxAmount: String(taxAmount),
-    totalAmount: String(totalAmount),
-    paidAmount: "0",
-  }});
+  let createdOrder;
+  try {
+    createdOrder = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          ...orderData,
+          orderNumber,
+          subtotal: String(subtotal),
+          taxAmount: String(taxAmount),
+          totalAmount: String(totalAmount),
+          paidAmount: "0",
+        },
+      });
 
-  for (const item of resolvedItems) {
-    await prisma.orderItem.create({ data: {
-      orderId: order.id,
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: String(item.unitPrice),
-      gstPercent: String(item.gstPercent),
-      totalPrice: String(item.totalPrice),
-    }});
-    // Reduce stock
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
-    if (product) {
-      await prisma.product.update({ where: { id: item.productId }, data: { stockQty: Math.max(0, product.stockQty - item.quantity) } });
-      await prisma.inventoryLog.create({ data: { productId: item.productId, type: "out", quantity: item.quantity, notes: `Order ${orderNumber}` } });
+      for (const item of resolvedItems) {
+        await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: String(item.unitPrice),
+            gstPercent: String(item.gstPercent),
+            totalPrice: String(item.totalPrice),
+          },
+        });
+        await decrementProductStock(item.productId, item.quantity, tx);
+        await tx.inventoryLog.create({
+          data: { productId: item.productId, type: "out", quantity: item.quantity, notes: `Order ${orderNumber}` },
+        });
+      }
+
+      const settings = await tx.setting.findFirst();
+      const invoicePrefix = settings?.invoicePrefix || "INV";
+      const invoiceNumber = `${invoicePrefix}-${Date.now()}`;
+      const cgst = orderData.isGst ? taxAmount / 2 : 0;
+      const sgst = orderData.isGst ? taxAmount / 2 : 0;
+
+      await tx.invoice.create({
+        data: {
+          invoiceNumber,
+          orderId: order.id,
+          isGst: orderData.isGst,
+          cgst: String(cgst),
+          sgst: String(sgst),
+          igst: "0",
+          totalAmount: String(totalAmount),
+        },
+      });
+
+      return order;
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Insufficient stock across variants") {
+      res.status(400).json({ error: "Insufficient stock for one or more products" });
+      return;
     }
+    res.status(500).json({ error: msg });
+    return;
   }
 
-  // Auto-generate invoice
-  const settings = await prisma.setting.findFirst();
-  const invoicePrefix = settings?.invoicePrefix || "INV";
-  const invoiceNumber = `${invoicePrefix}-${Date.now()}`;
-  const cgst = orderData.isGst ? taxAmount / 2 : 0;
-  const sgst = orderData.isGst ? taxAmount / 2 : 0;
-
-  await prisma.invoice.create({ data: {
-    invoiceNumber,
-    orderId: order.id,
-    isGst: orderData.isGst,
-    cgst: String(cgst),
-    sgst: String(sgst),
-    igst: "0",
-    totalAmount: String(totalAmount),
-  }});
-
-  res.status(201).json(await enrichOrder(order));
+  res.status(201).json(await enrichOrder(createdOrder));
 });
 
 router.get("/orders/:id", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
@@ -190,89 +209,93 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   }
   const productIds = new Set<number>([...previousQtyByProduct.keys(), ...nextQtyByProduct.keys()]);
 
-  const order = await prisma.$transaction(async (tx) => {
-    for (const productId of productIds) {
-      const previousQty = previousQtyByProduct.get(productId) ?? 0;
-      const nextQty = nextQtyByProduct.get(productId) ?? 0;
-      const delta = nextQty - previousQty;
-      if (delta === 0) continue;
+  let order;
+  try {
+    order = await prisma.$transaction(async (tx) => {
+      for (const productId of productIds) {
+        const previousQty = previousQtyByProduct.get(productId) ?? 0;
+        const nextQty = nextQtyByProduct.get(productId) ?? 0;
+        const delta = nextQty - previousQty;
+        if (delta === 0) continue;
 
-      const product = await tx.product.findUnique({ where: { id: productId } });
-      if (!product) throw new Error(`Product ${productId} not found while updating stock`);
+        const product = await tx.product.findUnique({ where: { id: productId } });
+        if (!product) throw new Error(`Product ${productId} not found while updating stock`);
 
-      if (delta > 0) {
-        await tx.product.update({
-          where: { id: productId },
-          data: { stockQty: Math.max(0, product.stockQty - delta) },
-        });
-        await tx.inventoryLog.create({
-          data: {
-            productId,
-            type: "out",
-            quantity: delta,
-            notes: `Order ${existingOrder.orderNumber} updated`,
-          },
-        });
-      } else {
-        const returnQty = Math.abs(delta);
-        await tx.product.update({
-          where: { id: productId },
-          data: { stockQty: product.stockQty + returnQty },
-        });
-        await tx.inventoryLog.create({
-          data: {
-            productId,
-            type: "in",
-            quantity: returnQty,
-            notes: `Order ${existingOrder.orderNumber} updated (restock)`,
-          },
-        });
+        if (delta > 0) {
+          await decrementProductStock(productId, delta, tx);
+          await tx.inventoryLog.create({
+            data: {
+              productId,
+              type: "out",
+              quantity: delta,
+              notes: `Order ${existingOrder.orderNumber} updated`,
+            },
+          });
+        } else {
+          const returnQty = Math.abs(delta);
+          await incrementProductStock(productId, returnQty, tx);
+          await tx.inventoryLog.create({
+            data: {
+              productId,
+              type: "in",
+              quantity: returnQty,
+              notes: `Order ${existingOrder.orderNumber} updated (restock)`,
+            },
+          });
+        }
       }
-    }
 
-    await tx.orderItem.deleteMany({ where: { orderId: id } });
-    await tx.orderItem.createMany({
-      data: resolvedItems.map((item) => ({
-        orderId: id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: String(item.unitPrice),
-        gstPercent: String(item.gstPercent),
-        totalPrice: String(item.totalPrice),
-      })),
-    });
+      await tx.orderItem.deleteMany({ where: { orderId: id } });
+      await tx.orderItem.createMany({
+        data: resolvedItems.map((item) => ({
+          orderId: id,
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: String(item.unitPrice),
+          gstPercent: String(item.gstPercent),
+          totalPrice: String(item.totalPrice),
+        })),
+      });
 
-    const { items: _ignoredItems, ...orderFields } = payload;
-    const updatedOrder = await tx.order.update({
-      where: { id },
-      data: {
-        ...orderFields,
-        subtotal: String(subtotal),
-        taxAmount: String(taxAmount),
-        totalAmount: String(totalAmount),
-      },
-    });
-
-    const invoice = await tx.invoice.findFirst({ where: { orderId: id } });
-    if (invoice) {
-      const cgst = nextIsGst ? taxAmount / 2 : 0;
-      const sgst = nextIsGst ? taxAmount / 2 : 0;
-      await tx.invoice.update({
-        where: { id: invoice.id },
+      const { items: _ignoredItems, ...orderFields } = payload;
+      const updatedOrder = await tx.order.update({
+        where: { id },
         data: {
-          isGst: nextIsGst,
-          cgst: String(cgst),
-          sgst: String(sgst),
-          igst: "0",
+          ...orderFields,
+          subtotal: String(subtotal),
+          taxAmount: String(taxAmount),
           totalAmount: String(totalAmount),
         },
       });
+
+      const invoice = await tx.invoice.findFirst({ where: { orderId: id } });
+      if (invoice) {
+        const cgst = nextIsGst ? taxAmount / 2 : 0;
+        const sgst = nextIsGst ? taxAmount / 2 : 0;
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            isGst: nextIsGst,
+            cgst: String(cgst),
+            sgst: String(sgst),
+            igst: "0",
+            totalAmount: String(totalAmount),
+          },
+        });
+      }
+
+      return updatedOrder;
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Insufficient stock across variants") {
+      res.status(400).json({ error: "Insufficient stock for one or more products" });
+      return;
     }
+    res.status(400).json({ error: msg || "Failed to update order" });
+    return;
+  }
 
-    return updatedOrder;
-  }).catch(() => null);
-
-  if (!order) { res.status(400).json({ error: "Failed to update order" }); return; }
   res.json(await enrichOrder(order));
 });
 
