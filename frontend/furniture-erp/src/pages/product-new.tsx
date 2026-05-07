@@ -129,90 +129,93 @@ export default function ProductNew() {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-8">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-semibold">Product name *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. Milano 3-Seater Sofa"
-                      maxLength={200}
-                      autoComplete="off"
-                      className="h-11 rounded-lg border-border/80 bg-white"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="parentCategoryId"
-              render={({ field: parentField }) => (
-                <FormField
-                  control={form.control}
-                  name="subCategoryId"
-                  render={({ field: subField }) => (
-                    <FormItem>
-                      <CategoryPickerWithManage
-                        parentCategoryId={parentField.value}
-                        subCategoryId={subField.value ?? ""}
-                        onParentChange={parentField.onChange}
-                        onSubChange={subField.onChange}
+            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
+              <p className="text-sm font-semibold text-foreground">Product details</p>
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="font-semibold">Product name *</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g. Milano 3-Seater Sofa"
+                        maxLength={200}
+                        autoComplete="off"
+                        className="h-11 rounded-lg border-border/80 bg-white"
+                        {...field}
                       />
-                      {form.formState.errors.parentCategoryId?.message != null && (
-                        <p className="text-sm font-medium text-destructive">{form.formState.errors.parentCategoryId.message}</p>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="sku"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-semibold">SKU *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. LR-SOF-001"
-                      maxLength={80}
-                      autoComplete="off"
-                      className="h-11 rounded-lg border-border/80 bg-white font-mono text-sm"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="parentCategoryId"
+                render={({ field: parentField }) => (
+                  <FormField
+                    control={form.control}
+                    name="subCategoryId"
+                    render={({ field: subField }) => (
+                      <FormItem>
+                        <CategoryPickerWithManage
+                          parentCategoryId={parentField.value}
+                          subCategoryId={subField.value ?? ""}
+                          onParentChange={parentField.onChange}
+                          onSubChange={subField.onChange}
+                        />
+                        {form.formState.errors.parentCategoryId?.message != null && (
+                          <p className="text-sm font-medium text-destructive">{form.formState.errors.parentCategoryId.message}</p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="font-semibold">Description (optional)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Brief product description"
-                      maxLength={5000}
-                      className="min-h-[100px] rounded-lg border-border/80 bg-white resize-none"
-                      {...field}
-                      value={field.value || ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="sku"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="font-semibold">SKU *</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g. LR-SOF-001"
+                        maxLength={80}
+                        autoComplete="off"
+                        className="h-11 rounded-lg border-border/80 bg-white font-mono text-sm"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="font-semibold">Description (optional)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Brief product description"
+                        maxLength={5000}
+                        className="min-h-[100px] rounded-lg border-border/80 bg-white resize-none"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
               <p className="text-sm font-semibold text-foreground">Inventory type</p>

@@ -53,13 +53,14 @@ function StaffDashboard() {
   const { data: orderStatus, isLoading: statusLoading } = useGetOrderStatusBreakdown();
   const { data: usersData } = useListUsers({ isActive: true, limit: 6 });
 
-  const completed = statusCount(orderStatus, "completed");
-  const pending = statusCount(orderStatus, "pending");
-  const confirmed = statusCount(orderStatus, "confirmed");
-  const processing = statusCount(orderStatus, "processing");
+  const delivered = statusCount(orderStatus, "delivered");
+  const orderReceived = statusCount(orderStatus, "order_received");
+  const manufacturing = statusCount(orderStatus, "manufacturing");
+  const readyToShip = statusCount(orderStatus, "ready_to_ship");
   const cancelled = statusCount(orderStatus, "cancelled");
-  const activePipeline = confirmed + processing;
-  const fromBreakdownSum = completed + pending + activePipeline + cancelled;
+  const inProgress = manufacturing + readyToShip;
+  const openOrders = orderReceived + inProgress;
+  const fromBreakdownSum = delivered + openOrders + cancelled;
   const totalOrders = summary?.totalOrders ?? fromBreakdownSum;
 
   const orderAnalyticsData = useMemo(() => {
@@ -83,7 +84,7 @@ function StaffDashboard() {
         return {
           label: day.toLocaleDateString(undefined, { weekday: "short" }),
           orderCount: bucket.length,
-          pendingCount: bucket.filter((o) => o.status === "pending").length,
+          pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
           revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
         };
       });
@@ -107,7 +108,7 @@ function StaffDashboard() {
         return {
           label: w,
           orderCount: bucket.length,
-          pendingCount: bucket.filter((o) => o.status === "pending").length,
+          pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
           revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
         };
       });
@@ -120,20 +121,20 @@ function StaffDashboard() {
       return {
         label: m,
         orderCount: bucket.length,
-        pendingCount: bucket.filter((o) => o.status === "pending").length,
+        pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
         revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
       };
     });
   }, [analyticsOrdersData?.data, analyticsRange, revenueYear]);
 
-  const pendingTotal = pending + cancelled;
+  const pendingTotal = orderReceived + cancelled;
   const donutData = [
-    { name: "Completed", value: completed, fill: chartOrders },
-    { name: "In progress", value: activePipeline, fill: "hsl(var(--chart-2))" },
-    { name: "Pending", value: pendingTotal, fill: chartPending },
+    { name: "Delivered", value: delivered, fill: chartOrders },
+    { name: "In progress", value: inProgress, fill: "hsl(var(--chart-2))" },
+    { name: "Open", value: pendingTotal, fill: chartPending },
   ];
-  const donutTotal = Math.max(completed + activePipeline + pendingTotal, 1);
-  const completedPct = Math.round((completed / donutTotal) * 100);
+  const donutTotal = Math.max(delivered + inProgress + pendingTotal, 1);
+  const completedPct = Math.round((delivered / donutTotal) * 100);
 
   const reminder = useMemo(() => {
     if (summary && summary.pendingPayments > 0) {
@@ -148,7 +149,7 @@ function StaffDashboard() {
         meta: `${summary.lowStockCount} product(s) below threshold`,
       };
     }
-    const urgent = recentOrders?.find((o) => (o.status as string) !== "completed" && (o.status as string) !== "cancelled");
+    const urgent = recentOrders?.find((o) => (o.status as string) !== "delivered" && (o.status as string) !== "cancelled");
     const first = urgent ?? recentOrders?.[0];
     if (!first)
       return { title: "No upcoming actions", meta: "You are all caught up" };
@@ -180,10 +181,10 @@ function StaffDashboard() {
 
   const iconForOrder = (st: string) => {
     const map: Record<string, typeof Box> = {
-      pending: ClipboardList,
-      confirmed: ClipboardList,
-      processing: Box,
-      completed: Box,
+      order_received: ClipboardList,
+      manufacturing: ClipboardList,
+      ready_to_ship: Box,
+      delivered: Box,
       cancelled: ClipboardList,
     };
     const Cmp = map[st] ?? Box;
@@ -192,14 +193,14 @@ function StaffDashboard() {
 
   const orderStatusChip = (status: string) => {
     switch (status) {
-      case "pending":
-        return <Badge variant="outline" className="rounded-full border-yellow-200 bg-yellow-50 text-yellow-700">Pending</Badge>;
-      case "confirmed":
-        return <Badge variant="outline" className="rounded-full border-blue-200 bg-blue-50 text-blue-700">Confirmed</Badge>;
-      case "processing":
-        return <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">Processing</Badge>;
-      case "completed":
-        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Completed</Badge>;
+      case "order_received":
+        return <Badge variant="outline" className="rounded-full border-yellow-200 bg-yellow-50 text-yellow-700">Order Received</Badge>;
+      case "manufacturing":
+        return <Badge variant="outline" className="rounded-full border-blue-200 bg-blue-50 text-blue-700">Manufacturing</Badge>;
+      case "ready_to_ship":
+        return <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">Ready To Ship</Badge>;
+      case "delivered":
+        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Delivered</Badge>;
       case "cancelled":
         return <Badge variant="outline" className="rounded-full border-rose-200 bg-rose-50 text-rose-700">Cancelled</Badge>;
       default:
@@ -277,14 +278,14 @@ function StaffDashboard() {
               </p>
             </div>
             <MetricCardPlain
-              title="Completed"
-              value={completed}
+              title="Delivered"
+              value={delivered}
               hint={`${completedPct}% of pipeline`}
             />
-            <MetricCardPlain title="In progress" value={activePipeline} hint={`Confirmed + processing`} />
+            <MetricCardPlain title="In progress" value={inProgress} hint={`Manufacturing + ready to ship`} />
             <MetricCardPlain
-              title="Pending"
-              value={pending}
+              title="Order received"
+              value={orderReceived}
               hint={cancelled > 0 ? `${cancelled} cancelled in mix` : "Needs action"}
             />
           </>
@@ -297,7 +298,7 @@ function StaffDashboard() {
           <div className="flex items-start justify-between gap-2 mb-6">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Order analytics</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">Orders, pending, and revenue from DB</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Orders, order-received, and revenue from DB</p>
             </div>
             <div className="relative">
               <select
@@ -363,7 +364,7 @@ function StaffDashboard() {
                             Orders: <span className="font-medium text-foreground">{payload[0]?.payload.orderCount ?? 0}</span>
                           </p>
                           <p className="text-muted-foreground">
-                            Pending: <span className="font-medium text-foreground">{payload[0]?.payload.pendingCount ?? 0}</span>
+                            Order received: <span className="font-medium text-foreground">{payload[0]?.payload.pendingCount ?? 0}</span>
                           </p>
                           <p className="text-muted-foreground">
                             Revenue: <span className="font-medium text-foreground">₹{(payload[0]?.payload.revenue ?? 0).toLocaleString("en-IN")}</span>
@@ -373,7 +374,7 @@ function StaffDashboard() {
                     }
                   />
                   <Bar yAxisId="orders" dataKey="orderCount" name="Orders" fill={chartOrders} radius={[12, 12, 0, 0]} maxBarSize={26} />
-                  <Bar yAxisId="orders" dataKey="pendingCount" name="Pending orders" fill="url(#pending-orders-pattern)" radius={[12, 12, 0, 0]} maxBarSize={26} />
+                  <Bar yAxisId="orders" dataKey="pendingCount" name="Order received" fill="url(#pending-orders-pattern)" radius={[12, 12, 0, 0]} maxBarSize={26} />
                   <Bar yAxisId="revenue" dataKey="revenue" name="Revenue" fill={chartRevenue} radius={[12, 12, 0, 0]} maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
@@ -381,7 +382,7 @@ function StaffDashboard() {
           </div>
           <div className="flex w-full justify-center flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
             <LegendDot color={chartOrders} label="Orders" />
-            <LegendDot pattern label="Pending orders" />
+            <LegendDot pattern label="Order received" />
             <LegendDot color={chartRevenue} label="Revenue" />
           </div>
         </div>
@@ -418,9 +419,9 @@ function StaffDashboard() {
               )}
             </div>
             <div className="flex flex-wrap justify-center gap-x-7 gap-y-2 mt-1 text-[11px] text-muted-foreground">
-              <LegendDot color={chartOrders} label="Completed" />
+              <LegendDot color={chartOrders} label="Delivered" />
               <LegendDot color="hsl(var(--chart-2))" label="In progress" />
-              <LegendDot pattern label="Pending" />
+              <LegendDot pattern label="Open" />
             </div>
           </div>
         </div>
@@ -688,9 +689,9 @@ function FulfillmentGauge({
 
   const arcRenderOrder = [...arcs].sort((a, b) => {
     const zIndex: Record<string, number> = {
-      Pending: 0,
+      Open: 0,
       "In progress": 1,
-      Completed: 2,
+      Delivered: 2,
     };
     return (zIndex[a.name] ?? 1) - (zIndex[b.name] ?? 1);
   });
@@ -709,7 +710,7 @@ function FulfillmentGauge({
             key={`${arc.name}-${idx}`}
             d={describeSegment(centerX, centerY, radius, arc.start, arc.end)}
             fill="none"
-            stroke={arc.name === "Pending" ? "url(#pending-stripes)" : arc.fill}
+            stroke={arc.name === "Open" ? "url(#pending-stripes)" : arc.fill}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -718,7 +719,7 @@ function FulfillmentGauge({
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pt-14">
         <p className="text-[3rem] font-semibold leading-[0.92] tracking-tight text-black tabular-nums">{completedPct}%</p>
-        <p className="text-[1.05rem] leading-none text-primary mt-1">Order Completed</p>
+        <p className="text-[1.05rem] leading-none text-primary mt-1">Order Delivered</p>
       </div>
     </div>
   );

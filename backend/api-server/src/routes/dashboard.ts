@@ -23,8 +23,8 @@ router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "re
   }
 
   const totalOrders = orders.length;
-  const totalRevenue = orders.filter(o => o.status === "completed").reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
-  const pendingOrders = orders.filter(o => o.status === "pending").length;
+  const totalRevenue = orders.filter(o => o.status === "delivered").reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
+  const pendingOrders = orders.filter(o => o.status !== "delivered" && o.status !== "cancelled").length;
   const lowStockCount = products.filter((p) => {
     if (p._count.variants === 0) return p.stockQty <= p.lowStockThreshold;
     return productLowFromVariant.has(p.id);
@@ -38,7 +38,7 @@ router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "re
 
   const today = new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const completedOrdersToday = orders.filter(o => o.status === "completed" && new Date(o.updatedAt) >= startOfDay).length;
+  const completedOrdersToday = orders.filter(o => o.status === "delivered" && new Date(o.updatedAt) >= startOfDay).length;
 
   res.json({
     totalOrders, totalRevenue, pendingOrders, lowStockCount, totalProducts, totalSuppliers, pendingPayments, completedOrdersToday

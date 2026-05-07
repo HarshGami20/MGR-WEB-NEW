@@ -51,10 +51,11 @@ model User {
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  role          Role?         @relation(fields: [roleId], references: [id])
-  branch        Branch?       @relation(fields: [branchId], references: [id])
-  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
-  manufacturer  Manufacturer? @relation(fields: [manufacturerId], references: [id])
+  role           Role?         @relation(fields: [roleId], references: [id])
+  branch         Branch?       @relation(fields: [branchId], references: [id])
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
+  assignedOrders Order[]       @relation("OrderAssignee")
 
   @@map("users")
 }
@@ -156,7 +157,15 @@ model Order {
   customerAddress   String?  @map("customer_address")
   isGst             Boolean  @default(false) @map("is_gst")
   customerGstNumber String?  @map("customer_gst_number")
-  status            String   @default("pending")
+  status            String   @default("order_received")
+  paymentStatus     String   @default("due") @map("payment_status")
+  advanceAmount     Decimal  @default(0) @map("advance_amount") @db.Decimal(12, 2)
+  paymentMode       String?  @map("payment_mode")
+  challanImages     String?  @map("challan_images")
+  photoComments     String?  @map("photo_comments")
+  staffComments     String?  @map("staff_comments")
+  assignedToId      Int?     @map("assigned_to_id")
+  deliveryDate      DateTime? @map("delivery_date") @db.Timestamptz(6)
   subtotal          Decimal  @default(0) @db.Decimal(12, 2)
   taxAmount         Decimal  @default(0) @map("tax_amount") @db.Decimal(12, 2)
   totalAmount       Decimal  @default(0) @map("total_amount") @db.Decimal(12, 2)
@@ -166,10 +175,11 @@ model Order {
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  branch   Branch?    @relation(fields: [branchId], references: [id])
-  items    OrderItem[]
-  invoices Invoice[]
-  payments Payment[]
+  branch     Branch?    @relation(fields: [branchId], references: [id])
+  assignedTo User?      @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  items      OrderItem[]
+  invoices   Invoice[]
+  payments   Payment[]
 
   @@map("orders")
 }

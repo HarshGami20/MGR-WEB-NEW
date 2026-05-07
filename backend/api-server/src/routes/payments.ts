@@ -5,6 +5,11 @@ import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 
 const router: IRouter = Router();
+function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "partially_paid" | "paid" {
+  if (paidAmount <= 0) return "due";
+  if (paidAmount >= totalAmount) return "paid";
+  return "partially_paid";
+}
 
 router.get("/payments", requireAuth, requirePermission("payments", "read"), async (req, res): Promise<void> => {
   const { orderId, page = "1", limit = "20" } = req.query as Record<string, string>;
@@ -25,13 +30,32 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
   const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId } });
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
+  const paymentAmount = Number(parsed.data.amount ?? 0);
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    res.status(400).json({ error: "Payment amount must be greater than 0" });
+    return;
+  }
+
+  const nextPaidAmount = Math.min(toNumber(order.totalAmount), toNumber(order.paidAmount) + paymentAmount);
+  const appliedAmount = nextPaidAmount - toNumber(order.paidAmount);
+  if (appliedAmount <= 0) {
+    res.status(400).json({ error: "Order is already fully paid" });
+    return;
+  }
+
   const payment = await prisma.payment.create({ data: {
     ...parsed.data,
-    amount: String(parsed.data.amount),
+    amount: String(appliedAmount),
   }});
 
-  const newPaidAmount = toNumber(order.paidAmount) + parsed.data.amount;
-  await prisma.order.update({ where: { id: parsed.data.orderId }, data: { paidAmount: String(newPaidAmount) } });
+  await prisma.order.update({
+    where: { id: parsed.data.orderId },
+    data: {
+      paidAmount: String(nextPaidAmount),
+      paymentMode: parsed.data.mode,
+      paymentStatus: derivePaymentStatus(toNumber(order.totalAmount), nextPaidAmount),
+    },
+  });
 
   res.status(201).json({ ...payment, amount: toNumber(payment.amount) });
 });

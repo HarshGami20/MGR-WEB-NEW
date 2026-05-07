@@ -4,8 +4,53 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
 
 const router: IRouter = Router();
+const ORDER_STATUSES = new Set([
+  "order_received",
+  "manufacturing",
+  "ready_to_ship",
+  "delivered",
+  "cancelled",
+]);
+const PAYMENT_STATUSES = new Set(["due", "partially_paid", "paid"]);
+
+const orderImageUploadDir = path.resolve(process.cwd(), "uploads", "orders");
+if (!fs.existsSync(orderImageUploadDir)) fs.mkdirSync(orderImageUploadDir, { recursive: true });
+
+const orderImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, orderImageUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+      cb(null, `o-${Date.now()}-${Math.random().toString(36).slice(2, 9)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image uploads are allowed"));
+  },
+});
+
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizePaymentStatus(totalAmount: number, paidAmount: number, requested?: string | null) {
+  if (requested && PAYMENT_STATUSES.has(requested)) return requested;
+  if (paidAmount <= 0) return "due";
+  if (paidAmount >= totalAmount) return "paid";
+  return "partially_paid";
+}
 
 function generateOrderNumber() {
   return `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -24,20 +69,51 @@ async function enrichOrder(order: any) {
     };
   }));
   let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
+  let assignedTo: Awaited<ReturnType<typeof prisma.user.findUnique>> = null;
   if (order.branchId) {
     const b = await prisma.branch.findUnique({ where: { id: order.branchId } });
     if (b) branch = b;
   }
+  if (order.assignedToId) {
+    const u = await prisma.user.findUnique({
+      where: { id: order.assignedToId },
+      select: { id: true, name: true, mobile: true },
+    });
+    if (u) assignedTo = u as any;
+  }
   return {
     ...order,
+    status: order.status ?? "order_received",
+    paymentStatus: order.paymentStatus ?? "due",
+    advanceAmount: toNumber(order.advanceAmount ?? 0),
+    deliveryDate: order.deliveryDate ?? null,
     subtotal: toNumber(order.subtotal),
     taxAmount: toNumber(order.taxAmount),
     totalAmount: toNumber(order.totalAmount),
     paidAmount: toNumber(order.paidAmount),
+    challanImages: safeJsonParse<string[]>(order.challanImages, []),
+    photoComments: safeJsonParse<Array<{ imageUrl: string; comment?: string }>>(order.photoComments, []),
+    staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(order.staffComments, []),
     items: enrichedItems,
     branch,
+    assignedTo,
   };
 }
+
+router.post(
+  "/orders/upload-image",
+  requireAuth,
+  requirePermission("orders", "update"),
+  orderImageUpload.single("image"),
+  (req, res): void => {
+    if (!(req as any).file) {
+      res.status(400).json({ error: "Image file is required (field name: image)" });
+      return;
+    }
+    const filename = (req as any).file.filename as string;
+    res.json({ imageUrl: `/uploads/orders/${filename}` });
+  },
+);
 
 router.get("/orders", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
   const { search, status, isGst, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
@@ -45,21 +121,28 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  let orders = await prisma.order.findMany({ skip: offset, take: limitNum });
-  if (search) orders = orders.filter(o => o.customerName.toLowerCase().includes(search.toLowerCase()) || o.orderNumber.includes(search));
-  if (status) orders = orders.filter(o => o.status === status);
-  if (isGst !== undefined) orders = orders.filter(o => o.isGst === (isGst === "true"));
-  if (branchId) orders = orders.filter(o => o.branchId === parseInt(branchId, 10));
+  const where: any = {};
+  if (search) {
+    where.OR = [
+      { customerName: { contains: search, mode: "insensitive" } },
+      { orderNumber: { contains: search, mode: "insensitive" } },
+    ];
+  }
+  if (status) where.status = status;
+  if (isGst !== undefined) where.isGst = isGst === "true";
+  if (branchId) where.branchId = parseInt(branchId, 10);
 
+  const total = await prisma.order.count({ where });
+  const orders = await prisma.order.findMany({ where, skip: offset, take: limitNum, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
   const data = await Promise.all(orders.map(enrichOrder));
-  res.json({ data, total: data.length, page: pageNum, limit: limitNum });
+  res.json({ data, total, page: pageNum, limit: limitNum });
 });
 
 router.post("/orders", requireAuth, requirePermission("orders", "create"), async (req, res): Promise<void> => {
   const parsed = CreateOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { items, ...orderData } = parsed.data;
+  const { items, ...orderData } = parsed.data as any;
   let subtotal = 0;
   let taxAmount = 0;
 
@@ -76,6 +159,12 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   }
 
   const totalAmount = subtotal + taxAmount;
+  const advanceAmount = Number(orderData.advanceAmount ?? 0);
+  const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
+  const requestedStatus = typeof orderData.status === "string" ? orderData.status : "order_received";
+  const status = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : "order_received";
+  const requestedPaymentStatus = typeof orderData.paymentStatus === "string" ? orderData.paymentStatus : undefined;
+  const paymentStatus = normalizePaymentStatus(totalAmount, safeAdvanceAmount, requestedPaymentStatus);
   const orderNumber = generateOrderNumber();
 
   let createdOrder;
@@ -84,11 +173,19 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       const order = await tx.order.create({
         data: {
           ...orderData,
+          status,
+          paymentStatus,
+          advanceAmount: String(safeAdvanceAmount),
           orderNumber,
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           totalAmount: String(totalAmount),
-          paidAmount: "0",
+          paidAmount: String(safeAdvanceAmount),
+          challanImages: JSON.stringify(Array.isArray(orderData.challanImages) ? orderData.challanImages : []),
+          photoComments: JSON.stringify(Array.isArray(orderData.photoComments) ? orderData.photoComments : []),
+          staffComments: JSON.stringify(Array.isArray(orderData.staffComments) ? orderData.staffComments : []),
+          assignedToId: orderData.assignedToId ?? null,
+          deliveryDate: orderData.deliveryDate ? new Date(orderData.deliveryDate) : null,
         },
       });
 
@@ -126,6 +223,16 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           totalAmount: String(totalAmount),
         },
       });
+      if (safeAdvanceAmount > 0) {
+        await tx.payment.create({
+          data: {
+            orderId: order.id,
+            amount: String(safeAdvanceAmount),
+            mode: orderData.paymentMode ?? "cash",
+            notes: "Advance payment at order creation",
+          },
+        });
+      }
 
       return order;
     });
@@ -198,6 +305,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   }
 
   const totalAmount = subtotal + taxAmount;
+  const currentPaidAmount = toNumber(existingOrder.paidAmount);
+  const paymentStatus = normalizePaymentStatus(totalAmount, currentPaidAmount, payload.paymentStatus);
 
   const previousQtyByProduct = new Map<number, number>();
   for (const item of existingItems) {
@@ -258,13 +367,24 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       });
 
       const { items: _ignoredItems, ...orderFields } = payload;
+      const requestedStatus = typeof orderFields.status === "string" ? orderFields.status : existingOrder.status;
+      const safeStatus = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : existingOrder.status;
+      const normalizedChallanImages = Array.isArray(orderFields.challanImages) ? orderFields.challanImages : safeJsonParse<string[]>(existingOrder.challanImages, []);
+      const normalizedPhotoComments = Array.isArray(orderFields.photoComments) ? orderFields.photoComments : safeJsonParse<any[]>(existingOrder.photoComments, []);
+      const normalizedStaffComments = Array.isArray(orderFields.staffComments) ? orderFields.staffComments : safeJsonParse<any[]>(existingOrder.staffComments, []);
       const updatedOrder = await tx.order.update({
         where: { id },
         data: {
           ...orderFields,
+          status: safeStatus,
+          paymentStatus,
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           totalAmount: String(totalAmount),
+          challanImages: JSON.stringify(normalizedChallanImages),
+          photoComments: JSON.stringify(normalizedPhotoComments),
+          staffComments: JSON.stringify(normalizedStaffComments),
+          deliveryDate: orderFields.deliveryDate ? new Date(orderFields.deliveryDate) : null,
         },
       });
 
@@ -312,7 +432,8 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
   const id = parseInt(raw, 10);
   const parsed = UpdateOrderStatusBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const order = await prisma.order.update({ where: { id }, data: { status: parsed.data.status } }).catch(() => null);
+  const nextStatus = ORDER_STATUSES.has(parsed.data.status) ? parsed.data.status : "order_received";
+  const order = await prisma.order.update({ where: { id }, data: { status: nextStatus } }).catch(() => null);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   res.json(await enrichOrder(order));
 });
