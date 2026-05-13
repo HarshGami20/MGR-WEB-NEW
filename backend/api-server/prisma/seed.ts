@@ -17,6 +17,7 @@ async function clearAll() {
   await prisma.invoice.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.deliverySlot.deleteMany();
   await prisma.purchaseOrderItem.deleteMany();
   await prisma.purchaseOrder.deleteMany();
   await prisma.inventoryLog.deleteMany();
@@ -40,6 +41,7 @@ const superAdminPermissions = {
   products: { read: true, create: true, update: true, delete: true },
   inventory: { read: true, create: true, update: true, delete: true },
   orders: { read: true, create: true, update: true, delete: true },
+  deliveries: { read: true, create: true, update: true, delete: true },
   invoices: { read: true, create: true, update: true, delete: true },
   payments: { read: true, create: true, update: true, delete: true },
   reports: { read: true, create: true, update: true, delete: true },

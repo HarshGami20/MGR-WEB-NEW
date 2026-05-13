@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
 import {
   useCreateOrder,
@@ -9,7 +9,7 @@ import {
   getGetOrderQueryKey,
   getListOrdersQueryKey,
 } from "@/api-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
 import { useFieldArray, useForm } from "react-hook-form";
@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import ProductVariantSelect from "@/components/product-variant-select";
+import { GoogleAddressInput } from "@/components/google-address-input";
+import { fetchAvailableDeliverySlots } from "@/lib/delivery-api";
 
 const orderItemSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
@@ -42,6 +44,19 @@ const orderSchema = z.object({
     .optional()
     .nullable(),
   customerAddress: z.string().trim().min(1, "Address is required"),
+  customerPincode: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || /^[0-9]{6}$/.test(v), "Pincode must be 6 digits")
+    .optional()
+    .nullable(),
+  deliverySlotId: z
+    .union([z.number().int().positive(), z.null()])
+    .optional()
+    .nullable(),
+  googlePlaceId: z.string().optional().nullable(),
+  addressLat: z.coerce.number().nullable().optional(),
+  addressLng: z.coerce.number().nullable().optional(),
   isGst: z.boolean(),
   customerGstNumber: z
     .string()
@@ -86,7 +101,7 @@ const ORDER_STATUS_OPTIONS = [
   { value: "order_received", label: "Order Received" },
   { value: "manufacturing", label: "Manufacturing" },
   { value: "ready_to_ship", label: "Ready To Ship" },
-  { value: "delivered", label: "Delivered" },
+  { value: "complete", label: "Complete" },
   { value: "cancelled", label: "Cancelled" },
 ];
 const PAYMENT_STATUS_OPTIONS = [
@@ -187,6 +202,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       customerName: "",
       customerMobile: "",
       customerAddress: "",
+      customerPincode: "",
+      deliverySlotId: null as number | null,
+      googlePlaceId: "",
+      addressLat: null as number | null,
+      addressLng: null as number | null,
       isGst: false,
       customerGstNumber: "",
       items: [{ productId: 0, variantId: null, quantity: 1, unitPrice: 0 }],
@@ -203,6 +223,47 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     },
   });
 
+  const deliveryDateWatch = form.watch("deliveryDate");
+  const pincodeWatch = form.watch("customerPincode");
+
+  const { data: slotOptions = [] } = useQuery({
+    queryKey: ["availableSlots", writeBranchId, deliveryDateWatch, pincodeWatch, isEdit ? orderId : 0],
+    queryFn: () =>
+      fetchAvailableDeliverySlots({
+        branchId: writeBranchId!,
+        date: String(deliveryDateWatch).slice(0, 10),
+        pincode: (pincodeWatch || "").trim() || undefined,
+        excludeOrderId: isEdit && Number.isFinite(orderId) ? orderId : undefined,
+      }),
+    enabled:
+      writeBranchId != null &&
+      !!deliveryDateWatch &&
+      String(deliveryDateWatch).trim().length >= 8,
+  });
+
+  useEffect(() => {
+    if (!deliveryDateWatch || !slotOptions.length) return;
+    const free = slotOptions.filter((s) => s.remaining > 0);
+    if (!free.length) return;
+    const cur = form.getValues("deliverySlotId");
+    if (cur != null && free.some((s) => s.id === cur)) return;
+    if (cur != null && !free.some((s) => s.id === cur)) {
+      form.setValue("deliverySlotId", free[0]!.id);
+      return;
+    }
+    if (cur == null) form.setValue("deliverySlotId", free[0]!.id);
+  }, [deliveryDateWatch, pincodeWatch, slotOptions, form]);
+
+  const onGoogleResolved = useCallback(
+    (sel: import("@/components/google-address-input").GoogleAddressSelection) => {
+      if (sel.pincode) form.setValue("customerPincode", sel.pincode);
+      if (sel.placeId) form.setValue("googlePlaceId", sel.placeId);
+      form.setValue("addressLat", sel.lat ?? null);
+      form.setValue("addressLng", sel.lng ?? null);
+    },
+    [form],
+  );
+
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "items",
@@ -218,6 +279,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       customerName: order.customerName ?? "",
       customerMobile: order.customerMobile ?? "",
       customerAddress: order.customerAddress ?? "",
+      customerPincode: orderAny.customerPincode ?? "",
+      deliverySlotId: orderAny.deliverySlotId ?? null,
+      googlePlaceId: orderAny.googlePlaceId ?? "",
+      addressLat: orderAny.addressLat != null ? Number(orderAny.addressLat) : null,
+      addressLng: orderAny.addressLng != null ? Number(orderAny.addressLng) : null,
       isGst: !!order.isGst,
       customerGstNumber: order.customerGstNumber ?? "",
       items: order.items?.length
@@ -228,7 +294,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             unitPrice: item.unitPrice ?? item.product?.price ?? 0,
           }))
         : [{ productId: 0, variantId: null, quantity: 1, unitPrice: 0 }],
-      status: orderAny.status ?? "order_received",
+      status: orderAny.status === "delivered" ? "complete" : (orderAny.status ?? "order_received"),
       paymentStatus: orderAny.paymentStatus ?? "due",
       advanceAmount: orderAny.advanceAmount ?? orderAny.paidAmount ?? 0,
       paymentMode: orderAny.paymentMode ?? "cash",
@@ -295,6 +361,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       customerName: data.customerName,
       customerMobile: data.customerMobile || null,
       customerAddress: data.customerAddress || null,
+      customerPincode: data.customerPincode?.trim() || null,
+      deliverySlotId: data.deliverySlotId ?? null,
+      googlePlaceId: data.googlePlaceId?.trim() || null,
+      addressLat: data.addressLat ?? null,
+      addressLng: data.addressLng ?? null,
       isGst: !!data.isGst,
       customerGstNumber: data.customerGstNumber || null,
       items: data.items.map((item) => ({
@@ -377,8 +448,37 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               </div>
 
               <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                <FormItem><FormLabel>Address*</FormLabel><FormControl><Textarea  placeholder="Enter address" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Address*</FormLabel>
+                  <FormControl>
+                    <GoogleAddressInput
+                      value={field.value || ""}
+                      onChangeAddress={field.onChange}
+                      onResolved={onGoogleResolved}
+                      placeholder="Search or type full address"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={form.control} name="customerPincode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pincode</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value || ""}
+                        placeholder="6-digit pincode"
+                        maxLength={6}
+                        inputMode="numeric"
+                        onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
             </div>
 
 
@@ -438,7 +538,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 <FormField control={form.control} name="status" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Order Status</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value === "delivered" ? "complete" : field.value} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>{ORDER_STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
                     </Select>
@@ -466,7 +566,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <FormField control={form.control} name="advanceAmount" render={({ field }) => (
                   <FormItem><FormLabel>Advance Amount (Rs)</FormLabel><FormControl><Input type="number" min="0" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
@@ -476,6 +576,32 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Date of Delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="deliverySlotId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Delivery slot</FormLabel>
+                    <Select
+                      value={field.value != null ? String(field.value) : undefined}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                      disabled={!deliveryDateWatch || !slotOptions.some((s) => s.remaining > 0)}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={slotOptions.some((s) => s.remaining > 0) ? "Select slot" : "No capacity"} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {slotOptions
+                          .filter((s) => s.remaining > 0)
+                          .map((s) => (
+                            <SelectItem key={s.id} value={String(s.id)}>
+                              {s.label} ({s.startTime}–{s.endTime}) · {s.remaining} left
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

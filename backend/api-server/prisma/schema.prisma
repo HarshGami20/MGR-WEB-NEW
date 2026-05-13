@@ -24,8 +24,29 @@ model Branch {
   orders         Order[]
   purchaseOrders PurchaseOrder[]
   inventoryLogs  InventoryLog[]
+  deliverySlots  DeliverySlot[]
 
   @@map("branches")
+}
+
+model DeliverySlot {
+  id              Int      @id @default(autoincrement())
+  branchId        Int      @map("branch_id")
+  slotDate        DateTime @map("slot_date") @db.Date
+  label           String
+  startTime       String   @map("start_time")
+  endTime         String   @map("end_time")
+  maxOrders       Int      @map("max_orders")
+  /** JSON array of pincode strings; "[]" means any pincode */
+  servicePincodes String   @default("[]") @map("service_pincodes")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([branchId, slotDate])
+  @@map("delivery_slots")
 }
 
 model UserBranch {
@@ -300,14 +321,22 @@ model Order {
   paidAmount        Decimal  @default(0) @map("paid_amount") @db.Decimal(12, 2)
   notes             String?
   branchId          Int?     @map("branch_id")
+  deliverySlotId    Int?     @map("delivery_slot_id")
+  /** Logistics: pending | out_for_delivery | delivered (separate from main order status) */
+  deliveryStatus    String   @default("pending") @map("delivery_status")
+  customerPincode   String?  @map("customer_pincode")
+  addressLat        Decimal? @map("address_lat") @db.Decimal(11, 8)
+  addressLng        Decimal? @map("address_lng") @db.Decimal(11, 8)
+  googlePlaceId     String?  @map("google_place_id")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  branch     Branch?    @relation(fields: [branchId], references: [id])
-  assignedTo User?      @relation("OrderAssignee", fields: [assignedToId], references: [id])
-  items      OrderItem[]
-  invoices   Invoice[]
-  payments   Payment[]
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  deliverySlot DeliverySlot? @relation(fields: [deliverySlotId], references: [id], onDelete: SetNull)
+  assignedTo   User?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  items        OrderItem[]
+  invoices     Invoice[]
+  payments     Payment[]
 
   @@map("orders")
 }

@@ -9,7 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { patchOrderDelivery } from "@/lib/delivery-api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 function getStatusBadge(status: string) {
@@ -20,12 +23,26 @@ function getStatusBadge(status: string) {
       return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Manufacturing</Badge>;
     case "ready_to_ship":
       return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Ready To Ship</Badge>;
+    case "complete":
     case "delivered":
-      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Delivered</Badge>;
+      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Complete</Badge>;
     case "cancelled":
       return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Cancelled</Badge>;
     default:
       return <Badge>{status}</Badge>;
+  }
+}
+
+function deliveryStatusBadge(s: string) {
+  switch (s) {
+    case "pending":
+      return <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">Delivery: Pending</Badge>;
+    case "out_for_delivery":
+      return <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200">Out for delivery</Badge>;
+    case "delivered":
+      return <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">Delivery: Delivered</Badge>;
+    default:
+      return <Badge variant="outline">{s}</Badge>;
   }
 }
 
@@ -35,11 +52,23 @@ export default function OrderDetailPage() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { selectedBranchId } = useBranch();
+  const assigned = assignedUserBranchIds(user);
+  const headerBranchId =
+    assigned.length === 1
+      ? assigned[0]!
+      : assigned.length > 1
+        ? selectedBranchId != null && assigned.includes(selectedBranchId)
+          ? selectedBranchId
+          : null
+        : selectedBranchId;
   const { data: order, isLoading, isError } = useGetOrder(orderId, {
     query: { enabled: Number.isFinite(orderId) && orderId > 0 },
   });
 
   const [status, setStatus] = useState("order_received");
+  const [deliveryStatus, setDeliveryStatus] = useState("pending");
   const [paymentStatus, setPaymentStatus] = useState("due");
   const [paymentMode, setPaymentMode] = useState("cash");
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -70,10 +99,24 @@ export default function OrderDetailPage() {
   });
   const { data: paymentsData } = useListPayments({ orderId, limit: 100 }, { query: { enabled: Number.isFinite(orderId) && orderId > 0 } });
 
+  const patchDelivery = useMutation({
+    mutationFn: async (next: "pending" | "out_for_delivery" | "delivered") => {
+      if (!Number.isFinite(orderId)) throw new Error("Invalid order");
+      return patchOrderDelivery(orderId, headerBranchId, { deliveryStatus: next });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Delivery status updated" });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Update failed", description: error?.message, variant: "destructive" }),
+  });
+
   useEffect(() => {
     if (!order) return;
     const orderAny = order as any;
-    setStatus(orderAny.status ?? "order_received");
+    setStatus(orderAny.status === "delivered" ? "complete" : (orderAny.status ?? "order_received"));
+    setDeliveryStatus(orderAny.deliveryStatus ?? "pending");
     setPaymentStatus(orderAny.paymentStatus ?? "due");
     setPaymentMode(orderAny.paymentMode ?? "cash");
   }, [order]);
@@ -83,6 +126,8 @@ export default function OrderDetailPage() {
   if (isError || !order) return <div className="text-muted-foreground">Order not found.</div>;
 
   const orderAny = order as any;
+  /** Saved delivery status from server (Delivered option requires out_for_delivery to be saved first). */
+  const serverDeliveryStatus = (orderAny.deliveryStatus ?? "pending") as string;
   const payments = paymentsData?.data ?? [];
   const challanImages: string[] = Array.isArray(orderAny.challanImages) ? orderAny.challanImages : [];
   const photoComments = Array.isArray(orderAny.photoComments) ? orderAny.photoComments : [];
@@ -135,6 +180,12 @@ export default function OrderDetailPage() {
               <p className="text-sm">{order.customerName}</p>
               <p className="text-sm text-muted-foreground">{order.customerMobile || "—"}</p>
               <p className="text-sm text-muted-foreground">{order.customerAddress || "—"}</p>
+              <p className="text-sm text-muted-foreground">Pincode: {orderAny.customerPincode || "—"}</p>
+              {orderAny.deliverySlot ? (
+                <p className="text-sm text-muted-foreground mt-1">
+                  Delivery slot: {orderAny.deliverySlot.label} ({orderAny.deliverySlot.startTime}–{orderAny.deliverySlot.endTime})
+                </p>
+              ) : null}
               {order.isGst ? <p className="text-sm font-mono mt-2">GST: {order.customerGstNumber || "—"}</p> : null}
             </div>
             <div className="md:text-right">
@@ -143,6 +194,63 @@ export default function OrderDetailPage() {
               <p className="text-sm text-green-600">Paid: ₹{order.paidAmount.toLocaleString()}</p>
               <p className="text-sm font-medium mt-1">Balance: ₹{balance.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">Payment status: {orderAny.paymentStatus ?? "due"}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/60 p-4 space-y-3">
+            <h3 className="text-lg font-semibold">Delivery (logistics)</h3>
+            <p className="text-xs text-muted-foreground">
+              Separate from main order status. New orders start as <strong>Pending</strong>.{" "}
+              <strong>Out for delivery</strong> is allowed only when main status is <strong>Ready to ship</strong> (set Order
+              Status below). <strong>Delivered</strong> is allowed only after you have saved{" "}
+              <strong>Out for delivery</strong>.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(deliveryStatus)}</div>
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+              <div className="space-y-2 flex-1">
+                <p className="text-sm font-medium">Delivery status</p>
+                <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem
+                      value="out_for_delivery"
+                      disabled={status !== "ready_to_ship"}
+                      title={
+                        status !== "ready_to_ship"
+                          ? "Set main order status to Ready to ship first (in Update Status below)"
+                          : undefined
+                      }
+                    >
+                      Out for delivery
+                    </SelectItem>
+                    <SelectItem
+                      value="delivered"
+                      disabled={serverDeliveryStatus !== "out_for_delivery"}
+                      title={
+                        serverDeliveryStatus !== "out_for_delivery"
+                          ? "Save Out for delivery first, then you can mark Delivered"
+                          : undefined
+                      }
+                    >
+                      Delivered
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={
+                  patchDelivery.isPending ||
+                  deliveryStatus === serverDeliveryStatus ||
+                  (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
+                  (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
+                }
+                onClick={() => patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")}
+              >
+                Save delivery status
+              </Button>
             </div>
           </div>
 
@@ -241,7 +349,7 @@ export default function OrderDetailPage() {
                     <SelectItem value="order_received">Order Received</SelectItem>
                     <SelectItem value="manufacturing">Manufacturing</SelectItem>
                     <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="complete">Complete</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>

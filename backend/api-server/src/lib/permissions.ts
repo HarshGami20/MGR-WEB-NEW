@@ -75,3 +75,22 @@ export function requirePermission(module: string, action: StdPermission) {
     next();
   };
 }
+
+/** Pass if the user satisfies any of the listed module/action pairs (or is Super Admin). */
+export function requirePermissionAny(pairs: Array<{ module: string; action: StdPermission }>) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const matrix = (req as { permissionMatrix?: Record<string, NormalizedModulePerms> }).permissionMatrix ?? {};
+    const user = (req as { user?: unknown }).user;
+    if (isSuperAdminRole(user as { role?: { name?: string | null } | null })) {
+      next();
+      return;
+    }
+    for (const { module, action } of pairs) {
+      if (hasStdPermission(matrix, user, module, action)) {
+        next();
+        return;
+      }
+    }
+    res.status(403).json({ error: "Forbidden", message: "Insufficient permission" });
+  };
+}

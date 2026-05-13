@@ -27,6 +27,7 @@ import {
   BadgeCheck,
   BarChart3,
   Calculator,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -74,6 +75,7 @@ const staffNavSections: StaffSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
+      { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
       { label: "Products", href: "/products", icon: Package },
       // { label: "Categories", href: "/categories", icon: Tags },
       { label: "Inventory", href: "/inventory", icon: Archive },

@@ -19,6 +19,7 @@ import productVariantsRouter from "./productVariants";
 import attributeCatalogRouter from "./attributeCatalog";
 import reportsRouter from "./reports";
 import notificationsRouter from "./notifications";
+import deliverySlotsRouter from "./deliverySlots";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ router.use(categoriesRouter);
 router.use(productsRouter);
 router.use(inventoryRouter);
 router.use(ordersRouter);
+router.use(deliverySlotsRouter);
 router.use(invoicesRouter);
 router.use(paymentsRouter);
 router.use(suppliersRouter);

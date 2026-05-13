@@ -8,8 +8,10 @@ import {
   useUpdateOrderStatus,
   getListOrdersQueryKey
 } from "@/api-client";
-import { useBranch } from "@/lib/branch-context";
-import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { assignedUserBranchIds, useBranch } from "@/lib/branch-context";
+import { patchOrderDelivery } from "@/lib/delivery-api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +30,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -45,7 +48,17 @@ export default function Orders() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const { selectedBranchId } = useBranch();
+  const assigned = assignedUserBranchIds(user);
+  const headerBranchId =
+    assigned.length === 1
+      ? assigned[0]!
+      : assigned.length > 1
+        ? selectedBranchId != null && assigned.includes(selectedBranchId)
+          ? selectedBranchId
+          : null
+        : selectedBranchId;
 
   useEffect(() => {
     const q = sessionStorage.getItem(ORDERS_SEARCH_PREFILL_KEY);
@@ -79,7 +92,24 @@ export default function Orders() {
         queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
         toast({ title: "Order status updated" });
       },
+      onError: (error: any) =>
+        toast({
+          title: "Status update failed",
+          description: error?.response?.data?.error ?? error?.message,
+          variant: "destructive",
+        }),
     },
+  });
+
+  const patchDelivery = useMutation({
+    mutationFn: (vars: { orderId: number; deliveryStatus: "pending" | "out_for_delivery" | "delivered" }) =>
+      patchOrderDelivery(vars.orderId, headerBranchId, { deliveryStatus: vars.deliveryStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Delivery status updated" });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Delivery update failed", description: error?.message, variant: "destructive" }),
   });
 
   const openCreatePage = () => setLocation("/orders/new");
@@ -97,9 +127,24 @@ export default function Orders() {
       case "order_received": return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">Order Received</Badge>;
       case "manufacturing": return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Manufacturing</Badge>;
       case "ready_to_ship": return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Ready To Ship</Badge>;
-      case "delivered": return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Delivered</Badge>;
+      case "complete":
+      case "delivered":
+        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Complete</Badge>;
       case "cancelled": return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Cancelled</Badge>;
       default: return <Badge>{status}</Badge>;
+    }
+  };
+
+  const getDeliveryStatusBadge = (s: string) => {
+    switch (s) {
+      case "pending":
+        return <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">Delivery: Pending</Badge>;
+      case "out_for_delivery":
+        return <Badge variant="outline" className="bg-sky-50 text-sky-800 border-sky-200">Out for delivery</Badge>;
+      case "delivered":
+        return <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">Delivery: Delivered</Badge>;
+      default:
+        return <Badge variant="outline">{s}</Badge>;
     }
   };
 
@@ -129,6 +174,7 @@ export default function Orders() {
       "Customer Name",
       "Customer Mobile",
       "Status",
+      "Delivery status",
       "GST",
       "Total Amount",
       "Paid Amount",
@@ -143,6 +189,7 @@ export default function Orders() {
         o.customerName,
         o.customerMobile,
         o.status,
+        o.deliveryStatus ?? "pending",
         o.isGst ? "GST" : "Non-GST",
         Number(o.totalAmount || 0).toFixed(2),
         Number(o.paidAmount || 0).toFixed(2),
@@ -262,12 +309,12 @@ export default function Orders() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-          <Select
-            value={row.original.status}
-            onValueChange={(val: any) =>
-              updateStatus.mutate({ id: row.original.id, data: { status: val } })
-            }
-          >
+                <Select
+                  value={String(row.original.status) === "delivered" ? "complete" : String(row.original.status)}
+                  onValueChange={(val: any) =>
+                    updateStatus.mutate({ id: row.original.id, data: { status: val } })
+                  }
+                >
             <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
               {getStatusBadge(row.original.status)}
             </SelectTrigger>
@@ -275,11 +322,96 @@ export default function Orders() {
               <SelectItem value="order_received">Order Received</SelectItem>
               <SelectItem value="manufacturing">Manufacturing</SelectItem>
               <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="complete">Complete</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
         ),
+      },
+      {
+        id: "deliveryStatus",
+        header: "Delivery",
+        meta: { headerClassName: "whitespace-nowrap", cellClassName: "whitespace-nowrap " },
+        cell: ({ row }) => {
+          const ord = row.original as {
+            id: number;
+            status: string;
+            deliveryStatus?: string;
+            deliveryDate?: string | null;
+            deliverySlot?: {
+              label: string;
+              startTime: string;
+              endTime: string;
+              slotDate?: string;
+            } | null;
+          };
+          const del = String(ord.deliveryStatus ?? "pending");
+          const main = String(ord.status) === "delivered" ? "complete" : String(ord.status ?? "order_received");
+          const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === ord.id;
+          const dateSource = ord.deliveryDate ?? ord.deliverySlot?.slotDate ?? null;
+          const dateStr =
+            dateSource != null && String(dateSource).trim() !== ""
+              ? new Date(dateSource as string).toLocaleDateString(undefined, {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
+              : null;
+          const slot = ord.deliverySlot;
+          const slotStr = slot ? `${slot.label} (${slot.startTime}–${slot.endTime})` : null;
+          return (
+            <Select
+              value={del}
+              disabled={rowPending}
+              onValueChange={(val) =>
+                patchDelivery.mutate({
+                  orderId: ord.id,
+                  deliveryStatus: val as "pending" | "out_for_delivery" | "delivered",
+                })
+              }
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SelectTrigger className="h-8 min-w-[152px] max-w-[152px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+                    {getDeliveryStatusBadge(del)}
+                  </SelectTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[280px] space-y-1.5 py-2 text-left font-normal leading-snug">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide opacity-80">Delivery date</div>
+                    <div className="text-sm">{dateStr ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide opacity-80">Slot</div>
+                    <div className="text-sm break-words">{slotStr ?? "—"}</div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem
+                  value="out_for_delivery"
+                  disabled={main !== "ready_to_ship"}
+                  title={
+                    main !== "ready_to_ship"
+                      ? "Set main order status to Ready to ship first"
+                      : undefined
+                  }
+                >
+                  Out for delivery
+                </SelectItem>
+                <SelectItem
+                  value="delivered"
+                  disabled={del !== "out_for_delivery"}
+                  title={del !== "out_for_delivery" ? "Set Out for delivery first" : undefined}
+                >
+                  Delivered
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          );
+        },
       },
       {
         accessorKey: "totalAmount",
@@ -329,7 +461,19 @@ export default function Orders() {
         },
       },
     ],
-    [allSelectedOnPage, getStatusBadge, openDetailPage, openEditPage, selectedCount, selectedOrderIds, updateStatus],
+    [
+      allSelectedOnPage,
+      getDeliveryStatusBadge,
+      getStatusBadge,
+      openDetailPage,
+      openEditPage,
+      patchDelivery.isPending,
+      patchDelivery.variables?.orderId,
+      patchDelivery.mutate,
+      selectedCount,
+      selectedOrderIds,
+      updateStatus,
+    ],
   );
 
   return (
@@ -365,7 +509,7 @@ export default function Orders() {
               <SelectItem value="order_received">Order Received</SelectItem>
               <SelectItem value="manufacturing">Manufacturing</SelectItem>
               <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="complete">Complete</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>

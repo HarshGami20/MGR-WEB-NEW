@@ -1,7 +1,19 @@
 import { Router, IRouter } from "express";
+import { z } from "zod";
 import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission } from "../lib/permissions";
+import { requirePermission, requirePermissionAny } from "../lib/permissions";
+import {
+  pickBestDeliverySlot,
+  normalizeMainOrderStatus,
+  normalizeDeliveryStatus,
+  countOrdersInSlot,
+  slotServesPincode,
+  parseDeliveryDateInput,
+  utcDateOnly,
+  sameUtcDate,
+} from "../lib/delivery-slots";
+import type { Prisma } from "@prisma/client";
 import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
@@ -16,9 +28,83 @@ const ORDER_STATUSES = new Set([
   "order_received",
   "manufacturing",
   "ready_to_ship",
-  "delivered",
+  "complete",
   "cancelled",
 ]);
+
+const PatchOrderDeliveryBody = z.object({
+  deliveryStatus: z.enum(["pending", "out_for_delivery", "delivered"]).optional(),
+  deliverySlotId: z.union([z.number().int().positive(), z.null()]).optional(),
+});
+
+/** Out for delivery only when main order is ready_to_ship; Delivered only after Out for delivery. */
+function assertDeliveryStatusTransition(params: {
+  mainStatus: string;
+  prevDelivery: string;
+  nextDelivery: string;
+}): { ok: true } | { ok: false; error: string } {
+  const main = normalizeMainOrderStatus(params.mainStatus);
+  const prev = normalizeDeliveryStatus(params.prevDelivery);
+  const next = normalizeDeliveryStatus(params.nextDelivery);
+  if (prev === next) return { ok: true };
+  if (next === "pending") return { ok: true };
+  if (next === "out_for_delivery") {
+    if (main !== "ready_to_ship") {
+      return {
+        ok: false,
+        error: "Delivery can be set to Out for delivery only when the order status is Ready to ship.",
+      };
+    }
+    return { ok: true };
+  }
+  if (next === "delivered") {
+    if (prev !== "out_for_delivery") {
+      return {
+        ok: false,
+        error: "Delivery can be marked Delivered only after it is Out for delivery.",
+      };
+    }
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+/** Any persisted row: out_for_delivery requires main status ready_to_ship. */
+function assertOrderDeliveryCoherence(mainStatus: string, deliveryStatus: string): { ok: true } | { ok: false; error: string } {
+  const main = normalizeMainOrderStatus(mainStatus);
+  const del = normalizeDeliveryStatus(deliveryStatus);
+  if (del === "out_for_delivery" && main !== "ready_to_ship") {
+    return {
+      ok: false,
+      error: "Order is not Ready to ship but delivery is Out for delivery. Set delivery to Pending or move order to Ready to ship.",
+    };
+  }
+  return { ok: true };
+}
+
+async function assertValidOrderDeliverySlot(
+  tx: Prisma.TransactionClient,
+  params: {
+    branchId: number;
+    deliverySlotId: number;
+    deliveryDate: Date | null;
+    pincode: string | null | undefined;
+    excludeOrderId?: number;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const slot = await tx.deliverySlot.findUnique({ where: { id: params.deliverySlotId } });
+  if (!slot || slot.branchId !== params.branchId) return { ok: false, error: "Delivery slot not found for this branch" };
+  if (!params.deliveryDate) return { ok: false, error: "Delivery date is required when assigning a slot" };
+  if (!sameUtcDate(utcDateOnly(slot.slotDate), utcDateOnly(params.deliveryDate))) {
+    return { ok: false, error: "Slot date does not match delivery date" };
+  }
+  if (!slotServesPincode(slot.servicePincodes, params.pincode)) {
+    return { ok: false, error: "Pincode is not covered by this delivery slot" };
+  }
+  const used = await countOrdersInSlot(tx, slot.id, params.excludeOrderId);
+  if (used >= slot.maxOrders) return { ok: false, error: "This delivery slot is full" };
+  return { ok: true };
+}
 const PAYMENT_STATUSES = new Set(["due", "partially_paid", "paid"]);
 
 const orderImageUploadDir = path.resolve(process.cwd(), "uploads", "orders");
@@ -84,12 +170,20 @@ async function enrichOrder(order: any) {
     });
     if (u) assignedTo = u as any;
   }
+  let deliverySlot: Awaited<ReturnType<typeof prisma.deliverySlot.findUnique>> = null;
+  if (order.deliverySlotId) {
+    const ds = await prisma.deliverySlot.findUnique({ where: { id: order.deliverySlotId } });
+    if (ds) deliverySlot = ds;
+  }
   return {
     ...order,
-    status: order.status ?? "order_received",
+    status: normalizeMainOrderStatus(order.status ?? "order_received"),
     paymentStatus: order.paymentStatus ?? "due",
+    deliveryStatus: normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus),
     advanceAmount: toNumber(order.advanceAmount ?? 0),
     deliveryDate: order.deliveryDate ?? null,
+    addressLat: order.addressLat != null ? toNumber(order.addressLat) : null,
+    addressLng: order.addressLng != null ? toNumber(order.addressLng) : null,
     subtotal: toNumber(order.subtotal),
     taxAmount: toNumber(order.taxAmount),
     totalAmount: toNumber(order.totalAmount),
@@ -100,6 +194,16 @@ async function enrichOrder(order: any) {
     items: enrichedItems,
     branch,
     assignedTo,
+    deliverySlot: deliverySlot
+      ? {
+          id: deliverySlot.id,
+          label: deliverySlot.label,
+          startTime: deliverySlot.startTime,
+          endTime: deliverySlot.endTime,
+          slotDate: deliverySlot.slotDate,
+          maxOrders: deliverySlot.maxOrders,
+        }
+      : null,
   };
 }
 
@@ -131,7 +235,13 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
       { orderNumber: { contains: search, mode: "insensitive" } },
     ];
   }
-  if (status) where.status = status;
+  if (status) {
+    if (status === "complete") {
+      where.status = { in: ["complete", "delivered"] };
+    } else {
+      where.status = status;
+    }
+  }
   if (isGst !== undefined) where.isGst = isGst === "true";
   if (branchId) where.branchId = parseInt(branchId, 10);
 
@@ -153,7 +263,17 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const branchId = await requireWriteBranchId(req, res, user);
   if (branchId == null) return;
 
-  const { items, branchId: _clientBranch, ...orderData } = parsed.data as any;
+  const {
+    items,
+    branchId: _clientBranch,
+    deliverySlotId: inputDeliverySlotId,
+    customerPincode,
+    addressLat,
+    addressLng,
+    googlePlaceId,
+    deliveryStatus,
+    ...orderData
+  } = parsed.data as any;
   let subtotal = 0;
   let taxAmount = 0;
 
@@ -172,7 +292,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const totalAmount = subtotal + taxAmount;
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
-  const requestedStatus = typeof orderData.status === "string" ? orderData.status : "order_received";
+  const requestedStatusRaw = typeof orderData.status === "string" ? orderData.status : "order_received";
+  const requestedStatus = requestedStatusRaw === "delivered" ? "complete" : requestedStatusRaw;
   const status = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : "order_received";
   const requestedPaymentStatus = typeof orderData.paymentStatus === "string" ? orderData.paymentStatus : undefined;
   const paymentStatus = normalizePaymentStatus(totalAmount, safeAdvanceAmount, requestedPaymentStatus);
@@ -181,6 +302,34 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   let createdOrder;
   try {
     createdOrder = await prisma.$transaction(async (tx) => {
+      const pincode =
+        typeof customerPincode === "string" && customerPincode.trim() ? customerPincode.trim() : null;
+      const deliveryDateObj = orderData.deliveryDate ? new Date(orderData.deliveryDate) : null;
+      let resolvedDeliverySlotId: number | null =
+        typeof inputDeliverySlotId === "number" && Number.isFinite(inputDeliverySlotId)
+          ? inputDeliverySlotId
+          : null;
+
+      if (deliveryDateObj) {
+        if (resolvedDeliverySlotId != null) {
+          const v = await assertValidOrderDeliverySlot(tx, {
+            branchId,
+            deliverySlotId: resolvedDeliverySlotId,
+            deliveryDate: deliveryDateObj,
+            pincode,
+          });
+          if (!v.ok) throw new Error(v.error);
+        } else {
+          resolvedDeliverySlotId = await pickBestDeliverySlot(tx, {
+            branchId,
+            deliveryDate: deliveryDateObj,
+            pincode,
+          });
+        }
+      } else {
+        resolvedDeliverySlotId = null;
+      }
+
       const order = await tx.order.create({
         data: {
           ...orderData,
@@ -198,6 +347,18 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           staffComments: JSON.stringify(Array.isArray(orderData.staffComments) ? orderData.staffComments : []),
           assignedToId: orderData.assignedToId ?? null,
           deliveryDate: orderData.deliveryDate ? new Date(orderData.deliveryDate) : null,
+          deliverySlotId: resolvedDeliverySlotId,
+          deliveryStatus: "pending",
+          customerPincode: pincode,
+          googlePlaceId: typeof googlePlaceId === "string" && googlePlaceId.trim() ? googlePlaceId.trim() : null,
+          addressLat:
+            addressLat != null && addressLat !== "" && Number.isFinite(Number(addressLat))
+              ? Number(addressLat)
+              : null,
+          addressLng:
+            addressLng != null && addressLng !== "" && Number.isFinite(Number(addressLng))
+              ? Number(addressLng)
+              : null,
         },
       });
 
@@ -432,9 +593,137 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         })),
       });
 
-      const { items: _ignoredItems, branchId: _omitBranch, ...orderFields } = payload;
-      const requestedStatus = typeof orderFields.status === "string" ? orderFields.status : existingOrder.status;
-      const safeStatus = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : existingOrder.status;
+      const {
+        items: _ignoredItems,
+        branchId: _omitBranch,
+        deliverySlotId: payloadDeliverySlotId,
+        deliveryStatus: payloadDeliveryStatus,
+        customerPincode: payloadCustomerPincode,
+        addressLat: payloadAddressLat,
+        addressLng: payloadAddressLng,
+        googlePlaceId: payloadGooglePlaceId,
+        ...orderFields
+      } = payload;
+      const eo = existingOrder as any;
+      const requestedStatusRaw =
+        typeof orderFields.status === "string"
+          ? orderFields.status
+          : String(existingOrder.status || "order_received");
+      const requestedStatusNorm = requestedStatusRaw === "delivered" ? "complete" : requestedStatusRaw;
+      const safeStatus = ORDER_STATUSES.has(requestedStatusNorm)
+        ? requestedStatusNorm
+        : normalizeMainOrderStatus(String(existingOrder.status));
+
+      const branchForSlot = nextOrderBranchId ?? existingOrder.branchId;
+      if (branchForSlot == null) throw new Error("Order has no branch for delivery scheduling");
+
+      const nextDeliveryDate =
+        orderFields.deliveryDate !== undefined
+          ? orderFields.deliveryDate != null && String(orderFields.deliveryDate) !== ""
+            ? new Date(orderFields.deliveryDate)
+            : null
+          : existingOrder.deliveryDate;
+
+      const nextPin =
+        payloadCustomerPincode !== undefined
+          ? typeof payloadCustomerPincode === "string" && payloadCustomerPincode.trim()
+            ? payloadCustomerPincode.trim()
+            : null
+          : (eo.customerPincode ?? null);
+
+      let nextSlotId: number | null;
+      if (payloadDeliverySlotId !== undefined) {
+        nextSlotId =
+          typeof payloadDeliverySlotId === "number" && Number.isFinite(payloadDeliverySlotId)
+            ? payloadDeliverySlotId
+            : null;
+        if (nextSlotId != null && nextDeliveryDate) {
+          const v = await assertValidOrderDeliverySlot(tx, {
+            branchId: branchForSlot,
+            deliverySlotId: nextSlotId,
+            deliveryDate: nextDeliveryDate,
+            pincode: nextPin,
+            excludeOrderId: id,
+          });
+          if (!v.ok) throw new Error(v.error);
+        }
+      } else {
+        nextSlotId = eo.deliverySlotId ?? null;
+        if (nextDeliveryDate) {
+          if (nextSlotId != null) {
+            const v = await assertValidOrderDeliverySlot(tx, {
+              branchId: branchForSlot,
+              deliverySlotId: nextSlotId,
+              deliveryDate: nextDeliveryDate,
+              pincode: nextPin,
+              excludeOrderId: id,
+            });
+            if (!v.ok) {
+              nextSlotId = await pickBestDeliverySlot(tx, {
+                branchId: branchForSlot,
+                deliveryDate: nextDeliveryDate,
+                pincode: nextPin,
+                excludeOrderId: id,
+              });
+            }
+          } else {
+            nextSlotId = await pickBestDeliverySlot(tx, {
+              branchId: branchForSlot,
+              deliveryDate: nextDeliveryDate,
+              pincode: nextPin,
+              excludeOrderId: id,
+            });
+          }
+        } else {
+          nextSlotId = null;
+        }
+      }
+
+      const nextDelStatus =
+        payloadDeliveryStatus !== undefined
+          ? normalizeDeliveryStatus(payloadDeliveryStatus)
+          : normalizeDeliveryStatus(eo.deliveryStatus);
+
+      const prevDel = normalizeDeliveryStatus(eo.deliveryStatus);
+      if (payloadDeliveryStatus !== undefined) {
+        const t = assertDeliveryStatusTransition({
+          mainStatus: safeStatus,
+          prevDelivery: prevDel,
+          nextDelivery: nextDelStatus,
+        });
+        if (!t.ok) throw new Error(t.error);
+      }
+      const coh = assertOrderDeliveryCoherence(safeStatus, nextDelStatus);
+      if (!coh.ok) throw new Error(coh.error);
+
+      const nextLat =
+        payloadAddressLat !== undefined
+          ? payloadAddressLat != null &&
+            String(payloadAddressLat) !== "" &&
+            Number.isFinite(Number(payloadAddressLat))
+            ? Number(payloadAddressLat)
+            : null
+          : eo.addressLat != null
+            ? toNumber(eo.addressLat)
+            : null;
+      const nextLng =
+        payloadAddressLng !== undefined
+          ? payloadAddressLng != null &&
+            String(payloadAddressLng) !== "" &&
+            Number.isFinite(Number(payloadAddressLng))
+            ? Number(payloadAddressLng)
+            : null
+          : eo.addressLng != null
+            ? toNumber(eo.addressLng)
+            : null;
+
+      const nextPlaceId =
+        payloadGooglePlaceId !== undefined
+          ? typeof payloadGooglePlaceId === "string" && payloadGooglePlaceId.trim()
+            ? payloadGooglePlaceId.trim()
+            : null
+          : eo.googlePlaceId ?? null;
+
       const normalizedChallanImages = Array.isArray(orderFields.challanImages) ? orderFields.challanImages : safeJsonParse<string[]>(existingOrder.challanImages, []);
       const normalizedPhotoComments = Array.isArray(orderFields.photoComments) ? orderFields.photoComments : safeJsonParse<any[]>(existingOrder.photoComments, []);
       const normalizedStaffComments = Array.isArray(orderFields.staffComments) ? orderFields.staffComments : safeJsonParse<any[]>(existingOrder.staffComments, []);
@@ -451,7 +740,13 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           challanImages: JSON.stringify(normalizedChallanImages),
           photoComments: JSON.stringify(normalizedPhotoComments),
           staffComments: JSON.stringify(normalizedStaffComments),
-          deliveryDate: orderFields.deliveryDate ? new Date(orderFields.deliveryDate) : null,
+          deliveryDate: nextDeliveryDate,
+          deliverySlotId: nextSlotId,
+          deliveryStatus: nextDelStatus,
+          customerPincode: nextPin,
+          addressLat: nextLat,
+          addressLng: nextLng,
+          googlePlaceId: nextPlaceId,
         },
       });
 
@@ -494,12 +789,106 @@ router.delete("/orders/:id", requireAuth, requirePermission("orders", "delete"),
   res.json({ success: true });
 });
 
+router.patch(
+  "/orders/:id/delivery",
+  requireAuth,
+  requirePermissionAny([
+    { module: "deliveries", action: "update" },
+    { module: "orders", action: "update" },
+  ]),
+  async (req, res): Promise<void> => {
+    const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(raw, 10);
+    const parsed = PatchOrderDeliveryBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    if (parsed.data.deliveryStatus === undefined && parsed.data.deliverySlotId === undefined) {
+      res.status(400).json({ error: "Provide deliveryStatus and/or deliverySlotId" });
+      return;
+    }
+    const existing = await prisma.order.findUnique({ where: { id } });
+    if (!existing) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    const branchId = existing.branchId;
+    if (branchId == null) {
+      res.status(400).json({ error: "Order has no branch" });
+      return;
+    }
+    const eo = existing as any;
+    const deliveryDate = existing.deliveryDate;
+    const pincode = eo.customerPincode ?? null;
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        let nextSlotId = eo.deliverySlotId ?? null;
+        if (parsed.data.deliverySlotId !== undefined) {
+          nextSlotId = parsed.data.deliverySlotId;
+          if (nextSlotId != null && deliveryDate) {
+            const v = await assertValidOrderDeliverySlot(tx, {
+              branchId,
+              deliverySlotId: nextSlotId,
+              deliveryDate,
+              pincode,
+              excludeOrderId: id,
+            });
+            if (!v.ok) throw new Error(v.error);
+          }
+        }
+        const nextDel =
+          parsed.data.deliveryStatus !== undefined
+            ? normalizeDeliveryStatus(parsed.data.deliveryStatus)
+            : normalizeDeliveryStatus(eo.deliveryStatus);
+
+        if (parsed.data.deliveryStatus !== undefined) {
+          const t = assertDeliveryStatusTransition({
+            mainStatus: normalizeMainOrderStatus(String(existing.status)),
+            prevDelivery: normalizeDeliveryStatus(eo.deliveryStatus),
+            nextDelivery: nextDel,
+          });
+          if (!t.ok) throw new Error(t.error);
+        }
+        const coh = assertOrderDeliveryCoherence(normalizeMainOrderStatus(String(existing.status)), nextDel);
+        if (!coh.ok) throw new Error(coh.error);
+
+        return tx.order.update({
+          where: { id },
+          data: {
+            ...(parsed.data.deliverySlotId !== undefined ? { deliverySlotId: nextSlotId } : {}),
+            ...(parsed.data.deliveryStatus !== undefined ? { deliveryStatus: nextDel } : {}),
+          },
+        });
+      });
+      res.json(await enrichOrder(updated));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      res.status(400).json({ error: msg || "Failed to update delivery" });
+    }
+  },
+);
+
 router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "update"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const parsed = UpdateOrderStatusBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const nextStatus = ORDER_STATUSES.has(parsed.data.status) ? parsed.data.status : "order_received";
+  const existing = await prisma.order.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
+  const rawSt = typeof (parsed.data as any).status === "string" ? (parsed.data as any).status : "order_received";
+  const norm = rawSt === "delivered" ? "complete" : rawSt;
+  const nextStatus = ORDER_STATUSES.has(norm) ? norm : "order_received";
+  const eo = existing as any;
+  const del = normalizeDeliveryStatus(eo.deliveryStatus);
+  if (nextStatus !== "ready_to_ship" && del === "out_for_delivery") {
+    res.status(400).json({
+      error:
+        "Delivery is Out for delivery. Set delivery to Pending or Delivered before changing order status away from Ready to ship.",
+    });
+    return;
+  }
   const order = await prisma.order.update({ where: { id }, data: { status: nextStatus } }).catch(() => null);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   res.json(await enrichOrder(order));

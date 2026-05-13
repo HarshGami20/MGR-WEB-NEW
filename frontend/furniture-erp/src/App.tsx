@@ -33,6 +33,7 @@ import Branches from "@/pages/branches";
 import ReportsPage from "@/pages/reports";
 import CurtainCalculatorPage from "@/pages/curtain-calculator";
 import NotificationsPage from "@/pages/notifications";
+import DeliveriesPage from "@/pages/deliveries";
 
 const queryClient = new QueryClient();
 
@@ -144,6 +145,9 @@ function Router() {
       </Route>
       <Route path="/orders">
         <ProtectedRoute viewModule="orders" component={Orders} />
+      </Route>
+      <Route path="/deliveries">
+        <ProtectedRoute viewModule="deliveries" component={DeliveriesPage} />
       </Route>
       <Route path="/orders/new">
         <ProtectedRoute viewModule="orders" component={OrderCreatePage} />

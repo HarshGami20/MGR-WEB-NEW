@@ -63,14 +63,15 @@ function StaffDashboard() {
   const { data: orderStatus, isLoading: statusLoading } = useGetOrderStatusBreakdown(branchIdParam);
   const { data: usersData } = useListUsers({ isActive: true, limit: 6 });
 
-  const delivered = statusCount(orderStatus, "delivered");
+  const completedMain =
+    statusCount(orderStatus, "complete") + statusCount(orderStatus, "delivered");
   const orderReceived = statusCount(orderStatus, "order_received");
   const manufacturing = statusCount(orderStatus, "manufacturing");
   const readyToShip = statusCount(orderStatus, "ready_to_ship");
   const cancelled = statusCount(orderStatus, "cancelled");
   const inProgress = manufacturing + readyToShip;
   const openOrders = orderReceived + inProgress;
-  const fromBreakdownSum = delivered + openOrders + cancelled;
+  const fromBreakdownSum = completedMain + openOrders + cancelled;
   const totalOrders = summary?.totalOrders ?? fromBreakdownSum;
 
   const orderAnalyticsData = useMemo(() => {
@@ -139,12 +140,12 @@ function StaffDashboard() {
 
   const pendingTotal = orderReceived + cancelled;
   const donutData = [
-    { name: "Delivered", value: delivered, fill: chartOrders },
+    { name: "Complete", value: completedMain, fill: chartOrders },
     { name: "In progress", value: inProgress, fill: "hsl(var(--chart-2))" },
     { name: "Open", value: pendingTotal, fill: chartPending },
   ];
-  const donutTotal = Math.max(delivered + inProgress + pendingTotal, 1);
-  const completedPct = Math.round((delivered / donutTotal) * 100);
+  const donutTotal = Math.max(completedMain + inProgress + pendingTotal, 1);
+  const completedPct = Math.round((completedMain / donutTotal) * 100);
 
   const reminder = useMemo(() => {
     if (summary && summary.pendingPayments > 0) {
@@ -159,7 +160,12 @@ function StaffDashboard() {
         meta: `${summary.lowStockCount} product(s) below threshold`,
       };
     }
-    const urgent = recentOrders?.find((o) => (o.status as string) !== "delivered" && (o.status as string) !== "cancelled");
+    const urgent = recentOrders?.find(
+      (o) =>
+        (o.status as string) !== "complete" &&
+        (o.status as string) !== "delivered" &&
+        (o.status as string) !== "cancelled",
+    );
     const first = urgent ?? recentOrders?.[0];
     if (!first)
       return { title: "No upcoming actions", meta: "You are all caught up" };
@@ -194,6 +200,7 @@ function StaffDashboard() {
       order_received: ClipboardList,
       manufacturing: ClipboardList,
       ready_to_ship: Box,
+      complete: Box,
       delivered: Box,
       cancelled: ClipboardList,
     };
@@ -209,8 +216,10 @@ function StaffDashboard() {
         return <Badge variant="outline" className="rounded-full border-blue-200 bg-blue-50 text-blue-700">Manufacturing</Badge>;
       case "ready_to_ship":
         return <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">Ready To Ship</Badge>;
+      case "complete":
+        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Complete</Badge>;
       case "delivered":
-        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Delivered</Badge>;
+        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Complete</Badge>;
       case "cancelled":
         return <Badge variant="outline" className="rounded-full border-rose-200 bg-rose-50 text-rose-700">Cancelled</Badge>;
       default:
@@ -289,7 +298,7 @@ function StaffDashboard() {
             </div>
             <MetricCardPlain
               title="Delivered"
-              value={delivered}
+              value={completedMain}
               hint={`${completedPct}% of pipeline`}
             />
             <MetricCardPlain title="In progress" value={inProgress} hint={`Manufacturing + ready to ship`} />
