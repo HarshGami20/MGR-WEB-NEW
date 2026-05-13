@@ -1,12 +1,23 @@
-import { Router, IRouter } from "express";
+import { Router, IRouter, Request } from "express";
+import type { Prisma } from "@prisma/client";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 
 const router: IRouter = Router();
 
-router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "read"), async (_req, res): Promise<void> => {
-  const orders = await prisma.order.findMany();
+/** Optional `branchId` query: positive integer filters orders to that branch. */
+function orderWhereFromQuery(req: Request): Prisma.OrderWhereInput {
+  const raw = req.query.branchId;
+  if (raw === undefined || raw === "") return {};
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n <= 0) return {};
+  return { branchId: n };
+}
+
+router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "read"), async (req, res): Promise<void> => {
+  const orderWhere = orderWhereFromQuery(req);
+  const orders = await prisma.order.findMany({ where: orderWhere });
   const products = await prisma.product.findMany({ include: { _count: { select: { variants: true } } } });
   const suppliers = await prisma.supplier.findMany();
 
@@ -48,7 +59,12 @@ router.get("/dashboard/summary", requireAuth, requirePermission("dashboard", "re
 router.get("/dashboard/recent-orders", requireAuth, requirePermission("dashboard", "read"), async (req, res): Promise<void> => {
   const { limit = "10" } = req.query as Record<string, string>;
   const limitNum = parseInt(limit, 10);
-  const orders = await prisma.order.findMany({ take: limitNum });
+  const orderWhere = orderWhereFromQuery(req);
+  const orders = await prisma.order.findMany({
+    where: orderWhere,
+    take: limitNum,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
   const data = orders.map(o => ({
     ...o,
     subtotal: toNumber(o.subtotal),
@@ -61,7 +77,8 @@ router.get("/dashboard/recent-orders", requireAuth, requirePermission("dashboard
 });
 
 router.get("/dashboard/sales-report", requireAuth, requirePermission("dashboard", "read"), async (req, res): Promise<void> => {
-  const orders = await prisma.order.findMany();
+  const orderWhere = orderWhereFromQuery(req);
+  const orders = await prisma.order.findMany({ where: orderWhere });
   const year = req.query.year ? parseInt(req.query.year as string, 10) : new Date().getFullYear();
 
   const monthMap: Record<string, { revenue: number; orderCount: number }> = {};
@@ -85,8 +102,9 @@ router.get("/dashboard/sales-report", requireAuth, requirePermission("dashboard"
   res.json(result);
 });
 
-router.get("/dashboard/order-status-breakdown", requireAuth, requirePermission("dashboard", "read"), async (_req, res): Promise<void> => {
-  const orders = await prisma.order.findMany();
+router.get("/dashboard/order-status-breakdown", requireAuth, requirePermission("dashboard", "read"), async (req, res): Promise<void> => {
+  const orderWhere = orderWhereFromQuery(req);
+  const orders = await prisma.order.findMany({ where: orderWhere });
   const statusMap: Record<string, number> = {};
   for (const o of orders) {
     statusMap[o.status] = (statusMap[o.status] || 0) + 1;

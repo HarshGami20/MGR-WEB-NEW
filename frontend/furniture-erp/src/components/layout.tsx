@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/auth";
 import { isPartnerPortalUser, partnerPortalLabel } from "@/lib/partner";
-import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { useBranch, assignedUserBranchIds, isSuperAdminUser } from "@/lib/branch-context";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -42,9 +42,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useListBranches, useGetDashboardSummary } from "@/api-client";
-import { useEffect, useState, useRef, type ComponentType } from "react";
+import { useEffect, useState, useRef, useMemo, type ComponentType } from "react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
+import { ROUTE_VIEW_MODULE, usePermissions } from "@/lib/permissions";
 
 /** Must match `/orders` prefill cleanup key */
 const ERP_ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
@@ -111,11 +112,12 @@ const staffNavSections: StaffSection[] = [
 
 const partnerNavItems = [
   { label: "Purchase orders", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
 ];
 
 function getPageTitle(location: string, partnerUser: boolean): string {
   if (partnerUser && location === "/dashboard") return "Your purchase orders";
+  if (partnerUser && location === "/settings") return "Settings";
   const found = partnerNavItems.find((item) => item.href === location);
   if (partnerUser) return found?.label ?? "MGR Casa";
   const flat = staffNavSections.flatMap((s) => s.items);
@@ -169,12 +171,38 @@ export default function Layout({ children }: LayoutProps) {
     (user as { branch?: { name?: string } | null } | null)?.branch?.name ??
     branches.find((b) => b.id === homeBranchId)?.name ??
     "Branch";
-  const { data: summary } = useGetDashboardSummary({
-    query: { enabled: !partnerUser && !!user },
-  });
+
+  const branchesForPicker = useMemo(() => {
+    if (!user || partnerUser || isSuperAdminUser(user)) return branches;
+    const ids = assignedUserBranchIds(user);
+    if (ids.length === 0) return branches;
+    return branches.filter((b) => ids.includes(b.id));
+  }, [branches, user, partnerUser]);
+
+  const { data: summary } = useGetDashboardSummary(
+    selectedBranchId != null ? { branchId: selectedBranchId } : undefined,
+    { query: { enabled: !partnerUser && !!user } },
+  );
 
   const pendingOrdersBadge =
     summary && summary.pendingOrders > 0 ? (summary.pendingOrders > 99 ? "99+" : String(summary.pendingOrders)) : null;
+
+  const { can } = usePermissions();
+
+  const visibleStaffNavSections = useMemo(() => {
+    if (partnerUser) return [];
+    return staffNavSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          const mod = ROUTE_VIEW_MODULE[item.href];
+          if (mod === "tools") return can("tools", "view");
+          if (!mod) return false;
+          return can(mod, "view");
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [partnerUser, user, can]);
 
   const handleLogout = () => {
     logout();
@@ -223,6 +251,53 @@ export default function Layout({ children }: LayoutProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [partnerUser]);
 
+  const sidebarAppPromoEl = showSidebarAppPromo ? (
+    <div className="relative overflow-hidden rounded-[1.65rem] mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
+      <div className="absolute right-2 top-2 z-[2]">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Close app promo"
+          className="absolute cursor-pointer right-2 top-2 z-[2] h-8 w-8 rounded-full text-white/85 hover:bg-white/10 hover:text-white"
+          onClick={dismissSidebarAppPromo}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          backgroundImage: `radial-gradient(ellipse at 102% 100%, rgba(176,138,218,.42) 0%, rgba(176,138,218,0) 58%)`,
+        }}
+      />
+      <div className="pointer-events-none absolute -left-7 top-10 h-56 w-56 rounded-full border-2 border-white/20" />
+      <div className="pointer-events-none absolute left-10 top-16 h-60 w-60 rounded-full border-2 border-white/15" />
+      <div className="pointer-events-none absolute right-[-118px] top-20 h-72 w-72 rounded-full border-2 border-white/20" />
+      <div className="pointer-events-none absolute right-[-66px] top-28 h-56 w-56 rounded-full border-2 border-white/15" />
+
+      <div className="relative z-[1]">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-primary">
+          <BadgeCheck className="h-5 w-5" />
+        </span>
+        <p className="mt-3 text-[1.025rem] font-semibold leading-tight">
+          Download our
+          <br />
+          Mobile App
+        </p>
+        <p className="text-xs text-white/80 mt-2.5 leading-relaxed">Get easy in another way</p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className="relative z-[1] mt-5 rounded-full bg-white text-primary hover:bg-white/90 font-semibold w-full h-11 shadow-sm border-0"
+        onClick={() => window.scrollTo({ top: 0 })}
+      >
+        Download
+      </Button>
+    </div>
+  ) : null;
+
   const renderStaffSidebarInner = () => (
     <>
       <div className="h-[4.75rem] w-full flex items-center gap-2 border-b border-border/60 px-5">
@@ -237,7 +312,7 @@ export default function Layout({ children }: LayoutProps) {
 
       <ScrollArea className="flex-1 px-3 py-3 min-h-0">
         <div className="space-y-6 pr-2">
-          {staffNavSections.map((section, si) => (
+          {visibleStaffNavSections.map((section, si) => (
             <div key={si}>
               <p className="px-3 mb-2 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">
                 {section.title}
@@ -290,12 +365,14 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="px-3 pb-4 pt-2 space-y-2 shrink-0 border-t border-border/50">
         <p className="px-3 pb-1 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">General</p>
-        <Link href="/settings" className="block" onClick={() => setMobileSidebarOpen(false)}>
-          <span className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors">
-            <Settings className="h-[18px] w-[18px]" />
-            Settings
-          </span>
-        </Link>
+        {can("settings", "view") ? (
+          <Link href="/settings" className="block" onClick={() => setMobileSidebarOpen(false)}>
+            <span className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors">
+              <Settings className="h-[18px] w-[18px]" />
+              Settings
+            </span>
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -315,53 +392,7 @@ export default function Layout({ children }: LayoutProps) {
           Log out
         </button>
 
-        {showSidebarAppPromo ? (
-        <div className="relative overflow-hidden rounded-[1.65rem] mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
-          <div className="absolute right-2 top-2 z-[2]">
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close app promo"
-            className="absolute cursor-pointer right-2 top-2 z-[2] h-8 w-8 rounded-full text-white/85 hover:bg-white/10 hover:text-white"
-            onClick={dismissSidebarAppPromo}
-            >
-            <X className="h-4 w-4" />
-          </Button>
-            </div>
-          <div
-            className="pointer-events-none absolute inset-0 opacity-40"
-            style={{
-              backgroundImage: `radial-gradient(ellipse at 102% 100%, rgba(176,138,218,.42) 0%, rgba(176,138,218,0) 58%)`,
-            }}
-          />
-          <div className="pointer-events-none absolute -left-7 top-10 h-56 w-56 rounded-full border-2 border-white/20" />
-          <div className="pointer-events-none absolute left-10 top-16 h-60 w-60 rounded-full border-2 border-white/15" />
-          <div className="pointer-events-none absolute right-[-118px] top-20 h-72 w-72 rounded-full border-2 border-white/20" />
-          <div className="pointer-events-none absolute right-[-66px] top-28 h-56 w-56 rounded-full border-2 border-white/15" />
-
-          <div className="relative z-[1]">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-primary">
-              <BadgeCheck className="h-5 w-5" />
-            </span>
-            <p className="mt-3 text-[1.025rem] font-semibold leading-tight">
-              Download our
-              <br />
-              Mobile App
-            </p>
-            <p className="text-xs text-white/80 mt-2.5 leading-relaxed">Get easy in another way</p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            className="relative z-[1] mt-5 rounded-full bg-white text-primary hover:bg-white/90 font-semibold w-full h-11 shadow-sm border-0"
-            onClick={() => window.scrollTo({ top: 0 })}
-          >
-            Download
-          </Button>
-        </div>
-        ) : null}
+        {sidebarAppPromoEl}
       </div>
     </>
   );
@@ -375,45 +406,101 @@ export default function Layout({ children }: LayoutProps) {
     
       {partnerUser ? (
         <>
-          <div className="h-16 w-full flex items-center gap-2 border-b px-4 md:px-6 shrink-0">
-            <img src="/icon.png" alt="MGR Casa" className=" shrink-0 min-w-0" />
-            <div className="flex-1 min-w-0" aria-hidden />
-            {options.headerEnd}
-          </div>
-          <ScrollArea className="flex-1 px-3 py-2 min-h-0">
-            <div className="space-y-0.5">
-              {partnerNavItems.map((item, i) => {
-                const isActive = location === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link key={i} href={item.href} className="block" onClick={() => setMobileSidebarOpen(false)}>
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "w-full justify-start h-9 text-sm rounded-xl",
-                        isActive
-                          ? "bg-primary/10 text-primary font-medium hover:bg-primary/15"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                      )}
-                    >
-                      <Icon className="mr-2.5 h-4 w-4 shrink-0" />
-                      {item.label}
-                    </Button>
-                  </Link>
-                );
-              })}
+          <div className="h-[4.75rem] w-full flex items-center gap-2 border-b border-border/60 px-5 shrink-0">
+            <div className="h-11 w-11 rounded-2xl size-11 shadow-xl flex items-center justify-center shrink-0">
+              <img src="/icon.png" alt="" className="size-full object-contain" />
             </div>
-          </ScrollArea>
-          <div className="p-3 border-t shrink-0">
-            <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-muted/50">
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">{getInitials(user?.name)}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.role?.name}</p>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-foreground truncate leading-tight">MGR Casa</p>
+              <p className="text-[11px] text-muted-foreground truncate">ERP</p>
+            </div>
+            {options.headerEnd ? <div className="shrink-0 flex items-center">{options.headerEnd}</div> : null}
+          </div>
+
+          <ScrollArea className="flex-1 px-3 py-3 min-h-0">
+            <div className="space-y-6 pr-2">
+              <div>
+                <p className="px-3 mb-2 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">
+                  Menu
+                </p>
+                <div className="space-y-1">
+                  {partnerNavItems.map((item) => {
+                    const isActive = location === item.href;
+                    const Icon = item.icon;
+                    return (
+                      <Link key={item.href} href={item.href} className="block" onClick={() => setMobileSidebarOpen(false)}>
+                        <span
+                          className={cn(
+                            "group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors relative",
+                            isActive
+                              ? "bg-primary/10 font-semibold text-primary"
+                              : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                          )}
+                        >
+                          {isActive ? (
+                            <span
+                              className="absolute left-0 top-1/2 -translate-y-1/2 h-[60%] w-1 rounded-full bg-primary"
+                              aria-hidden
+                            />
+                          ) : null}
+                          <Icon
+                            className={cn(
+                              "h-[18px] w-[18px] shrink-0",
+                              isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                            )}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+          </ScrollArea>
+
+          <div className="px-3 pb-4 pt-2 space-y-2 shrink-0 border-t border-border/50">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-2xl text-sm">
+              <Avatar className="h-9 w-9 shrink-0">
+                <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                  {getInitials(user?.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground truncate leading-tight">{user?.name}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{user?.role?.name}</p>
+              </div>
+            </div>
+
+            <p className="px-3 pb-1 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">General</p>
+            {can("settings", "view") ? (
+              <Link href="/settings" className="block" onClick={() => setMobileSidebarOpen(false)}>
+                <span className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors">
+                  <Settings className="h-[18px] w-[18px]" />
+                  Settings
+                </span>
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                window.open(import.meta.env.VITE_HELP_URL ?? "mailto:support@mgrcasa.example", "_blank");
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
+            >
+              <HelpCircle className="h-[18px] w-[18px]" />
+              Help
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors font-medium"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-[18px] w-[18px]" />
+              Log out
+            </button>
+
+            {sidebarAppPromoEl}
           </div>
         </>
       ) : options.staff ? (
@@ -427,8 +514,8 @@ export default function Layout({ children }: LayoutProps) {
       {!partnerUser ? (
         <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">{renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]", staff: true })}</div>
       ) : (
-        <div className="hidden md:flex shrink-0 w-64 border-r bg-card flex flex-col h-screen">
-          {renderSidebar({ rootClassName: "flex-1 w-full rounded-none shadow-none border-0 min-h-0" })}
+        <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">
+          {renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]" })}
         </div>
       )}
 
@@ -446,8 +533,7 @@ export default function Layout({ children }: LayoutProps) {
           aria-modal="true"
           aria-label="Main navigation"
           className={cn(
-            "absolute left-4 top-4 bottom-4 w-[min(17.5rem,calc(100vw-2rem))] flex flex-col shadow-2xl transition-transform duration-200 ease-out",
-            partnerUser ? "" : "rounded-[1.65rem]",
+            "absolute left-4 top-4 bottom-4 w-[min(17.5rem,calc(100vw-2rem))] flex flex-col shadow-2xl transition-transform duration-200 ease-out rounded-[1.65rem]",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -468,21 +554,21 @@ export default function Layout({ children }: LayoutProps) {
               {renderSidebar({ rootClassName: "flex-1 min-h-0 rounded-none border-0 shadow-none", staff: true })}
             </div>
           ) : (
-            renderSidebar({
-              rootClassName: "flex-1 min-h-0 h-full rounded-2xl border border-border shadow-xl overflow-hidden",
-              headerEnd: (
+            <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden rounded-[inherit] border border-border bg-card shadow-sm">
+              <div className="absolute top-3 right-3 z-20">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="shrink-0 -mr-1"
+                  className="rounded-xl bg-primary/10 text-primary"
                   aria-label="Close menu"
                   onClick={() => setMobileSidebarOpen(false)}
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-8 w-8" />
                 </Button>
-              ),
-            })
+              </div>
+              {renderSidebar({ rootClassName: "flex-1 min-h-0 rounded-none border-0 shadow-none" })}
+            </div>
           )}
         </aside>
       </div>
@@ -566,10 +652,10 @@ export default function Layout({ children }: LayoutProps) {
                   All branches
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {branches.length === 0 ? (
+                {branchesForPicker.length === 0 ? (
                   <DropdownMenuItem disabled>No branches found</DropdownMenuItem>
                 ) : (
-                  branches.map((branch) => (
+                  branchesForPicker.map((branch) => (
                     <DropdownMenuItem
                       key={branch.id}
                       className={selectedBranchId === branch.id ? "bg-primary/5 text-primary font-medium rounded-lg" : "rounded-lg"}

@@ -813,12 +813,25 @@ export const ListPurchaseOrdersStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type GetDashboardSummaryParams = {
+/**
+ * When set, order-based KPIs use only orders for this branch.
+ */
+branchId?: number;
+};
+
 export type GetRecentOrdersParams = {
 limit?: number;
+branchId?: number;
 };
 
 export type GetSalesReportParams = {
 year?: number;
+branchId?: number;
+};
+
+export type GetOrderStatusBreakdownParams = {
+branchId?: number;
 };
 
 export type ListBranchesParams = {

@@ -48,6 +48,8 @@ import type {
   CreateUserBody,
   DashboardSummary,
   ErrorResponse,
+  GetDashboardSummaryParams,
+  GetOrderStatusBreakdownParams,
   GetRecentOrdersParams,
   GetSalesReportParams,
   HealthStatus,
@@ -5304,17 +5306,24 @@ export const useUpdatePurchaseOrderStatus = <TError = ErrorType<unknown>,
 /**
  * @summary KPI summary
  */
-export const getGetDashboardSummaryUrl = () => {
+export const getGetDashboardSummaryUrl = (params?: GetDashboardSummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/dashboard/summary`
+  return stringifiedParams.length > 0 ? `/api/dashboard/summary?${stringifiedParams}` : `/api/dashboard/summary`
 }
 
-export const getDashboardSummary = async ( options?: RequestInit): Promise<DashboardSummary> => {
+export const getDashboardSummary = async (params?: GetDashboardSummaryParams, options?: RequestInit): Promise<DashboardSummary> => {
 
-  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(),
+  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5327,23 +5336,23 @@ export const getDashboardSummary = async ( options?: RequestInit): Promise<Dashb
 
 
 
-export const getGetDashboardSummaryQueryKey = () => {
+export const getGetDashboardSummaryQueryKey = (params?: GetDashboardSummaryParams,) => {
     return [
-    `/api/dashboard/summary`
+    `/api/dashboard/summary`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetDashboardSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getGetDashboardSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>(params?: GetDashboardSummaryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboardSummary>>> = ({ signal }) => getDashboardSummary({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboardSummary>>> = ({ signal }) => getDashboardSummary(params, { signal, ...requestOptions });
 
 
 
@@ -5357,7 +5366,7 @@ export type GetDashboardSummaryQueryError = ErrorType<unknown>
 
 
 export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>> & Pick<
+ params: undefined |  GetDashboardSummaryParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDashboardSummary>>,
           TError,
@@ -5367,7 +5376,7 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>> & Pick<
+ params?: GetDashboardSummaryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDashboardSummary>>,
           TError,
@@ -5377,7 +5386,7 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ params?: GetDashboardSummaryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -5385,11 +5394,11 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
  */
 
 export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDashboardSummary>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ params?: GetDashboardSummaryParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDashboardSummary>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getGetDashboardSummaryQueryOptions(options)
+  const queryOptions = getGetDashboardSummaryQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -5621,17 +5630,24 @@ export function useGetSalesReport<TData = Awaited<ReturnType<typeof getSalesRepo
 /**
  * @summary Orders by status counts
  */
-export const getGetOrderStatusBreakdownUrl = () => {
+export const getGetOrderStatusBreakdownUrl = (params?: GetOrderStatusBreakdownParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/dashboard/order-status-breakdown`
+  return stringifiedParams.length > 0 ? `/api/dashboard/order-status-breakdown?${stringifiedParams}` : `/api/dashboard/order-status-breakdown`
 }
 
-export const getOrderStatusBreakdown = async ( options?: RequestInit): Promise<StatusCount[]> => {
+export const getOrderStatusBreakdown = async (params?: GetOrderStatusBreakdownParams, options?: RequestInit): Promise<StatusCount[]> => {
 
-  return customFetch<StatusCount[]>(getGetOrderStatusBreakdownUrl(),
+  return customFetch<StatusCount[]>(getGetOrderStatusBreakdownUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5644,23 +5660,23 @@ export const getOrderStatusBreakdown = async ( options?: RequestInit): Promise<S
 
 
 
-export const getGetOrderStatusBreakdownQueryKey = () => {
+export const getGetOrderStatusBreakdownQueryKey = (params?: GetOrderStatusBreakdownParams,) => {
     return [
-    `/api/dashboard/order-status-breakdown`
+    `/api/dashboard/order-status-breakdown`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetOrderStatusBreakdownQueryOptions = <TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getGetOrderStatusBreakdownQueryOptions = <TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>(params?: GetOrderStatusBreakdownParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetOrderStatusBreakdownQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetOrderStatusBreakdownQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderStatusBreakdown>>> = ({ signal }) => getOrderStatusBreakdown({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrderStatusBreakdown>>> = ({ signal }) => getOrderStatusBreakdown(params, { signal, ...requestOptions });
 
 
 
@@ -5674,7 +5690,7 @@ export type GetOrderStatusBreakdownQueryError = ErrorType<unknown>
 
 
 export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>> & Pick<
+ params: undefined |  GetOrderStatusBreakdownParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getOrderStatusBreakdown>>,
           TError,
@@ -5684,7 +5700,7 @@ export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof get
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>> & Pick<
+ params?: GetOrderStatusBreakdownParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getOrderStatusBreakdown>>,
           TError,
@@ -5694,7 +5710,7 @@ export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof get
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ params?: GetOrderStatusBreakdownParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -5702,11 +5718,11 @@ export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof get
  */
 
 export function useGetOrderStatusBreakdown<TData = Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError = ErrorType<unknown>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ params?: GetOrderStatusBreakdownParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrderStatusBreakdown>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getGetOrderStatusBreakdownQueryOptions(options)
+  const queryOptions = getGetOrderStatusBreakdownQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -9,14 +9,23 @@ export function isSuperAdminUser(
   return user?.role?.name === "Super Admin";
 }
 
-/** Branch ids the signed-in user may work in (from `/auth/me`: `branchIds`, or legacy `branchId`). */
+/** Branch ids the signed-in user may work in (from `/auth/me`: `branchIds`, `branches`, or legacy `branchId`). */
 export function assignedUserBranchIds(
-  user: { branchIds?: number[] | null; branchId?: number | null; role?: { name?: string | null } | null } | null | undefined,
+  user: {
+    branchIds?: number[] | null;
+    branches?: { id: number }[] | null;
+    branchId?: number | null;
+    role?: { name?: string | null } | null;
+  } | null | undefined,
 ): number[] {
   if (!user || isSuperAdminUser(user)) return [];
   const raw = user.branchIds;
   if (Array.isArray(raw) && raw.length > 0) {
-    return [...new Set(raw)].sort((a, b) => a - b);
+    return [...new Set(raw.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b);
+  }
+  const fromBranches = user.branches;
+  if (Array.isArray(fromBranches) && fromBranches.length > 0) {
+    return [...new Set(fromBranches.map((b) => b.id).filter((id) => Number.isFinite(id)))].sort((a, b) => a - b);
   }
   if (user.branchId != null && Number.isFinite(user.branchId)) return [user.branchId];
   return [];
@@ -52,8 +61,18 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     if (assigned.length === 1) {
       setSelectedBranchIdState(assigned[0]!);
       localStorage.setItem(STORAGE_KEY, String(assigned[0]));
+      return;
     }
-  }, [user?.branchIds, user?.branchId, user?.role?.name]);
+    if (assigned.length > 1) {
+      setSelectedBranchIdState((prev) => {
+        if (prev != null && !assigned.includes(prev)) {
+          localStorage.removeItem(STORAGE_KEY);
+          return null;
+        }
+        return prev;
+      });
+    }
+  }, [user?.branchIds, user?.branchId, user?.branches, user?.role?.name]);
 
   useEffect(() => {
     setBranchIdGetter(() => {

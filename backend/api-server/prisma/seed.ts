@@ -42,6 +42,7 @@ const superAdminPermissions = {
   orders: { read: true, create: true, update: true, delete: true },
   invoices: { read: true, create: true, update: true, delete: true },
   payments: { read: true, create: true, update: true, delete: true },
+  reports: { read: true, create: true, update: true, delete: true },
   suppliers: { read: true, create: true, update: true, delete: true },
   manufacturers: { read: true, create: true, update: true, delete: true },
   purchaseOrders: { read: true, create: true, update: true, delete: true },

@@ -42,9 +42,17 @@ export async function loadUserPublicById(userId: number) {
       manufacturer,
     };
   }
-  const branches = (userBranches ?? []).map((ub) => ub.branch).filter(Boolean);
-  const branchIds = branches.map((b) => b.id);
-  const branch = branches.length === 1 ? branches[0] ?? null : null;
-  const branchId = branches.length === 1 ? branches[0]?.id ?? null : null;
-  return { ...rest, branchId, branch, branchIds, branches, supplier, manufacturer };
+  const ubRows = userBranches ?? [];
+  /** Prefer join-table ids so multi-branch works even if a `branch` include is missing. */
+  const branchIdsFromJoin = [...new Set(ubRows.map((ub) => ub.branchId))]
+    .filter((id) => Number.isFinite(id))
+    .sort((a, b) => a - b);
+  let branchIds = branchIdsFromJoin;
+  if (branchIds.length === 0 && u.branchId != null && Number.isFinite(u.branchId)) {
+    branchIds = [u.branchId];
+  }
+  const branchesForDisplay = ubRows.map((ub) => ub.branch).filter((b): b is NonNullable<typeof b> => !!b);
+  const branch = branchIds.length === 1 ? branchesForDisplay.find((b) => b.id === branchIds[0]) ?? null : null;
+  const branchId = branchIds.length === 1 ? branchIds[0]! : null;
+  return { ...rest, branchId, branch, branchIds, branches: branchesForDisplay, supplier, manufacturer };
 }

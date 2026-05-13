@@ -99,10 +99,10 @@ export function NotificationBell() {
               variant="destructive"
               className="absolute -top-0.5 -right-0.5 h-5 min-w-5 px-1 flex items-center justify-center text-[10px] font-bold rounded-full"
             >
-              {count > 99 ? "99+" : count}
+              {count > 99 ? "99+" : count}  
             </Badge>
           ) : null}
-        </Button>
+        </Button> 
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[380px] p-0">
         <DropdownMenuLabel className="px-3 py-2 flex items-center justify-between gap-2 border-b border-border">

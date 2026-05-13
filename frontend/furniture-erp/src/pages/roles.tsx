@@ -48,6 +48,7 @@ const ROLE_MODULES: { key: string; label: string }[] = [
   { key: "orders", label: "Orders" },
   { key: "invoices", label: "Invoices" },
   { key: "payments", label: "Payments" },
+  { key: "reports", label: "Reports" },
   { key: "suppliers", label: "Suppliers" },
   { key: "manufacturers", label: "Manufacturers" },
   { key: "purchaseOrders", label: "Purchase orders" },

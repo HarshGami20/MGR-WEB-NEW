@@ -7,7 +7,7 @@ const router: IRouter = Router();
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
-router.get("/reports/revenue-summary", requireAuth, requirePermission("dashboard", "read"), async (req, res): Promise<void> => {
+router.get("/reports/revenue-summary", requireAuth, requirePermission("reports", "read"), async (req, res): Promise<void> => {
   const yearParam = req.query.year ? parseInt(String(req.query.year), 10) : undefined;
   const monthParam = req.query.month ? parseInt(String(req.query.month), 10) : undefined;
   const branchIdParam = req.query.branchId ? parseInt(String(req.query.branchId), 10) : NaN;

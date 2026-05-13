@@ -156,11 +156,13 @@ export default function Users() {
       email: user.email || "",
       password: "",
       roleId: user.roleId ?? 0,
-      branchIds: Array.isArray(user.branchIds) && user.branchIds.length > 0
-        ? user.branchIds
-        : user.branchId != null
-          ? [user.branchId]
-          : [],
+      branchIds: (() => {
+        if (Array.isArray(user.branchIds) && user.branchIds.length > 0) return user.branchIds;
+        const fromBranches = (user.branches as { id: number }[] | undefined)?.map((b) => b.id).filter(Boolean);
+        if (fromBranches && fromBranches.length > 0) return fromBranches;
+        if (user.branchId != null) return [user.branchId];
+        return [];
+      })(),
       supplierId: user.supplierId ?? null,
       manufacturerId: user.manufacturerId ?? null,
     });
@@ -169,7 +171,7 @@ export default function Users() {
 
   const onSubmit = (data: UserFormValues) => {
     if (editingId) {
-      const updateData: any = { ...data };
+      const updateData: any = { ...data };  
       if (!updateData.password) delete updateData.password;
       updateUser.mutate({ id: editingId, data: updateData });
     } else {

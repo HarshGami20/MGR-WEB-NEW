@@ -1409,6 +1409,12 @@ paths:
       operationId: getDashboardSummary
       tags: [dashboard]
       summary: KPI summary
+      parameters:
+        - name: branchId
+          in: query
+          schema:
+            type: integer
+          description: When set, order-based KPIs use only orders for this branch.
       responses:
         "200":
           description: Dashboard summary
@@ -1428,6 +1434,10 @@ paths:
           schema:
             type: integer
             default: 10
+        - name: branchId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Recent orders
@@ -1448,6 +1458,10 @@ paths:
           in: query
           schema:
             type: integer
+        - name: branchId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Sales report
@@ -1463,6 +1477,11 @@ paths:
       operationId: getOrderStatusBreakdown
       tags: [dashboard]
       summary: Orders by status counts
+      parameters:
+        - name: branchId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Status breakdown

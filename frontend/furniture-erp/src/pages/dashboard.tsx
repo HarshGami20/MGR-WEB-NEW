@@ -8,6 +8,7 @@ import {
   type User,
 } from "@/api-client";
 import { useAuth } from "@/lib/auth";
+import { useBranch } from "@/lib/branch-context";
 import { isPartnerPortalUser } from "@/lib/partner";
 import PartnerPurchaseDashboard from "@/components/partner-purchase-dashboard";
 import { Button } from "@/components/ui/button";
@@ -42,15 +43,24 @@ function StaffDashboard() {
   const currentYear = new Date().getFullYear();
   const [revenueYear, setRevenueYear] = useState(currentYear);
   const [analyticsRange, setAnalyticsRange] = useState<"week" | "month" | "year">("month");
+  const { selectedBranchId } = useBranch();
+  const branchIdParam = selectedBranchId != null ? { branchId: selectedBranchId } : undefined;
 
-  const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
-  const { data: recentOrders, isLoading: ordersLoading } = useGetRecentOrders({ limit: 6 });
-  const { data: annualSalesReport, isLoading: annualRevenueLoading } = useGetSalesReport({ year: revenueYear });
+  const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary(branchIdParam);
+  const { data: recentOrders, isLoading: ordersLoading } = useGetRecentOrders({
+    limit: 6,
+    ...branchIdParam,
+  });
+  const { data: annualSalesReport, isLoading: annualRevenueLoading } = useGetSalesReport({
+    year: revenueYear,
+    ...branchIdParam,
+  });
   const { data: analyticsOrdersData, isLoading: analyticsOrdersLoading } = useListOrders({
     page: 1,
     limit: 1000,
+    ...branchIdParam,
   });
-  const { data: orderStatus, isLoading: statusLoading } = useGetOrderStatusBreakdown();
+  const { data: orderStatus, isLoading: statusLoading } = useGetOrderStatusBreakdown(branchIdParam);
   const { data: usersData } = useListUsers({ isActive: true, limit: 6 });
 
   const delivered = statusCount(orderStatus, "delivered");

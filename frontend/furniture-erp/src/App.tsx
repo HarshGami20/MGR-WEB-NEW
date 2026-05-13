@@ -60,7 +60,7 @@ function ProtectedRoute({ component: Component, viewModule }: { component: any; 
   }
 
   if (isPartnerPortalUser(user)) {
-    const allowed = viewModule === "dashboard" || viewModule === "settings";
+    const allowed = viewModule === "dashboard" || viewModule === "settings" || viewModule === "tools";
     if (allowed) {
       return (
         <Layout>
@@ -161,10 +161,10 @@ function Router() {
         <ProtectedRoute viewModule="payments" component={Payments} />
       </Route>
       <Route path="/reports">
-        <ProtectedRoute viewModule="dashboard" component={ReportsPage} />
+        <ProtectedRoute viewModule="reports" component={ReportsPage} />
       </Route>
       <Route path="/curtain-calculator">
-        <ProtectedRoute viewModule="dashboard" component={CurtainCalculatorPage} />
+        <ProtectedRoute viewModule="tools" component={CurtainCalculatorPage} />
       </Route>
       <Route path="/notifications">
         <ProtectedRoute viewModule="dashboard" component={NotificationsPage} />

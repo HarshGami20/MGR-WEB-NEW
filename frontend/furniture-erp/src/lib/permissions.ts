@@ -38,6 +38,7 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/orders": "orders",
   "/invoices": "invoices",
   "/payments": "payments",
+  "/reports": "reports",
   "/purchase-orders": "purchaseOrders",
   "/suppliers": "suppliers",
   "/manufacturers": "manufacturers",
@@ -45,7 +46,8 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/users": "users",
   "/roles": "roles",
   "/settings": "settings",
-  "/curtain-calculator": "dashboard",
+  /** Client-side utility; any active user may open (see `can("tools", "view")`). */
+  "/curtain-calculator": "tools",
 };
 
 const STAFF_NAV_FALLBACK_ORDER = [
@@ -57,12 +59,14 @@ const STAFF_NAV_FALLBACK_ORDER = [
   "/categories",
   "/invoices",
   "/payments",
+  "/reports",
   "/suppliers",
   "/manufacturers",
   "/branches",
   "/users",
   "/roles",
   "/settings",
+  "/curtain-calculator",
 ];
 
 export function usePermissions() {
@@ -78,6 +82,11 @@ export function usePermissions() {
     };
 
     const can = (module: string, action: PermissionUiAction): boolean => {
+      if (module === "tools" && action === "view") {
+        if (user && isPartnerPortalUser(user)) return true;
+        if (!user?.roleId || !user.isActive) return false;
+        return true;
+      }
       if (user && isPartnerPortalUser(user)) {
         const row = partnerPortalMatrix[module];
         return !!row?.[action];
