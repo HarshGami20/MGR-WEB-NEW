@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { useListManufacturers, useCreateManufacturer, useUpdateManufacturer, useDeleteManufacturer, getListManufacturersQueryKey } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -205,23 +205,7 @@ export default function Manufacturers() {
           data={manufacturers}
           isLoading={isLoading}
           emptyMessage="No manufacturers found."
-          footer={
-            manufacturersData && manufacturersData.total > manufacturersData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * manufacturersData.limit + 1} to {Math.min(page * manufacturersData.limit, manufacturersData.total)} of {manufacturersData.total} manufacturers
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * manufacturersData.limit >= manufacturersData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={manufacturersData?.total ?? 0} limit={manufacturersData?.limit ?? 10} onPageChange={setPage} itemLabel="manufacturers" />}
         />
       </div>
 

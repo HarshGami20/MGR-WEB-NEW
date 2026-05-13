@@ -21,6 +21,9 @@ import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import ProductVariantSelect from "@/components/product-variant-select";
 
 const orderItemSchema = z.object({
@@ -31,11 +34,21 @@ const orderItemSchema = z.object({
 });
 
 const orderSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
-  customerMobile: z.string().optional().nullable(),
-  customerAddress: z.string().optional().nullable(),
+  customerName: z.string().trim().min(1, "Customer name is required"),
+  customerMobile: z
+    .string()
+    .trim()
+    .refine((value) => value === "" || /^[0-9]{10}$/.test(value), "Mobile must be a 10-digit number")
+    .optional()
+    .nullable(),
+  customerAddress: z.string().trim().min(1, "Address is required"),
   isGst: z.boolean(),
-  customerGstNumber: z.string().optional().nullable(),
+  customerGstNumber: z
+    .string()
+    .trim()
+    .refine((value) => value === "" || /^[0-9A-Z]{15}$/.test(value), "GST number must be 15 characters")
+    .optional()
+    .nullable(),
   items: z.array(orderItemSchema).min(1, "At least one item is required"),
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
@@ -50,6 +63,21 @@ const orderSchema = z.object({
   })).default([]),
   staffCommentsText: z.string().optional().default(""),
   notes: z.string().optional().nullable(),
+}).superRefine((data, ctx) => {
+  if (data.isGst && !data.customerGstNumber?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customerGstNumber"],
+      message: "GST number is required when GST invoice is enabled",
+    });
+  }
+  if (Number(data.advanceAmount || 0) > data.items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["advanceAmount"],
+      message: "Advance amount cannot exceed subtotal",
+    });
+  }
 });
 
 type OrderFormValues = z.infer<typeof orderSchema>;
@@ -73,13 +101,16 @@ const PAYMENT_MODE_OPTIONS = [
   { value: "cheque", label: "Cheque" },
 ];
 
-async function uploadOrderImage(file: File): Promise<string> {
+async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {
   const token = localStorage.getItem("erp_token");
   const fd = new FormData();
   fd.append("image", file);
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (branchId != null && Number.isFinite(branchId)) headers["X-Branch-Id"] = String(branchId);
   const resp = await fetch("/api/orders/upload-image", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers,
     body: fd,
   });
   if (!resp.ok) throw new Error("Failed to upload image");
@@ -94,6 +125,17 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { selectedBranchId } = useBranch();
+  const assigned = assignedUserBranchIds(user);
+  const writeBranchId =
+    assigned.length === 1
+      ? assigned[0]!
+      : assigned.length > 1
+        ? selectedBranchId != null && assigned.includes(selectedBranchId)
+          ? selectedBranchId
+          : null
+        : selectedBranchId;
 
   const { data: productsData } = useListProducts({ limit: 1000 });
   const { data: usersData } = useListUsers({ isActive: true, limit: 1000 });
@@ -140,6 +182,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
   const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderSchema),
+    mode: "onBlur",
     defaultValues: {
       customerName: "",
       customerMobile: "",
@@ -219,7 +262,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     if (!file) return;
     try {
       setUploading(true);
-      const imageUrl = await uploadOrderImage(file);
+      const imageUrl = await uploadOrderImage(file, writeBranchId);
       apply(imageUrl);
       toast({ title: "Image uploaded" });
     } catch (error: any) {
@@ -230,6 +273,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   };
 
   const onSubmit = (data: OrderFormValues) => {
+    if (writeBranchId == null) {
+      toast({
+        title: "Select a branch",
+        description: "Choose a working branch in the header before saving this order.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     for (let i = 0; i < data.items.length; i += 1) {
       const item = data.items[i];
       const product = productsData?.data?.find((p) => p.id === Number(item.productId));
@@ -268,6 +320,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             .map((comment) => ({ comment, createdAt: new Date().toISOString() }))
         : [],
       notes: data.notes || null,
+      branchId: writeBranchId,
     };
 
     if (isEdit) {
@@ -286,14 +339,17 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
       <div className="max-w-3xl">
-        <Link href="/orders">
-          <Button type="button" variant="ghost" className="mb-6 -ml-2 gap-2 text-foreground hover:bg-transparent hover:text-foreground/80">
-            <ArrowLeft className="h-4 w-4" />
-            Back to orders
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">{isEdit ? "Edit order" : "Create order"}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Enter full order details, payments and delivery controls.</p>
+        <div className="flex  ">
+          <Link href="/orders">
+            <Button type="button" variant="ghost" size="icon" className="mr-2 -top-0.5 rounded-full text-foreground hover:bg-transparent hover:text-foreground/80">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>  
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{isEdit ? "Edit order" : "Create order"}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Enter full order details, payments and delivery controls.</p>
+          </div>
+        </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-6">
@@ -301,10 +357,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <p className="text-sm font-semibold text-foreground">Order details</p>
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Customer Name*</FormLabel><FormControl><Input {...field} placeholder="Enter customer name" /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="customerMobile" render={({ field }) => (
-                  <FormItem><FormLabel>Mobile</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="customerMobile"  render={({ field }) => (
+                  <FormItem><FormLabel>Mobile*</FormLabel><FormControl><Input {...field} value={field.value || ""} type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} placeholder="+91 98765 43210" onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ""))} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
 
@@ -316,12 +372,12 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="customerGstNumber" render={({ field }) => (
-                  <FormItem><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter GST number" disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
 
               <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Address*</FormLabel><FormControl><Textarea  placeholder="Enter address" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
 
@@ -347,6 +403,13 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       onVariantChange={(variantId) => form.setValue(`items.${index}.variantId`, variantId)}
                       onPriceChange={(price) => form.setValue(`items.${index}.unitPrice`, Number(price || 0))}
                     />
+                    {(form.formState.errors.items?.[index]?.productId?.message ||
+                      form.formState.errors.items?.[index]?.variantId?.message) && (
+                      <p className="text-sm font-medium text-destructive">
+                        {form.formState.errors.items?.[index]?.productId?.message ||
+                          form.formState.errors.items?.[index]?.variantId?.message}
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => (
                         <FormItem><FormLabel className="text-xs">Quantity</FormLabel><FormControl><Input type="number" min="1" {...qtyField} /></FormControl><FormMessage /></FormItem>
@@ -370,7 +433,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
               <p className="text-sm font-semibold text-foreground">Status & payment details</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={cn("grid grid-cols-1 gap-4", isEdit ? "md:grid-cols-3" : "md:grid-cols-2")}>
+                {isEdit && (
                 <FormField control={form.control} name="status" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Order Status</FormLabel>
@@ -380,6 +444,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </Select>
                   </FormItem>
                 )} />
+                )}
                 <FormField control={form.control} name="paymentStatus" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Payment Status</FormLabel>
@@ -387,6 +452,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>{PAYMENT_STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
                     </Select>
+                    <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="paymentMode" render={({ field }) => (
@@ -396,19 +462,20 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>{PAYMENT_MODE_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
                     </Select>
+                    <FormMessage />
                   </FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField control={form.control} name="advanceAmount" render={({ field }) => (
-                  <FormItem><FormLabel>Advance Amount (Rs)</FormLabel><FormControl><Input type="number" min="0" step="0.01" {...field} /></FormControl></FormItem>
+                  <FormItem><FormLabel>Advance Amount (Rs)</FormLabel><FormControl><Input type="number" min="0" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">Remaining Amount</label>
                   <Input value={orderSummary.remaining.toFixed(2)} disabled />
                 </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Date of Delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl></FormItem>
+                  <FormItem><FormLabel>Date of Delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -424,6 +491,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormMessage />
                   </FormItem>
                 )} />
                 <div className="space-y-2">
@@ -434,10 +502,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             </div>
 
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-5">
-              <p className="text-sm font-semibold">Challan image + Upload photos and comment</p>
+              <p className="text-sm font-semibold">Challan image </p>
 
               <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">Challan image</p>
+                {/* <p className="text-xs text-muted-foreground">Challan image</p> */}
                 <input
                   id="challan-upload-input"
                   type="file"
@@ -465,7 +533,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">Photo comments</p>
+                <p className="text-sm font-semibold">Upload photos and comment</p>
+
                   <Button type="button" variant="outline" size="sm" onClick={() => photoFields.append({ imageUrl: "", comment: "" })}>
                     <Plus className="h-4 w-4 mr-2" /> Add
                   </Button>
@@ -503,22 +572,22 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                         )}
                       </label>
                       <FormField control={form.control} name={`photoComments.${index}.comment`} render={({ field }) => (
-                        <FormItem><FormControl><Textarea rows={3} placeholder="Enter your comment" {...field} value={field.value || ""} /></FormControl></FormItem>
+                        <FormItem><FormControl><Textarea rows={3} placeholder="Enter your comment" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
                       )} />
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
-
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
               <FormField control={form.control} name="staffCommentsText" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Comments By Staff</FormLabel>
                   <FormControl><Textarea rows={4} placeholder="Enter staff comments (one comment per line)" {...field} value={field.value || ""} /></FormControl>
+                  <FormMessage />
                 </FormItem>
               )} />
             </div>
+
+          
 
             <FormField control={form.control} name="notes" render={({ field }) => (
               <FormItem><FormLabel>Notes</FormLabel><FormControl><Textarea rows={3} {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { BranchProvider } from "@/lib/branch-context";
+import { NotificationSocketProvider } from "@/lib/notification-socket";
 import Layout from "@/components/layout";
 import { isPartnerPortalUser } from "@/lib/partner";
 import { usePermissions } from "@/lib/permissions";
@@ -29,6 +30,9 @@ import Users from "@/pages/users";
 import Roles from "@/pages/roles";
 import Settings from "@/pages/settings";
 import Branches from "@/pages/branches";
+import ReportsPage from "@/pages/reports";
+import CurtainCalculatorPage from "@/pages/curtain-calculator";
+import NotificationsPage from "@/pages/notifications";
 
 const queryClient = new QueryClient();
 
@@ -156,6 +160,15 @@ function Router() {
       <Route path="/payments">
         <ProtectedRoute viewModule="payments" component={Payments} />
       </Route>
+      <Route path="/reports">
+        <ProtectedRoute viewModule="dashboard" component={ReportsPage} />
+      </Route>
+      <Route path="/curtain-calculator">
+        <ProtectedRoute viewModule="dashboard" component={CurtainCalculatorPage} />
+      </Route>
+      <Route path="/notifications">
+        <ProtectedRoute viewModule="dashboard" component={NotificationsPage} />
+      </Route>
       <Route path="/purchase-orders">
         <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrders} />
       </Route>
@@ -189,9 +202,11 @@ function App() {
       <TooltipProvider>
         <AuthProvider>
           <BranchProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
-            </WouterRouter>
+            <NotificationSocketProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+            </NotificationSocketProvider>
           </BranchProvider>
         </AuthProvider>
         <Toaster />

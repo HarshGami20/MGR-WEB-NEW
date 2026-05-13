@@ -167,7 +167,7 @@ export default function ProductEdit() {
       parentCategoryId: split.parentCategoryId,
       subCategoryId: split.subCategoryId,
       description: product.description || "",
-      price: product.price,
+      price: hadServerVariants ? 0 : product.price,
       gstPercent: product.gstPercent,
       lowStockThreshold: product.lowStockThreshold,
       inventoryMode: mode,
@@ -206,7 +206,7 @@ export default function ProductEdit() {
       name: data.name,
       sku: data.sku,
       categoryId: leafId,
-      price: data.price,
+      price: data.inventoryMode === "variants" ? 0 : data.price,
       gstPercent: data.gstPercent,
       lowStockThreshold: data.lowStockThreshold,
       description: (data.description && data.description.trim()) || null,
@@ -423,8 +423,10 @@ export default function ProductEdit() {
                             if (product?.imageUrl) {
                               form.setValue("imageUrl", product.imageUrl);
                             }
+                            form.setValue("price", Number(product?.price ?? 0));
                           } else {
                             form.setValue("imageUrl", "");
+                            form.setValue("price", 0);
                           }
                         }}
                         className="grid gap-3 sm:grid-cols-2"
@@ -483,80 +485,80 @@ export default function ProductEdit() {
               </div>
             )}
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-              <p className="text-sm font-semibold text-foreground">Pricing</p>
-              <div className="grid grid-cols-2 gap-4">
+            {inventoryMode === "simple" && (
+              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
+                <p className="text-sm font-semibold text-foreground">Pricing</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="price"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Base price (₹)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min={0}
+                            max={MAX_PRODUCT_PRICE}
+                            className="h-10 rounded-lg"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="gstPercent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>GST (%)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min={0}
+                            max={100}
+                            className="h-10 rounded-lg"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
-                  name="price"
+                  name="lowStockThreshold"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Base price (₹)</FormLabel>
+                      <FormLabel>Low stock threshold</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          inputMode="decimal"
-                          step="0.01"
+                          inputMode="numeric"
+                          step={1}
                           min={0}
-                          max={MAX_PRODUCT_PRICE}
-                          className="h-10 rounded-lg"
+                          max={999_999_999}
+                          className="h-10 rounded-lg max-w-[200px]"
                           {...field}
                         />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="gstPercent"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>GST (%)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min={0}
-                          max={100}
-                          className="h-10 rounded-lg"
-                          {...field}
-                        />
-                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Quantity updates come from Inventory; this threshold is for alerts.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-
-              <FormField
-                control={form.control}
-                name="lowStockThreshold"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{inventoryMode === "simple" ? "Low stock threshold" : "Product-level threshold (reference)"}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        step={1}
-                        min={0}
-                        max={999_999_999}
-                        className="h-10 rounded-lg max-w-[200px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      {inventoryMode === "simple"
-                        ? "Quantity updates come from Inventory; this threshold is for alerts."
-                        : "Each variant has its own threshold. Quantity updates come from Inventory."}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            )}
 
             {inventoryMode === "variants" && (
               <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
@@ -580,6 +582,38 @@ export default function ProductEdit() {
                     <Plus className="h-4 w-4" />
                     Add variant
                   </Button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 border-b border-border/60 pb-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="gstPercent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>GST (%)</FormLabel>
+                        <FormControl>
+                          <Input type="number" inputMode="decimal" step="0.01" min={0} max={100} className="h-10 rounded-lg" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="lowStockThreshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Product-level threshold (reference)</FormLabel>
+                        <FormControl>
+                          <Input type="number" inputMode="numeric" step={1} min={0} max={999_999_999} className="h-10 rounded-lg" {...field} />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          Each variant has its own threshold. Quantity updates come from Inventory.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
                 {variantFields.length === 0 ? (
@@ -657,7 +691,7 @@ export default function ProductEdit() {
                                     min={0}
                                     max={MAX_PRODUCT_PRICE}
                                     className="h-9"
-                                    placeholder="Base"
+                                    placeholder="e.g. 12999"
                                     {...field}
                                     value={field.value ?? ""}
                                     onChange={(e) =>

@@ -5,6 +5,7 @@ import { CreateProductVariantBody, UpdateProductVariantBody } from "../zod";
 import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
+import { requireWriteBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
@@ -50,6 +51,13 @@ router.post("/products/:productId/variants", requireAuth, requirePermission("pro
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const writeBranchId = await requireWriteBranchId(req, res, user);
+  if (writeBranchId == null) return;
   try {
     const variant = await prisma.productVariant.create({
       data: {
@@ -72,6 +80,7 @@ router.post("/products/:productId/variants", requireAuth, requirePermission("pro
           type: "in",
           quantity: parsed.data.stockQty ?? 0,
           notes: `Initial stock for variant ${variant.name}`,
+          branchId: writeBranchId,
         },
       });
     }
@@ -128,6 +137,14 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
     return;
   }
 
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const writeBranchId = await requireWriteBranchId(req, res, user);
+  if (writeBranchId == null) return;
+
   try {
     const previousStock = existing.stockQty;
     const variant = await prisma.productVariant.update({
@@ -143,6 +160,7 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
           type: delta >= 0 ? "in" : "out",
           quantity: Math.abs(delta),
           notes: `Stock changed via variant update (${variant.name})`,
+          branchId: writeBranchId,
         },
       });
     }

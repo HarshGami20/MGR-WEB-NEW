@@ -6,11 +6,15 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type DataTableColumnMeta = {
   headerClassName?: string;
   cellClassName?: string;
+  /** Set false to disable default one-line ellipsis behavior for primitive cell values. */
+  truncate?: boolean;
 };
 
 /** TanStack Table wrapper with consistent ERP list styling, loading/empty rows, and optional footer (e.g. pagination). */
@@ -25,6 +29,64 @@ type DataTableProps<TData, TValue> = {
   className?: string;
   tableClassName?: string;
 };
+
+type DataTablePaginationFooterProps = {
+  page: number;
+  total: number;
+  limit: number;
+  onPageChange: (updater: (prev: number) => number) => void;
+  itemLabel?: string;
+};
+
+export function DataTablePaginationFooter({
+  page,
+  total,
+  limit,
+  onPageChange,
+  itemLabel = "items",
+}: DataTablePaginationFooterProps) {
+  if (!limit || total <= limit) return null;
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const from = (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  return (
+    <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">
+      <span className="hidden xl:block">
+        Page {page} of {totalPages} · Showing {from} to {to} of {total} {itemLabel}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="rounded-lg" onClick={() => onPageChange((p) => Math.max(1, p - 1))} disabled={page === 1}>
+          <ChevronLeft className="h-4 w-4 block md:hidden" />
+          <span className="hidden md:inline">
+          Previous
+          </span>
+        </Button>
+        <div className="items-center gap-1 flex">
+          {pageNumbers.map((n) => (
+            <Button
+              key={n}
+              variant={n === page ? "default" : "outline"}
+              size="sm"
+              className="h-8 min-w-8 rounded-md px-2"
+              onClick={() => onPageChange(() => n)}
+            >
+              {n}
+            </Button>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" className="rounded-lg" onClick={() => onPageChange((p) => p + 1)} disabled={page >= totalPages}>
+          <ChevronRight className="h-4 w-4 block md:hidden" />
+          <span className="hidden md:inline">
+          Next
+          </span>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function DataTable<TData, TValue>({
   columns,
@@ -90,12 +152,23 @@ export function DataTable<TData, TValue>({
               <TableRow key={row.id} className="border-b border-border/60">
                 {row.getVisibleCells().map((cell) => {
                   const meta = cell.column.columnDef.meta as DataTableColumnMeta | undefined;
+                  const rawValue = cell.getValue();
+                  const shouldTruncatePrimitive = meta?.truncate !== false && (typeof rawValue === "string" || typeof rawValue === "number");
                   return (
                     <TableCell
                       key={cell.id}
                       className={cn("px-4 py-3 align-middle first:pl-6 last:pr-6", meta?.cellClassName)}
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {shouldTruncatePrimitive ? (
+                        <span
+                          className="block max-w-full truncate whitespace-nowrap"
+                          title={String(rawValue)}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </span>
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
                     </TableCell>
                   );
                 })}

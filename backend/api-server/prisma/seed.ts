@@ -104,6 +104,9 @@ async function main() {
       roleId: roleSuperAdmin.id,
       branchId: branch.id,
       isActive: true,
+      userBranches: {
+        create: [{ branchId: branch.id }],
+      },
     },
   });
 
@@ -223,6 +226,7 @@ async function main() {
       type: "in",
       quantity: 12,
       notes: "Opening stock (seed)",
+      branchId: branch.id,
     },
   });
 
@@ -283,6 +287,7 @@ async function main() {
       type: "out",
       quantity: 1,
       notes: "ORD-SEED-001",
+      branchId: branch.id,
     },
   });
 

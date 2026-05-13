@@ -5,8 +5,41 @@ import { requirePermission } from "../lib/permissions";
 import { hashPassword } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
+import { assignedBranchIds } from "../lib/user-branches";
 
 const router: IRouter = Router();
+
+async function isSuperAdminRoleId(roleId: unknown): Promise<boolean> {
+  const id = typeof roleId === "number" ? roleId : roleId != null && roleId !== "" ? parseInt(String(roleId), 10) : NaN;
+  if (!Number.isFinite(id)) return false;
+  const r = await prisma.role.findUnique({ where: { id }, select: { name: true } });
+  return r?.name === "Super Admin";
+}
+
+function normalizeBranchIds(branchIdsRaw: unknown, legacyBranchId: unknown): number[] {
+  const ids = new Set<number>();
+  if (Array.isArray(branchIdsRaw)) {
+    for (const x of branchIdsRaw) {
+      const n = typeof x === "number" ? x : parseInt(String(x), 10);
+      if (Number.isFinite(n)) ids.add(n);
+    }
+  }
+  if (ids.size === 0 && legacyBranchId != null && legacyBranchId !== "") {
+    const n = typeof legacyBranchId === "number" ? legacyBranchId : parseInt(String(legacyBranchId), 10);
+    if (Number.isFinite(n)) ids.add(n);
+  }
+  return [...ids].sort((a, b) => a - b);
+}
+
+async function assertBranchesExist(branchIds: number[]): Promise<string | null> {
+  if (branchIds.length === 0) return null;
+  const rows = await prisma.branch.findMany({
+    where: { id: { in: branchIds }, isActive: true },
+    select: { id: true },
+  });
+  if (rows.length !== branchIds.length) return "One or more branches are invalid or inactive";
+  return null;
+}
 
 router.get("/users", requireAuth, requirePermission("users", "read"), async (req, res): Promise<void> => {
   const { search, roleId, branchId, isActive, page = "1", limit = "20" } = req.query as Record<string, string>;
@@ -14,7 +47,14 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  let allUsers = await prisma.user.findMany({ skip: offset, take: limitNum });
+  let allUsers = await prisma.user.findMany({
+    skip: offset,
+    take: limitNum,
+    include: {
+      userBranches: { select: { branchId: true } },
+      role: { select: { name: true } },
+    },
+  });
 
   if (search) {
     allUsers = allUsers.filter(u =>
@@ -23,7 +63,13 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
     );
   }
   if (roleId) allUsers = allUsers.filter(u => u.roleId === parseInt(roleId, 10));
-  if (branchId) allUsers = allUsers.filter(u => u.branchId === parseInt(branchId, 10));
+  if (branchId) {
+    const bid = parseInt(branchId, 10);
+    allUsers = allUsers.filter((u) => {
+      const assigned = assignedBranchIds(u);
+      return assigned.length === 0 || assigned.includes(bid);
+    });
+  }
   if (isActive !== undefined) allUsers = allUsers.filter(u => u.isActive === (isActive === "true"));
 
   const rolesMap: Record<number, any> = {};
@@ -43,14 +89,22 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   const supplierMap = Object.fromEntries(suppliersList.map(s => [s.id, s]));
   const manufacturerMap = Object.fromEntries(manufacturersList.map(m => [m.id, m]));
 
-  const data = allUsers.map(u => ({
-    ...u,
-    passwordHash: undefined,
-    role: u.roleId ? rolesMap[u.roleId] : null,
-    branch: u.branchId ? branchesMap[u.branchId] ?? null : null,
-    supplier: u.supplierId ? supplierMap[u.supplierId] ?? null : null,
-    manufacturer: u.manufacturerId ? manufacturerMap[u.manufacturerId] ?? null : null,
-  }));
+  const data = allUsers.map(u => {
+    const role = u.roleId ? rolesMap[u.roleId] : null;
+    const uWithRole = { ...u, role };
+    const branchIds = assignedBranchIds(uWithRole);
+    const branchList = branchIds.map((id) => branchesMap[id]).filter(Boolean);
+    return {
+      ...u,
+      passwordHash: undefined,
+      role,
+      branchIds,
+      branches: branchList,
+      branch: branchList[0] ?? null,
+      supplier: u.supplierId ? supplierMap[u.supplierId] ?? null : null,
+      manufacturer: u.manufacturerId ? manufacturerMap[u.manufacturerId] ?? null : null,
+    };
+  });
 
   res.json({ data, total: data.length, page: pageNum, limit: limitNum });
 });
@@ -61,11 +115,53 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { password, ...rest } = parsed.data as any;
+  const b = parsed.data as Record<string, unknown> & { password?: string };
+  const password = b.password;
+  let branchIds = normalizeBranchIds(b.branchIds, b.branchId);
+  const roleId = b.roleId as number | undefined;
+  if (await isSuperAdminRoleId(roleId)) {
+    branchIds = []; 
+  } else {
+    const branchErr = await assertBranchesExist(branchIds);
+    if (branchErr) {
+      res.status(400).json({ error: branchErr });
+      return;
+    }
+  }
+  if (!password || typeof password !== "string") {
+    res.status(400).json({ error: "Password is required" });
+    return;
+  }
   const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({ data: { ...rest, passwordHash } });
-  const publicUser = await loadUserPublicById(user.id);
-  res.status(201).json(publicUser ?? { ...user, passwordHash: undefined });
+  const userFields = { ...b } as Record<string, unknown>;
+  delete userFields.password;
+  delete userFields.branchIds;
+  delete userFields.branchId;
+  delete userFields.userBranches;
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          ...userFields,
+          passwordHash,
+          branchId: branchIds[0] ?? null,
+          ...(branchIds.length > 0
+            ? {
+                userBranches: {
+                  create: branchIds.map((branchId: number) => ({ branchId })),
+                },
+              }
+            : {}),
+        } as any,
+      });
+      return u;
+    });
+    const publicUser = await loadUserPublicById(user.id);
+    res.status(201).json(publicUser ?? { ...user, passwordHash: undefined });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(400).json({ error: msg });
+  }
 });
 
 router.get("/users/:id", requireAuth, requirePermission("users", "read"), async (req, res): Promise<void> => {
@@ -78,12 +174,7 @@ router.get("/users/:id", requireAuth, requirePermission("users", "read"), async 
     const r = await prisma.role.findUnique({ where: { id: publicUser.roleId } });
     if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
   }
-  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
-  if (publicUser.branchId) {
-    const b = await prisma.branch.findUnique({ where: { id: publicUser.branchId } });
-    if (b) branch = b;
-  }
-  res.json({ ...publicUser, role, branch });
+  res.json({ ...publicUser, role });
 });
 
 router.put("/users/:id", requireAuth, requirePermission("users", "update"), async (req, res): Promise<void> => {
@@ -91,10 +182,70 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
   const id = parseInt(raw, 10);
   const parsed = UpdateUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const user = await prisma.user.update({ where: { id }, data: parsed.data }).catch(() => null);
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  const publicUser = await loadUserPublicById(user.id);
-  res.json(publicUser ?? { ...user, passwordHash: undefined });
+
+  const existing = await prisma.user.findUnique({ where: { id }, select: { roleId: true } });
+  if (!existing) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const body = parsed.data as any;
+  const { password, branchIds: bidRaw, branchId: legacyBid, ...rest } = body;
+  const nextRoleId = rest.roleId !== undefined ? rest.roleId : existing.roleId;
+  const superAdmin = await isSuperAdminRoleId(nextRoleId);
+
+  let branchIdsUpdate = bidRaw !== undefined ? normalizeBranchIds(bidRaw, legacyBid ?? rest.branchId) : null;
+  if (superAdmin) {
+    branchIdsUpdate = [];
+  }
+
+  if (branchIdsUpdate !== null && branchIdsUpdate.length > 0) {
+    const branchErr = await assertBranchesExist(branchIdsUpdate);
+    if (branchErr) {
+      res.status(400).json({ error: branchErr });
+      return;
+    }
+  }
+
+  const updateData: Record<string, unknown> = { ...rest };
+  if (password) {
+    updateData.passwordHash = await hashPassword(password);
+  }
+  delete updateData.branchId;
+  delete updateData.branchIds;
+  delete updateData.userBranches;
+
+  if (superAdmin) {
+    updateData.branchId = null;
+  } else if (branchIdsUpdate !== null) {
+    updateData.branchId = branchIdsUpdate[0] ?? null;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: updateData as any,
+      });
+      if (superAdmin) {
+        await tx.userBranch.deleteMany({ where: { userId: id } });
+      } else if (branchIdsUpdate !== null) {
+        await tx.userBranch.deleteMany({ where: { userId: id } });
+        if (branchIdsUpdate.length > 0) {
+          await tx.userBranch.createMany({
+            data: branchIdsUpdate.map((branchId) => ({ userId: id, branchId })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    });
+  } catch {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const publicUser = await loadUserPublicById(id);
+  res.json(publicUser ?? { success: true });
 });
 
 router.delete("/users/:id", requireAuth, requirePermission("users", "delete"), async (req, res): Promise<void> => {

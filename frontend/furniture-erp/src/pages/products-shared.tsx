@@ -14,14 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, ChevronRight } from "lucide-react";
+import { Plus, X, ChevronRight, Settings2 } from "lucide-react";
 import { z } from "zod";
 import { useForm, useFieldArray, Control, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProductImageField } from "@/components/product-image-field";
 
 export function flattenCategoryRoots(roots: unknown[]): { id: number; name: string; parentId?: number | null }[] {
@@ -352,7 +353,7 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
     },
   });
 
-  const [newKeyOpen, setNewKeyOpen] = useState(false);
+  const [manageTypesOpen, setManageTypesOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
 
   const { fields, append, remove } = useFieldArray({ control, name: namePrefix as never });
@@ -368,7 +369,7 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
       {
         onSuccess: () => {
           setNewKeyName("");
-          setNewKeyOpen(false);
+          setManageTypesOpen(false);
           toast({ title: "Attribute type saved — pick it from the list" });
         },
         onError: (e: unknown) =>
@@ -382,8 +383,8 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Label className="text-sm font-medium">Attributes</Label>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setNewKeyOpen(true)}>
-            New type
+          <Button type="button" variant="outline" size="sm" onClick={() => setManageTypesOpen(true)}>
+            <Settings2 className="h-3.5 w-3.5 mr-1" /> Manage types
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => append({ key: "", value: "" })}>
             <Plus className="h-3 w-3 mr-1" /> Add row
@@ -401,7 +402,16 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
             render={({ field }) => (
               <FormItem className="flex-1 min-w-0">
                 <FormControl>
-                    <Select value={field.value || undefined} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value || undefined}
+                    onValueChange={(v) => {
+                      if (v === "__manage__") {
+                        setManageTypesOpen(true);
+                        return;
+                      }
+                      field.onChange(v);
+                    }}
+                  >
                     <SelectTrigger className="rounded-lg">
                       <SelectValue placeholder="Type (e.g. Color)" />
                     </SelectTrigger>
@@ -411,6 +421,13 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
                           {k.name}
                         </SelectItem>
                       ))}
+                      <SelectSeparator />
+                      <SelectItem value="__manage__" className="gap-2">
+                        <span className="flex items-center gap-2">
+                          <Settings2 className="h-4 w-4 shrink-0 opacity-70" />
+                          Manage attributes…
+                        </span>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </FormControl>
@@ -442,27 +459,32 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
         </div>
       ))}
 
-      <Dialog open={newKeyOpen} onOpenChange={setNewKeyOpen}>
-        <DialogContent className="rounded-2xl sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>New attribute type</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={newKeyName}
-            onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder="e.g. Color, Material"
-            className="h-10"
-          />
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => setNewKeyOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={addAttributeType} disabled={createKey.isPending}>
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Sheet open={manageTypesOpen} onOpenChange={setManageTypesOpen}>
+        <SheetContent side="top" className="max-h-[min(80vh,460px)] overflow-y-auto rounded-b-xl px-6 pb-6 pt-14 sm:max-w-xl sm:mx-auto">
+          <SheetHeader className="space-y-1 text-left pb-4 border-b border-border/60">
+            <SheetTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 shrink-0 text-muted-foreground" />
+              Manage attributes
+            </SheetTitle>
+            <SheetDescription>Add reusable attribute types. They appear in every variant attribute picker.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-3">
+            <Label className="text-sm font-medium">New attribute type</Label>
+            <p className="text-xs text-muted-foreground -mt-1">Examples: Color, Size, Material, Finish.</p>
+            <div className="flex gap-2">
+              <Input
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="e.g. Color"
+                className="h-10"
+              />
+              <Button type="button" onClick={addAttributeType} disabled={createKey.isPending}>
+                Add
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -578,8 +600,8 @@ export function VariantFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[520px] rounded-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()} >
+      <DialogContent className="sm:max-w-[520px] rounded-2xl max-h-[90vh] overflow-y-auto ">
         <DialogHeader>
           <DialogTitle>{editingVariant ? "Edit Variant" : "Add Variant"}</DialogTitle>
         </DialogHeader>

@@ -1,8 +1,9 @@
 import { Router, IRouter } from "express";
 import { CreateBranchBody, UpdateBranchBody, GetBranchParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission } from "../lib/permissions";
+import { requirePermission, isSuperAdminRole } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
+import { assignedBranchIds } from "../lib/user-branches";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,14 @@ router.get("/branches", requireAuth, requirePermission("branches", "read"), asyn
   let branches = await prisma.branch.findMany({ skip: offset, take: limitNum });
   if (search) branches = branches.filter(b => b.name.toLowerCase().includes(search.toLowerCase()) || b.code.toLowerCase().includes(search.toLowerCase()));
   if (isActive !== undefined) branches = branches.filter(b => b.isActive === (isActive === "true"));
+
+  const authUser = (req as {
+    user?: { branchId?: number | null; userBranches?: { branchId: number }[]; role?: { name?: string | null } | null };
+  }).user;
+  const allowed = authUser && !isSuperAdminRole(authUser) ? assignedBranchIds(authUser) : [];
+  if (allowed.length > 0) {
+    branches = branches.filter((b) => allowed.includes(b.id));
+  }
 
   res.json({ data: branches, total: branches.length, page: pageNum, limit: limitNum });
 });

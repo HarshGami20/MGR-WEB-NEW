@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListPurchaseOrders, 
   useCreatePurchaseOrder, 
@@ -10,7 +10,8 @@ import {
   useListProducts,
   getListPurchaseOrdersQueryKey
 } from "@/api-client";
-import { useBranch } from "@/lib/branch-context";
+import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { useAuth } from "@/lib/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,6 +53,16 @@ export default function PurchaseOrders() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { selectedBranchId } = useBranch();
+  const { user } = useAuth();
+  const assigned = assignedUserBranchIds(user);
+  const writeBranchId =
+    assigned.length === 1
+      ? assigned[0]!
+      : assigned.length > 1
+        ? selectedBranchId != null && assigned.includes(selectedBranchId)
+          ? selectedBranchId
+          : null
+        : selectedBranchId;
 
   const { data: poData, isLoading } = useListPurchaseOrders({
     type: type !== "all" ? (type as any) : undefined,
@@ -127,7 +138,16 @@ export default function PurchaseOrders() {
     if (data.type === "supplier") data.manufacturerId = undefined;
     if (data.type === "manufacturer") data.supplierId = undefined;
     
-    createPO.mutate({ data });
+    if (writeBranchId == null) {
+      toast({
+        title: "Select a branch",
+        description: "Choose a working branch in the header before creating a purchase order.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createPO.mutate({ data: { ...data, branchId: writeBranchId } });
   };
 
   const getStatusBadge = (status: string) => {
@@ -268,23 +288,7 @@ export default function PurchaseOrders() {
           data={pos}
           isLoading={isLoading}
           emptyMessage="No purchase orders found."
-          footer={
-            poData && poData.total > poData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * poData.limit + 1} to {Math.min(page * poData.limit, poData.total)} of {poData.total} POs
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * poData.limit >= poData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={poData?.total ?? 0} limit={poData?.limit ?? 10} onPageChange={setPage} itemLabel="POs" />}
         />
       </div>
 

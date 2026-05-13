@@ -230,16 +230,16 @@ function StaffDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 shrink-0">
-          <Button asChild size="lg" className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
+          <Button asChild size="lg" className="rounded-full px-5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
             <Link href="/orders">
-              <Plus className="h-4 w-4 mr-2" aria-hidden />
+              <Plus className="h-4 w-4 mr-1" aria-hidden />
               New order
             </Link>
           </Button>
-          <Button asChild variant="outline" size="lg" className="rounded-full border-primary/25 bg-background">
+          <Button asChild variant="outline" size="lg" className="rounded-full  px-5 border-primary/25 bg-background">
             <Link href="/products">
-              <Download className="h-4 w-4 mr-2" aria-hidden />
-              Catalog
+              <Box className="h-4 w-4 mr-1" aria-hidden />
+              Product
             </Link>
           </Button>
         </div>

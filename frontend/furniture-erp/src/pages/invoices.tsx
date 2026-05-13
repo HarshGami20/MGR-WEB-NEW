@@ -1,25 +1,52 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListInvoices, 
   useGetInvoice,
-  getListInvoicesQueryKey
+  useListBranches,
 } from "@/api-client";
+import { useBranch } from "@/lib/branch-context";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Eye, Download } from "lucide-react";
+import { Eye, Download, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { customFetch } from "@/api-client/custom-fetch";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Invoices() {
   const [page, setPage] = useState(1);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
+  const { selectedBranchId, setSelectedBranchId } = useBranch();
+
+  const { data: branchesData } = useListBranches({ isActive: true, limit: 100 });
+
+  const monthFilterParams = useMemo(() => {
+    if (!selectedMonth || !selectedMonth.includes("-")) return {};
+    const [year, month] = selectedMonth.split("-");
+    if (!year || !month) return {};
+    return {
+      year: Number(year),
+      month: Number(month),
+    };
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedMonth, selectedBranchId]);
 
   const { data: invoicesData, isLoading } = useListInvoices({
     page,
     limit: 10,
+    ...monthFilterParams,
+    branchId: selectedBranchId ?? undefined,
   });
 
   const { data: selectedInvoice } = useGetInvoice(selectedInvoiceId || 0, {
@@ -32,6 +59,45 @@ export default function Invoices() {
   const openViewDialog = (id: number) => {
     setSelectedInvoiceId(id);
     setIsViewDialogOpen(true);
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      setIsExporting(true);
+      const params = new URLSearchParams();
+      if (monthFilterParams.month && monthFilterParams.year) {
+        params.set("month", String(monthFilterParams.month));
+        params.set("year", String(monthFilterParams.year));
+      }
+      if (selectedBranchId != null) {
+        params.set("branchId", String(selectedBranchId));
+      }
+      const query = params.toString();
+      const blob = await customFetch<Blob>(`/api/invoices/export/zip${query ? `?${query}` : ""}`, {
+        responseType: "blob",
+      });
+
+      const fileName = monthFilterParams.month && monthFilterParams.year
+        ? `invoices-${monthFilterParams.year}-${String(monthFilterParams.month).padStart(2, "0")}.zip`
+        : "invoices-all.zip";
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Invoices exported successfully" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to export invoices",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const invoices = invoicesData?.data ?? [];
@@ -60,6 +126,21 @@ export default function Invoices() {
             {new Date(row.original.createdAt).toLocaleDateString()}
           </span>
         ),
+      },
+      {
+        id: "branch",
+        header: "Branch",
+        cell: ({ row }) => {
+          const b = (row.original as { order?: { branch?: { name?: string } | null } }).order?.branch;
+          return b?.name ? (
+            <Badge variant="outline" className="flex w-fit max-w-[160px] items-center gap-1 font-normal">
+              <GitBranch className="h-3 w-3 shrink-0" />
+              <span className="truncate">{b.name}</span>
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground text-sm">—</span>
+          );
+        },
       },
       {
         accessorKey: "isGst",
@@ -98,6 +179,51 @@ export default function Invoices() {
           <h2 className="text-2xl font-bold tracking-tight">Invoices</h2>
           <p className="text-muted-foreground">View and manage order invoices</p>
         </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Branch</label>
+            <Select
+              value={selectedBranchId?.toString() ?? "all"}
+              onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v, 10))}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All branches" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All branches</SelectItem>
+                {(branchesData?.data ?? []).map((b: { id: number; name: string }) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Filter by month</label>
+            <Input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-[180px]"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSelectedMonth("");
+              setSelectedBranchId(null);
+            }}
+            disabled={!selectedMonth && selectedBranchId == null}
+          >
+            Clear filters
+          </Button>
+          <Button type="button" onClick={handleDownloadAll} disabled={isExporting}>
+            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? "Exporting..." : "Download All ZIP"}
+          </Button>
+        </div>
       </div>
 
       <div className="bg-card rounded-lg border shadow-sm">
@@ -106,23 +232,7 @@ export default function Invoices() {
           data={invoices}
           isLoading={isLoading}
           emptyMessage="No invoices found."
-          footer={
-            invoicesData && invoicesData.total > invoicesData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * invoicesData.limit + 1} to {Math.min(page * invoicesData.limit, invoicesData.total)} of {invoicesData.total} invoices
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * invoicesData.limit >= invoicesData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={invoicesData?.total ?? 0} limit={invoicesData?.limit ?? 10} onPageChange={setPage} itemLabel="invoices" />}
         />
       </div>
 

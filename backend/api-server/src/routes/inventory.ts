@@ -4,11 +4,12 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock, setProductStockAbsolute, syncProductStockFromVariants } from "../lib/product-stock";
+import { requireWriteBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
 router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"), async (req, res): Promise<void> => {
-  const { productId, type, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { productId, type, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -16,6 +17,7 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
   const where: Record<string, any> = {};
   if (productId) where.productId = parseInt(productId, 10);
   if (type) where.type = type;
+  if (branchId) where.branchId = parseInt(branchId, 10);
 
   const [total, logs] = await prisma.$transaction([
     prisma.inventoryLog.count({ where }),
@@ -48,6 +50,14 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
 router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "update"), async (req, res): Promise<void> => {
   const parsed = AdjustInventoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const writeBranchId = await requireWriteBranchId(req, res, user);
+  if (writeBranchId == null) return;
+
   const { productId, type, quantity, notes } = parsed.data as any;
   const variantId: number | null | undefined = (parsed.data as any).variantId;
 
@@ -89,7 +99,9 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
   }
 
   const refreshed = await prisma.product.findUnique({ where: { id: productId } });
-  const log = await prisma.inventoryLog.create({ data: { productId, variantId: variantId ?? null, type, quantity, notes } });
+  const log = await prisma.inventoryLog.create({
+    data: { productId, variantId: variantId ?? null, type, quantity, notes, branchId: writeBranchId },
+  });
   const variant = variantId ? await prisma.productVariant.findUnique({ where: { id: variantId } }) : null;
   const p = refreshed ?? product;
   res.json({

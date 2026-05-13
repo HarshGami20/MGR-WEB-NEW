@@ -64,7 +64,10 @@ export interface User {
   avatarUrl?: string | null;
   roleId?: number | null;
   role?: Role | null;
+  /** Present only when the user has exactly one assigned branch. */
   branchId?: number | null;
+  branchIds?: number[];
+  branches?: Branch[];
   branch?: Branch | null;
   supplierId?: number | null;
   supplier?: PartnerOrgRef | null;
@@ -89,6 +92,7 @@ export interface CreateUserBody {
   email?: string | null;
   password: string;
   roleId: number;
+  branchIds?: number[];
   branchId?: number | null;
   supplierId?: number | null;
   manufacturerId?: number | null;
@@ -99,6 +103,7 @@ export interface UpdateUserBody {
   mobile?: string;
   email?: string | null;
   roleId?: number;
+  branchIds?: number[];
   branchId?: number | null;
   supplierId?: number | null;
   manufacturerId?: number | null;
@@ -287,6 +292,7 @@ export interface InventoryLog {
   id: number;
   productId: number;
   variantId?: number | null;
+  branchId?: number | null;
   variant?: ProductVariant | null;
   product?: Product | null;
   type: InventoryLogType;
@@ -717,6 +723,7 @@ export type UploadProductImageBody = {
 export type ListInventoryLogsParams = {
 productId?: number;
 type?: ListInventoryLogsType;
+branchId?: number;
 page?: number;
 limit?: number;
 };
@@ -754,12 +761,16 @@ export type ListInvoicesParams = {
 orderId?: number;
 page?: number;
 limit?: number;
+month?: number;
+year?: number;
+branchId?: number;
 };
 
 export type ListPaymentsParams = {
 orderId?: number;
 page?: number;
 limit?: number;
+branchId?: number;
 };
 
 export type ListSuppliersParams = {

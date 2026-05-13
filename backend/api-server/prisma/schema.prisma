@@ -20,10 +20,23 @@ model Branch {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   users          User[]
+  userBranches   UserBranch[]
   orders         Order[]
   purchaseOrders PurchaseOrder[]
+  inventoryLogs  InventoryLog[]
 
   @@map("branches")
+}
+
+model UserBranch {
+  userId   Int @map("user_id")
+  branchId Int @map("branch_id")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@map("user_branches")
 }
 
 model Role {
@@ -35,6 +48,15 @@ model Role {
   users User[]
 
   @@map("roles")
+}
+
+enum NotificationPriority {
+  low
+  normal
+  high
+  urgent
+
+  @@map("notification_priority")
 }
 
 model User {
@@ -53,11 +75,115 @@ model User {
 
   role           Role?         @relation(fields: [roleId], references: [id])
   branch         Branch?       @relation(fields: [branchId], references: [id])
+  userBranches   UserBranch[]
   supplier       Supplier?     @relation(fields: [supplierId], references: [id])
   manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
   assignedOrders Order[]       @relation("OrderAssignee")
 
+  notificationsSent       Notification[]           @relation("NotificationSender")
+  notificationRecipients  NotificationRecipient[]
+  fcmTokens                 UserFcmToken[]
+  notificationPreference    NotificationPreference?
+
   @@map("users")
+}
+
+/// In-app + push notification root record (PostgreSQL/Prisma equivalent of a Mongo “notifications” collection document).
+model Notification {
+  id               String               @id @default(cuid())
+  title            String
+  message          String
+  senderId         Int?                 @map("sender_id")
+  notificationType String               @map("notification_type")
+  module           String?
+  metadata         Json                 @default("{}")
+  priority         NotificationPriority @default(normal)
+  /// Denormalized copy for list filters; per-user read state lives on NotificationRecipient.
+  isBroadcast      Boolean              @default(false) @map("is_broadcast")
+  scheduledAt      DateTime?            @map("scheduled_at") @db.Timestamptz(6)
+  expiresAt        DateTime?            @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sender       User?                     @relation("NotificationSender", fields: [senderId], references: [id])
+  recipients   NotificationRecipient[]
+  logs         NotificationLog[]
+
+  @@index([createdAt(sort: Desc)])
+  @@index([notificationType])
+  @@index([module])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String    @id @default(cuid())
+  notificationId String    @map("notification_id")
+  userId         Int       @map("user_id")
+  isRead         Boolean   @default(false) @map("is_read")
+  readAt         DateTime? @map("read_at") @db.Timestamptz(6)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, isRead])
+  @@index([notificationId])
+  @@map("notification_recipients")
+}
+
+model UserFcmToken {
+  id        String   @id @default(cuid())
+  userId    Int      @map("user_id")
+  token     String   @unique
+  platform  String
+  deviceId  String?  @map("device_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_fcm_tokens")
+}
+
+model NotificationPreference {
+  userId          Int      @id @map("user_id")
+  pushEnabled     Boolean  @default(true) @map("push_enabled")
+  socketEnabled   Boolean  @default(true) @map("socket_enabled")
+  emailEnabled    Boolean  @default(false) @map("email_enabled")
+  mutedModules    Json     @default("[]") @map("muted_modules")
+  mutedTypes      Json     @default("[]") @map("muted_types")
+  digestFrequency String   @default("instant") @map("digest_frequency")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model NotificationLog {
+  id             String   @id @default(cuid())
+  notificationId String?  @map("notification_id")
+  userId         Int?     @map("user_id")
+  channel        String
+  status         String
+  detail         Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([notificationId])
+  @@map("notification_logs")
+}
+
+/// Registry of notification type codes for validation and admin UI (optional seed).
+model NotificationTypeDefinition {
+  code        String   @id
+  label       String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("notification_type_definitions")
 }
 
 model Category {
@@ -138,6 +264,7 @@ model InventoryLog {
   id        Int      @id @default(autoincrement())
   productId Int      @map("product_id")
   variantId Int?     @map("variant_id")
+  branchId  Int?     @map("branch_id")
   type      String
   quantity  Int
   notes     String?
@@ -145,6 +272,7 @@ model InventoryLog {
 
   product Product @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
+  branch  Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@map("inventory_logs")
 }

@@ -6,6 +6,7 @@ import { prisma, toNumber } from "../lib/prisma";
 import { incrementProductStock } from "../lib/product-stock";
 import { getPartnerScope, purchaseOrderMatchesScope, PARTNER_ALLOWED_PO_STATUSES } from "../lib/partner-scope";
 import { requirePermission } from "../lib/permissions";
+import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
@@ -88,12 +89,21 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
   }
   const parsed = CreatePurchaseOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { items, ...poData } = parsed.data;
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const branchId = await requireWriteBranchId(req, res, user);
+  if (branchId == null) return;
+
+  const { items, branchId: _omitClientBranch, ...poData } = parsed.data as any;
   let totalAmount = 0;
   for (const item of items) totalAmount += item.unitPrice * item.quantity;
   const poNumber = generatePONumber();
   const po = await prisma.purchaseOrder.create({ data: {
     ...poData,
+    branchId,
     poNumber,
     totalAmount: String(totalAmount),
     expectedDelivery: poData.expectedDelivery ? new Date(poData.expectedDelivery) : undefined,
@@ -169,6 +179,12 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
     res.status(403).json({ error: "That status cannot be set from the supplier/manufacturer portal" });
     return;
   }
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
   try {
     const po = await prisma.$transaction(async (tx) => {
       const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } });
@@ -183,6 +199,7 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
               type: "in",
               quantity: item.quantity,
               notes: `PO ${updated.poNumber} delivered`,
+              branchId: logBranchId,
             },
           });
         }

@@ -747,6 +747,10 @@ paths:
           schema:
             type: string
             enum: [in, out, adjustment]
+        - name: branchId
+          in: query
+          schema:
+            type: integer
         - name: page
           in: query
           schema:
@@ -962,6 +966,18 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: month
+          in: query
+          schema:
+            type: integer
+        - name: year
+          in: query
+          schema:
+            type: integer
+        - name: branchId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Invoices
@@ -1010,6 +1026,10 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: branchId
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Payments
@@ -1691,6 +1711,15 @@ components:
         branchId:
           type: integer
           nullable: true
+          description: Present only when the user has exactly one assigned branch.
+        branchIds:
+          type: array
+          items:
+            type: integer
+        branches:
+          type: array
+          items:
+            $ref: "#/components/schemas/Branch"
         branch:
           $ref: "#/components/schemas/Branch"
           nullable: true
@@ -1727,6 +1756,10 @@ components:
           type: string
         roleId:
           type: integer
+        branchIds:
+          type: array
+          items:
+            type: integer
         branchId:
           type: integer
           nullable: true
@@ -1750,6 +1783,10 @@ components:
           nullable: true
         roleId:
           type: integer
+        branchIds:
+          type: array
+          items:
+            type: integer
         branchId:
           type: integer
           nullable: true
@@ -2140,6 +2177,9 @@ components:
         productId:
           type: integer
         variantId:
+          type: integer
+          nullable: true
+        branchId:
           type: integer
           nullable: true
         variant:

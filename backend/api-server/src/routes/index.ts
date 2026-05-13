@@ -17,6 +17,8 @@ import settingsRouter from "./settings";
 import branchesRouter from "./branches";
 import productVariantsRouter from "./productVariants";
 import attributeCatalogRouter from "./attributeCatalog";
+import reportsRouter from "./reports";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -38,5 +40,7 @@ router.use(settingsRouter);
 router.use(branchesRouter);
 router.use(productVariantsRouter);
 router.use(attributeCatalogRouter);
+router.use(reportsRouter);
+router.use(notificationsRouter);
 
 export default router;

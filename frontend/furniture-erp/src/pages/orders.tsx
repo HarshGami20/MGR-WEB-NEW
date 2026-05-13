@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListOrders, 
   useDeleteOrder, 
@@ -13,6 +13,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +36,11 @@ export default function Orders() {
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
   const [page, setPage] = useState(1);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [singleDeleteOrderId, setSingleDeleteOrderId] = useState<number | null>(null);
   const [, setLocation] = useLocation();
 
   const queryClient = useQueryClient();
@@ -52,7 +69,6 @@ export default function Orders() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        toast({ title: "Order deleted successfully" });
       },
     },
   });
@@ -70,10 +86,10 @@ export default function Orders() {
   const openEditPage = (order: any) => setLocation(`/orders/${order.id}/edit`);
   const openDetailPage = (order: any) => setLocation(`/orders/${order.id}`);
 
-  const handleDelete = (id: number) => {
-    if (confirm("Are you sure you want to delete this order?")) {
-      deleteOrder.mutate({ id });
-    }
+  const openSingleDeleteDialog = (id: number) => {
+    setSingleDeleteOrderId(id);
+    setDeleteInput("");
+    setDeleteConfirmOpen(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -88,9 +104,124 @@ export default function Orders() {
   };
 
   const orders = ordersData?.data ?? [];
+  const selectedCount = selectedOrderIds.length;
+  const allSelectedOnPage = orders.length > 0 && orders.every((o: any) => selectedOrderIds.includes(o.id));
+
+  useEffect(() => {
+    const validIds = new Set((ordersData?.data ?? []).map((o: any) => o.id));
+    setSelectedOrderIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [ordersData]);
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    if (checked) {
+      setSelectedOrderIds((prev) => Array.from(new Set([...prev, ...orders.map((o: any) => o.id)])));
+      return;
+    }
+    setSelectedOrderIds((prev) => prev.filter((id) => !orders.some((o: any) => o.id === id)));
+  };
+
+  const runExportSelectedOrders = () => {
+    const selectedOrders = orders.filter((o: any) => selectedOrderIds.includes(o.id));
+    if (selectedOrders.length === 0) return;
+
+    const headers = [
+      "Order Number",
+      "Customer Name",
+      "Customer Mobile",
+      "Status",
+      "GST",
+      "Total Amount",
+      "Paid Amount",
+      "Balance Amount",
+      "Created At",
+    ];
+    const escapeCsv = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = selectedOrders.map((o: any) => {
+      const balance = Number(o.totalAmount || 0) - Number(o.paidAmount || 0);
+      return [
+        o.orderNumber,
+        o.customerName,
+        o.customerMobile,
+        o.status,
+        o.isGst ? "GST" : "Non-GST",
+        Number(o.totalAmount || 0).toFixed(2),
+        Number(o.paidAmount || 0).toFixed(2),
+        balance.toFixed(2),
+        new Date(o.createdAt).toISOString(),
+      ].map(escapeCsv).join(",");
+    });
+    const csv = [headers.map(escapeCsv).join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: `${selectedOrders.length} order(s) exported` });
+  };
+
+  const openBulkDeleteDialog = () => {
+    if (selectedOrderIds.length === 0) return;
+    setSingleDeleteOrderId(null);
+    setDeleteInput("");
+    setDeleteConfirmOpen(true);
+  };
+
+  const runConfirmedDelete = async () => {
+    if (deleteInput.trim() !== "DELETE") {
+      toast({ title: "Deletion cancelled", description: 'Type exactly "DELETE" to proceed.', variant: "destructive" });
+      return;
+    }
+
+    const idsToDelete = singleDeleteOrderId != null ? [singleDeleteOrderId] : selectedOrderIds;
+    if (idsToDelete.length === 0) return;
+
+    const results = await Promise.allSettled(idsToDelete.map((id) => deleteOrder.mutateAsync({ id })));
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.length - ok;
+    if (ok > 0) {
+      setSelectedOrderIds([]);
+      toast({ title: singleDeleteOrderId != null ? "Order deleted successfully" : `${ok} order(s) deleted` });
+    }
+    if (failed > 0) {
+      toast({ title: `${failed} deletion(s) failed`, variant: "destructive" });
+    }
+    setDeleteConfirmOpen(false);
+    setDeleteInput("");
+    setSingleDeleteOrderId(null);
+  };
 
   const columns = useMemo<ColumnDef<(typeof orders)[number]>[]>(
     () => [
+      {
+        id: "select",
+        header: () => (
+          <Checkbox
+            checked={allSelectedOnPage ? true : selectedCount > 0 ? "indeterminate" : false}
+            onCheckedChange={(v) => toggleSelectAllOnPage(Boolean(v))}
+            aria-label="Select all orders on this page"
+          />
+        ),
+        meta: { headerClassName: "w-[44px]", cellClassName: "w-[44px]" },
+        cell: ({ row }) => {
+          const id = row.original.id as number;
+          const checked = selectedOrderIds.includes(id);
+          return (
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(v) => {
+                if (v) {
+                  setSelectedOrderIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+                } else {
+                  setSelectedOrderIds((prev) => prev.filter((x) => x !== id));
+                }
+              }}
+              aria-label={`Select order ${row.original.orderNumber}`}
+            />
+          );
+        },
+      },
       {
         accessorKey: "orderNumber",
         header: "Order #",
@@ -101,10 +232,20 @@ export default function Orders() {
       {
         id: "customer",
         header: "Customer",
+        meta: { cellClassName: "max-w-[220px]" },
         cell: ({ row }) => (
           <div className="flex flex-col">
-            <span className="font-medium">{row.original.customerName}</span>
-            <span className="text-xs text-muted-foreground">{row.original.customerMobile}</span>
+
+        
+          <span
+            className="block truncate font-medium"
+            title={`${row.original.customerName}${row.original.customerMobile ? ` (${row.original.customerMobile})` : ""}`}
+          >
+            {row.original.customerName}
+            
+            
+          </span>
+          <span className="text-xs text-muted-foreground">{row.original.customerMobile ? ` ${row.original.customerMobile}` : ""}</span>
           </div>
         ),
       },
@@ -142,14 +283,20 @@ export default function Orders() {
       },
       {
         accessorKey: "totalAmount",
-        header: () => <span className="text-right block w-full">Total Amount (₹)</span>,
-        meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
+        header: () => <span className=" w-full whitespace-nowrap text-right"> <span className="xl:inline hidden">Total </span>Amount (₹)</span>,
+        meta: {
+          headerClassName: "text-right whitespace-nowrap",
+          cellClassName: "text-right font-medium whitespace-nowrap tabular-nums",
+        },
         cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
       },
       {
         id: "balance",
-        header: () => <span className="text-right block w-full">Balance (₹)</span>,
-        meta: { headerClassName: "text-right", cellClassName: "text-right" },
+        header: () => <span className=" w-full whitespace-nowrap text-right">Balance (₹)</span>,
+        meta: {
+          headerClassName: "text-right whitespace-nowrap",
+          cellClassName: "text-right whitespace-nowrap tabular-nums",
+        },
         cell: ({ row }) => {
           const ord = row.original;
           const bal = ord.totalAmount - ord.paidAmount;
@@ -174,7 +321,7 @@ export default function Orders() {
               <Button variant="ghost" size="icon" onClick={() => openEditPage(ord)}>
                 <Edit className="h-4 w-4 text-primary" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => handleDelete(ord.id)}>
+              <Button variant="ghost" size="icon" onClick={() => openSingleDeleteDialog(ord.id)}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
@@ -182,7 +329,7 @@ export default function Orders() {
         },
       },
     ],
-    [getStatusBadge, updateStatus, openDetailPage, openEditPage, handleDelete],
+    [allSelectedOnPage, getStatusBadge, openDetailPage, openEditPage, selectedCount, selectedOrderIds, updateStatus],
   );
 
   return (
@@ -234,6 +381,15 @@ export default function Orders() {
           </Select>
         </div>
       </div>
+      {selectedCount > 0 ? (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-2.5">
+          <span className="text-sm text-muted-foreground">{selectedCount} order(s) selected</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setExportConfirmOpen(true)}>Export selected</Button>
+            <Button variant="destructive" size="sm" onClick={openBulkDeleteDialog}>Delete selected</Button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="bg-card rounded-lg border shadow-sm">
         <DataTable
@@ -241,25 +397,74 @@ export default function Orders() {
           data={orders}
           isLoading={isLoading}
           emptyMessage="No orders found."
-          footer={
-            ordersData && ordersData.total > ordersData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * ordersData.limit + 1} to {Math.min(page * ordersData.limit, ordersData.total)} of {ordersData.total} orders
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * ordersData.limit >= ordersData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={ordersData?.total ?? 0} limit={ordersData?.limit ?? 10} onPageChange={setPage} itemLabel="orders" />}
         />
       </div>
+
+      <AlertDialog open={exportConfirmOpen} onOpenChange={setExportConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Export selected orders?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will download a CSV file for {selectedCount} selected order(s).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                runExportSelectedOrders();
+                setExportConfirmOpen(false);
+              }}
+            >
+              Export
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) {
+            setDeleteInput("");
+            setSingleDeleteOrderId(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm deletion</DialogTitle>
+            <DialogDescription>
+              {singleDeleteOrderId != null
+                ? `To delete this order, type "DELETE" below.`
+                : `To delete ${selectedCount} selected order(s), type "DELETE" below.`}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={deleteInput}
+            onChange={(e) => setDeleteInput(e.target.value)}
+            placeholder='Type "DELETE"'
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setDeleteInput("");
+                setSingleDeleteOrderId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={runConfirmedDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

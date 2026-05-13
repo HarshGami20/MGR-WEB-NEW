@@ -5,6 +5,7 @@ import { requirePermission, requireProductsCreateOrUpdate } from "../lib/permiss
 import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
+import { requireWriteBranchId } from "../lib/branch-scope";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -150,6 +151,14 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
   const mode = d.inventoryMode ?? "simple";
   const stockQty = mode === "simple" ? (d.stockQty ?? 0) : 0;
 
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const writeBranchId = await requireWriteBranchId(req, res, user);
+  if (writeBranchId == null) return;
+
   try {
     const product = await prisma.$transaction(async (tx) => {
       const p = await tx.product.create({
@@ -172,6 +181,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
             type: "in",
             quantity: stockQty,
             notes: "Initial stock on product creation",
+            branchId: writeBranchId,
           },
         });
       }
@@ -198,6 +208,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
                 type: "in",
                 quantity: v.stockQty ?? 0,
                 notes: `Initial stock for variant ${createdVariant.name}`,
+                branchId: writeBranchId,
               },
             });
           }
@@ -273,6 +284,20 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
       return;
     }
 
+    const user = (req as { user?: { branchId: number | null } }).user;
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const stockWillLog =
+      d.stockQty !== undefined && variantCount === 0 && d.stockQty !== existingProduct.stockQty;
+    let writeBranchId: number | null = null;
+    if (stockWillLog) {
+      const wid = await requireWriteBranchId(req, res, user);
+      if (wid == null) return;
+      writeBranchId = wid;
+    }
+
     const updateData: Record<string, unknown> = {
       name: d.name,
       sku: d.sku,
@@ -300,6 +325,7 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
             type: delta >= 0 ? "in" : "out",
             quantity: Math.abs(delta),
             notes: "Stock changed via product update",
+            branchId: writeBranchId as number,
           },
         });
       }

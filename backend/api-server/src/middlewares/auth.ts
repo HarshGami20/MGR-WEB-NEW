@@ -13,7 +13,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const payload = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      include: { role: true },
+      include: { role: true, userBranches: { select: { branchId: true } } },
     });
     if (!user || !user.isActive) {
       res.status(401).json({ error: "Unauthorized" });

@@ -45,6 +45,7 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/users": "users",
   "/roles": "roles",
   "/settings": "settings",
+  "/curtain-calculator": "dashboard",
 };
 
 const STAFF_NAV_FALLBACK_ORDER = [

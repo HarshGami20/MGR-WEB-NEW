@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useListProducts, useDeleteProduct, getListProductsQueryKey, useListCategories } from "@/api-client";
+import { useListProducts, useDeleteProduct, getListProductsQueryKey, useListCategories, useListProductVariants } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,49 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Edit, Layers } from "lucide-react";
+import { Plus, Search, Trash2, Edit, Layers, ImageIcon } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { CategoryRoot } from "@/components/category-picker-with-manage";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { formatInr } from "@/lib/format-currency";
+import { resolvedProductImageUrl } from "@/lib/product-image-url";
 
 type ProductRow = Record<string, any>;
+
+function ProductNameCell({ product }: { product: ProductRow }) {
+  const hasProductImage = Boolean(product.imageUrl && String(product.imageUrl).trim());
+  const hasVariants = Number(product.variantCount ?? 0) > 0;
+  const { data: variantsData } = useListProductVariants(product.id, {
+    query: { enabled: !hasProductImage && hasVariants },
+  });
+
+  const variantFallback =
+    Array.isArray(variantsData) && variantsData.length > 0 ? resolvedProductImageUrl(variantsData[0]?.imageUrl) : undefined;
+  const imageSrc = resolvedProductImageUrl(product.imageUrl) ?? variantFallback;
+
+  return (
+    <div className="flex items-start gap-3 min-w-0 max-w-[280px]">
+      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md border border-border/70 bg-muted/30">
+        {imageSrc ? (
+          <img src={imageSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <ImageIcon className="h-4 w-4 opacity-60" />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0">
+        <Link href={`/products/${product.id}`}>
+          <span className="block truncate font-semibold text-foreground hover:underline" title={String(product.name ?? "")}>
+            {product.name}
+          </span>
+        </Link>
+        {product.description ? <p className="mt-0.5 text-sm text-muted-foreground line-clamp-1">{product.description}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 function categoryFilterOptions(roots: CategoryRoot[]): { id: number; label: string }[] {
   const items: { id: number; label: string }[] = [];
@@ -71,6 +106,15 @@ export default function Products() {
   const columns = useMemo<ColumnDef<ProductRow, unknown>[]>(
     () => [
       {
+        id: "name",
+        header: "Name",
+        meta: { headerClassName: "w-[280px]", cellClassName: "w-[280px]" },
+        cell: ({ row }) => {
+          const p = row.original;
+          return <ProductNameCell product={p} />;
+        },
+      },
+      {
         accessorKey: "sku",
         header: "SKU",
         meta: {
@@ -79,26 +123,13 @@ export default function Products() {
         cell: ({ row }) => <span>{row.original.sku}</span>,
       },
       {
-        id: "name",
-        header: "Name",
-        cell: ({ row }) => {
-          const p = row.original;
-          const desc = p.description?.trim();
-          return (
-            <div className="max-w-md">
-              <Link href={`/products/${p.id}`}>
-                <span className="font-semibold text-foreground hover:underline">{p.name}</span>
-              </Link>
-              {desc ? <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">{desc}</p> : null}
-            </div>
-          );
-        },
-      },
-      {
         id: "category",
         header: "Category",
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
+          <span
+            className="block max-w-[180px] truncate text-sm text-muted-foreground"
+            title={String(row.original.categoryPath || row.original.category?.name || "—")}
+          >
             {row.original.categoryPath || row.original.category?.name || "—"}
           </span>
         ),
@@ -182,28 +213,15 @@ export default function Products() {
     [can, deleteProduct],
   );
 
-  const paginationFooter =
-    total > limit ? (
-      <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">
-        <span>
-          Page {page} · {total} total
-        </span>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page * limit >= total}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
-    ) : null;
+  const paginationFooter = (
+    <DataTablePaginationFooter
+      page={page}
+      total={total}
+      limit={limit}
+      onPageChange={setPage}
+      itemLabel="products"
+    />
+  );
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-background -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">

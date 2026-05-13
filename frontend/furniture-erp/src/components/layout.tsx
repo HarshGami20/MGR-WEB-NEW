@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/auth";
 import { isPartnerPortalUser, partnerPortalLabel } from "@/lib/partner";
-import { useBranch } from "@/lib/branch-context";
+import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -19,13 +19,14 @@ import {
   GitBranch,
   ShieldCheck,
   ChevronDown,
-  Bell,
   Menu,
   X,
   Mail,
   Search,
   HelpCircle,
   BadgeCheck,
+  BarChart3,
+  Calculator,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,6 +44,7 @@ import {
 import { useListBranches, useGetDashboardSummary } from "@/api-client";
 import { useEffect, useState, useRef, type ComponentType } from "react";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
 
 /** Must match `/orders` prefill cleanup key */
 const ERP_ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
@@ -76,12 +78,18 @@ const staffNavSections: StaffSection[] = [
       { label: "Inventory", href: "/inventory", icon: Archive },
     ],
   },
+
   {
     title: "Sales & billing",
     items: [
       { label: "Invoices", href: "/invoices", icon: FileText },
       { label: "Payments", href: "/payments", icon: CreditCard },
+      { label: "Reports", href: "/reports", icon: BarChart3 },
     ],
+  },
+  {
+    title: "Tools",
+    items: [{ label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator }],
   },
   {
     title: "Procurement",
@@ -154,6 +162,13 @@ export default function Layout({ children }: LayoutProps) {
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
   const partnerUser = isPartnerPortalUser(user);
+  const assignedBranchIds = assignedUserBranchIds(user);
+  const branchLocked = !partnerUser && assignedBranchIds.length === 1;
+  const homeBranchId = branchLocked ? assignedBranchIds[0]! : null;
+  const lockedBranchLabel =
+    (user as { branch?: { name?: string } | null } | null)?.branch?.name ??
+    branches.find((b) => b.id === homeBranchId)?.name ??
+    "Branch";
   const { data: summary } = useGetDashboardSummary({
     query: { enabled: !partnerUser && !!user },
   });
@@ -518,7 +533,17 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex items-center gap-2">
 
-          {!partnerUser && (
+          {!partnerUser && branchLocked ? (
+            <div
+              className="hidden md:flex h-10 gap-1.5 min-w-0 max-w-[220px] items-center rounded-xl border border-primary/25 bg-primary/5 px-3"
+              title="Your account is assigned to this branch"
+            >
+              <GitBranch className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm truncate font-medium">{lockedBranchLabel}</span>
+            </div>
+          ) : null}
+
+          {!partnerUser && !branchLocked ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -560,7 +585,7 @@ export default function Layout({ children }: LayoutProps) {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
+          ) : null}
 
           {!partnerUser && (
             <Button variant="ghost" size="icon" type="button" className="shrink-0 rounded-xl hidden lg:flex relative" aria-label="Messages">
@@ -569,9 +594,9 @@ export default function Layout({ children }: LayoutProps) {
             </Button>
           )}
 
-          <Button variant="ghost" size="icon" type="button" className="shrink-0 rounded-xl hidden sm:flex" aria-label="Notifications">
-            <Bell className="h-5 w-5 text-muted-foreground" />
-          </Button>
+          <div className="hidden sm:flex">
+            <NotificationBell />
+          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -626,7 +651,7 @@ export default function Layout({ children }: LayoutProps) {
 
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 md:pt-7 md:bg-transparent md:[&]:rounded-t-none">
+        <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-8 md:pt-7 md:bg-transparent md:[&]:rounded-t-none">
           {partnerUser ? children : <div className="mx-auto">{children}</div>}
         </main>
       </div>

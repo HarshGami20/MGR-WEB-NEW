@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import {
   useListBranches,
   useCreateBranch,
@@ -253,23 +253,7 @@ export default function Branches() {
           data={branches}
           isLoading={isLoading}
           emptyMessage="No branches found."
-          footer={
-            branchesData && branchesData.total > branchesData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Page {page} · {branchesData.total} total
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * branchesData.limit >= branchesData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={branchesData?.total ?? 0} limit={branchesData?.limit ?? 10} onPageChange={setPage} itemLabel="branches" />}
         />
       </div>
 

@@ -3,6 +3,9 @@ import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
+import { emitSafe } from "../lib/app-events";
+import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
+import { assignedBranchIds } from "../lib/user-branches";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import multer from "multer";
 import fs from "node:fs";
@@ -142,7 +145,15 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const parsed = CreateOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { items, ...orderData } = parsed.data as any;
+  const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const branchId = await requireWriteBranchId(req, res, user);
+  if (branchId == null) return;
+
+  const { items, branchId: _clientBranch, ...orderData } = parsed.data as any;
   let subtotal = 0;
   let taxAmount = 0;
 
@@ -173,6 +184,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       const order = await tx.order.create({
         data: {
           ...orderData,
+          branchId,
           status,
           paymentStatus,
           advanceAmount: String(safeAdvanceAmount),
@@ -202,7 +214,13 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
         });
         await decrementProductStock(item.productId, item.quantity, tx);
         await tx.inventoryLog.create({
-          data: { productId: item.productId, type: "out", quantity: item.quantity, notes: `Order ${orderNumber}` },
+          data: {
+            productId: item.productId,
+            type: "out",
+            quantity: item.quantity,
+            notes: `Order ${orderNumber}`,
+            branchId,
+          },
         });
       }
 
@@ -246,6 +264,15 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     return;
   }
 
+  const actor = (req as { user?: { id: number } }).user;
+  emitSafe("ORDER_CREATED", {
+    orderId: createdOrder.id,
+    orderNumber: createdOrder.orderNumber,
+    branchId: createdOrder.branchId,
+    assignedToId: createdOrder.assignedToId,
+    createdById: actor?.id,
+  });
+
   res.status(201).json(await enrichOrder(createdOrder));
 });
 
@@ -266,8 +293,45 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   const existingOrder = await prisma.order.findUnique({ where: { id } });
   if (!existingOrder) { res.status(404).json({ error: "Order not found" }); return; }
 
+  const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const logBranchId = await resolveLogBranchId(req, user, existingOrder.branchId);
+
   const existingItems = await prisma.orderItem.findMany({ where: { orderId: id } });
   const payload = parsed.data as any;
+
+  const assigned = assignedBranchIds(user);
+  let nextOrderBranchId: number | null = existingOrder.branchId;
+  if (assigned.length === 1) {
+    const home = await prisma.branch.findFirst({ where: { id: assigned[0], isActive: true }, select: { id: true } });
+    if (home) nextOrderBranchId = assigned[0];
+  } else if (assigned.length > 1) {
+    if (payload.branchId != null) {
+      const bid = typeof payload.branchId === "number" ? payload.branchId : parseInt(String(payload.branchId), 10);
+      if (Number.isFinite(bid) && assigned.includes(bid)) {
+        const b = await prisma.branch.findFirst({ where: { id: bid, isActive: true }, select: { id: true } });
+        if (b) nextOrderBranchId = bid;
+      }
+    }
+    if (nextOrderBranchId == null && logBranchId != null && assigned.includes(logBranchId)) {
+      nextOrderBranchId = logBranchId;
+    }
+  } else {
+    if (payload.branchId != null) {
+      const bid = typeof payload.branchId === "number" ? payload.branchId : parseInt(String(payload.branchId), 10);
+      if (Number.isFinite(bid)) {
+        const b = await prisma.branch.findFirst({ where: { id: bid, isActive: true }, select: { id: true } });
+        if (b) nextOrderBranchId = bid;
+      }
+    }
+    if (nextOrderBranchId == null && logBranchId != null) {
+      nextOrderBranchId = logBranchId;
+    }
+  }
+
   const nextIsGst = payload.isGst ?? existingOrder.isGst;
   const nextItems = Array.isArray(payload.items)
     ? payload.items
@@ -338,6 +402,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
               type: "out",
               quantity: delta,
               notes: `Order ${existingOrder.orderNumber} updated`,
+              branchId: logBranchId,
             },
           });
         } else {
@@ -349,6 +414,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
               type: "in",
               quantity: returnQty,
               notes: `Order ${existingOrder.orderNumber} updated (restock)`,
+              branchId: logBranchId,
             },
           });
         }
@@ -366,7 +432,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         })),
       });
 
-      const { items: _ignoredItems, ...orderFields } = payload;
+      const { items: _ignoredItems, branchId: _omitBranch, ...orderFields } = payload;
       const requestedStatus = typeof orderFields.status === "string" ? orderFields.status : existingOrder.status;
       const safeStatus = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : existingOrder.status;
       const normalizedChallanImages = Array.isArray(orderFields.challanImages) ? orderFields.challanImages : safeJsonParse<string[]>(existingOrder.challanImages, []);
@@ -376,6 +442,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         where: { id },
         data: {
           ...orderFields,
+          branchId: nextOrderBranchId,
           status: safeStatus,
           paymentStatus,
           subtotal: String(subtotal),

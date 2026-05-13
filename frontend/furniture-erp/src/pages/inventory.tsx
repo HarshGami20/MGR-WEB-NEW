@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListInventoryLogs, 
   useAdjustInventory, 
@@ -13,6 +13,7 @@ import {
 } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { useBranch } from "@/lib/branch-context";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -47,11 +48,13 @@ export default function Inventory() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { selectedBranchId } = useBranch();
 
   const { data: logsData, isLoading } = useListInventoryLogs({
     page,
     limit: 10,
-    type: filterType !== "all" ? filterType : undefined
+    type: filterType !== "all" ? filterType : undefined,
+    branchId: selectedBranchId ?? undefined,
   });
 
   const { data: lowStockData } = useGetLowStockProducts();
@@ -309,23 +312,7 @@ export default function Inventory() {
           data={filteredLogs}
           isLoading={isLoading}
           emptyMessage="No inventory history found for selected filters."
-          footer={
-            logsData && logsData.total > logsData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Showing {(page - 1) * logsData.limit + 1} to {Math.min(page * logsData.limit, logsData.total)} of {logsData.total} logs
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * logsData.limit >= logsData.total}>
-                    Next
-                  </Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={logsData?.total ?? 0} limit={logsData?.limit ?? 10} onPageChange={setPage} itemLabel="logs" />}
         />
       </div>
 

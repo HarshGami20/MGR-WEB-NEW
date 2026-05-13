@@ -1,1 +1,1 @@
-export { DataTable, type DataTableColumnMeta } from "./data-table";
+export { DataTable, DataTablePaginationFooter, type DataTableColumnMeta } from "./data-table";

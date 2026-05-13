@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import {
   useListUsers,
   useCreateUser,
@@ -25,6 +25,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePermissions } from "@/lib/permissions";
@@ -36,7 +37,7 @@ const userSchema = z
     email: z.string().email().optional().nullable().or(z.literal("")),
     password: z.string().min(6, "Password must be at least 6 characters").optional(),
     roleId: z.coerce.number().min(1, "Role is required"),
-    branchId: z.coerce.number().optional().nullable(),
+    branchIds: z.array(z.coerce.number()).default([]),
     supplierId: z.number().nullable().optional(),
     manufacturerId: z.number().nullable().optional(),
   })
@@ -53,7 +54,7 @@ const emptyForm: UserFormValues = {
   email: "",
   password: "",
   roleId: 0,
-  branchId: null,
+  branchIds: [],
   supplierId: null,
   manufacturerId: null,
 };
@@ -128,6 +129,19 @@ export default function Users() {
     defaultValues: emptyForm,
   });
 
+  const roleRows = ((rolesData as any)?.data ?? (rolesData as any) ?? []) as { id: number; name: string }[];
+  const roleIdWatch = form.watch("roleId");
+  const selectedRoleIsSuperAdmin = useMemo(() => {
+    const r = roleRows.find((x) => x.id === roleIdWatch);
+    return r?.name === "Super Admin";
+  }, [roleIdWatch, roleRows]);
+
+  useEffect(() => {
+    if (selectedRoleIsSuperAdmin) {
+      form.setValue("branchIds", [], { shouldDirty: true });
+    }
+  }, [selectedRoleIsSuperAdmin, form]);
+
   const openCreateDialog = () => {
     setEditingId(null);
     form.reset(emptyForm);
@@ -142,7 +156,11 @@ export default function Users() {
       email: user.email || "",
       password: "",
       roleId: user.roleId ?? 0,
-      branchId: user.branchId ?? null,
+      branchIds: Array.isArray(user.branchIds) && user.branchIds.length > 0
+        ? user.branchIds
+        : user.branchId != null
+          ? [user.branchId]
+          : [],
       supplierId: user.supplierId ?? null,
       manufacturerId: user.manufacturerId ?? null,
     });
@@ -209,12 +227,25 @@ export default function Users() {
         id: "branch",
         header: "Branch",
         cell: ({ row }) => {
-          const b = row.original.branch;
-          return b ? (
-            <Badge variant="outline" className="flex w-fit items-center gap-1">
-              <GitBranch className="h-3 w-3" />
-              {b.name}
-            </Badge>
+          const u = row.original as { role?: { name?: string }; branches?: { id: number; name: string }[]; branch?: { id: number; name: string } };
+          if (u.role?.name === "Super Admin") {
+            return (
+              <Badge variant="outline" className="flex w-fit items-center gap-1 bg-primary/5 text-primary border-primary/20">
+                <GitBranch className="h-3 w-3 shrink-0" />
+                All branches
+              </Badge>
+            );
+          }
+          const list = (u.branches?.length ? u.branches : u.branch ? [u.branch] : []) as { id: number; name: string }[];
+          return list.length > 0 ? (
+            <div className="flex flex-wrap gap-1 max-w-[220px]">
+              {list.map((b) => (
+                <Badge key={b.id} variant="outline" className="flex w-fit items-center gap-1 shrink-0">
+                  <GitBranch className="h-3 w-3" />
+                  <span className="truncate max-w-[120px]">{b.name}</span>
+                </Badge>
+              ))}
+            </div>
           ) : (
             <span className="text-muted-foreground text-sm">—</span>
           );
@@ -350,19 +381,7 @@ export default function Users() {
           data={users}
           isLoading={isLoading}
           emptyMessage="No users found."
-          footer={
-            usersData && usersData.total > usersData.limit ? (
-              <div className="p-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Page {page} · {usersData.total} total
-                </span>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * usersData.limit >= usersData.total}>Next</Button>
-                </div>
-              </div>
-            ) : undefined
-          }
+          footer={<DataTablePaginationFooter page={page} total={usersData?.total ?? 0} limit={usersData?.limit ?? 10} onPageChange={setPage} itemLabel="users" />}
         />
       </div>
 
@@ -434,31 +453,53 @@ export default function Users() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="branchId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Branch</FormLabel>
-                      <Select
-                        value={field.value ? field.value.toString() : "none"}
-                        onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
-                      >
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="Select Branch" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">No Branch</SelectItem>
-                          {branchesData?.data?.map((b: any) => (
-                            <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
+
+              <FormField
+                control={form.control}
+                name="branchIds"
+                render={() => (
+                  <FormItem>
+                    <FormLabel>Branches</FormLabel>
+                    {selectedRoleIsSuperAdmin ? (
+                      <p className="text-sm text-muted-foreground rounded-md border border-dashed border-primary/25 bg-primary/5 px-3 py-2">
+                        Super Admin has access to every branch. You do not need to assign branches.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground mb-2">Select all branches this user may access.</p>
+                        <div className="rounded-md border p-3 max-h-44 overflow-y-auto space-y-2">
+                          {(branchesData?.data ?? []).length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No branches available.</p>
+                          ) : (
+                            (branchesData?.data ?? []).map((b: { id: number; name: string }) => (
+                              <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                                <Checkbox
+                                  checked={form.watch("branchIds").includes(b.id)}
+                                  onCheckedChange={(c) => {
+                                    const cur = form.getValues("branchIds") ?? [];
+                                    if (c === true) {
+                                      form.setValue("branchIds", [...new Set([...cur, b.id])], { shouldDirty: true, shouldValidate: true });
+                                    } else {
+                                      form.setValue(
+                                        "branchIds",
+                                        cur.filter((x: number) => x !== b.id),
+                                        { shouldDirty: true, shouldValidate: true },
+                                      );
+                                    }
+                                  }}
+                                />
+                                <span>{b.name}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
