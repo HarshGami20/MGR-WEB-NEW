@@ -95,6 +95,7 @@ export async function registerWebPush(): Promise<void> {
 
     messaging = getMessaging(fb);
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+    console.log("token", token);
     if (!token) {
       notifyWarn("getToken returned empty — check VAPID key and Firebase Web app config.");
       return;

@@ -149,7 +149,7 @@ function StaffDashboard() {
 
   const pendingTotal = orderReceived + cancelled;
   const donutData = [
-    { name: "Complete", value: completedMain, fill: chartOrders },
+    { name: "Delivered", value: completedMain, fill: chartOrders },
     { name: "In progress", value: inProgress, fill: "hsl(var(--chart-2))" },
     { name: "Open", value: pendingTotal, fill: chartPending },
   ];
@@ -777,13 +777,15 @@ function FulfillmentGauge({
     return { ...seg, start: segStart, end: segEnd };
   });
 
+  // SVG paints in document order — draw Delivered last so it sits on top at overlaps.
   const arcRenderOrder = [...arcs].sort((a, b) => {
     const zIndex: Record<string, number> = {
       Open: 0,
       "In progress": 1,
       Delivered: 2,
+      Complete: 2,
     };
-    return (zIndex[a.name] ?? 1) - (zIndex[b.name] ?? 1);
+    return (zIndex[a.name] ?? 0) - (zIndex[b.name] ?? 0);
   });
 
   return (
