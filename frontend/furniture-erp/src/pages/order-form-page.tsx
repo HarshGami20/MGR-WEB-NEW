@@ -85,8 +85,7 @@ const orderSchema = z.object({
     imageUrl: z.string().optional().default(""),
     comment: z.string().optional().default(""),
   })).default([]),
-  staffCommentsText: z.string().optional().default(""),                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
-  notes: z.string().optional().nullable(),
+  staffCommentsText: z.string().optional().default(""),
 }).superRefine((data, ctx) => {
   if (data.isGst && !data.customerGstNumber?.trim()) {
     ctx.addIssue({
@@ -248,7 +247,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       challanImages: [{ imageUrl: "" }],
       photoComments: [{ imageUrl: "", comment: "" }],
       staffCommentsText: "",
-      notes: "",
     },
   });
 
@@ -343,7 +341,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         .map((entry: any) => entry?.comment)
         .filter(Boolean)
         .join("\n"),
-      notes: order.notes ?? "",
     });
   }, [isEdit, order, form]);
 
@@ -427,7 +424,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             .filter(Boolean)
             .map((comment) => ({ comment, createdAt: new Date().toISOString() }))
         : [],
-      notes: data.notes || null,
+      notes: isEdit && order != null ? ((order as { notes?: string | null }).notes ?? null) : null,
       branchId: writeBranchId,
     };
 
@@ -479,7 +476,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
           <form onSubmit={form.handleSubmit(onSubmit, onSubmitInvalid)} className="mt-8 space-y-6">
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
               <p className="text-sm font-semibold text-foreground">Order details</p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name*</FormLabel><FormControl><Input {...field} placeholder="Enter customer name" /></FormControl><FormMessage /></FormItem>
                 )} />
@@ -488,15 +485,33 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 )} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="sm:flex grid items-center justify-center gap-4">
                 <FormField control={form.control} name="isGst" render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm h-[68px]">
-                    <div className="space-y-0.5"><FormLabel>GST Invoice</FormLabel></div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  <FormItem className="flex h-full items-center justify-between gap-3 space-y-0 ">
+                    <FormLabel className=" font-normal">GST Invoice</FormLabel>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="customerGstNumber" render={({ field }) => (
-                  <FormItem><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter GST number" disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control}  name="customerGstNumber" render={({ field }) => (
+                  <FormItem className="flex-1"><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter GST number" disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
+                )} />
+                   <FormField control={form.control} name="customerPincode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pincode</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value || ""}
+                        placeholder="6-digit pincode"
+                        maxLength={6}
+                        inputMode="numeric"
+                        onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
 
@@ -515,22 +530,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </FormItem>
               )} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="customerPincode" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Pincode</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value || ""}
-                        placeholder="6-digit pincode"
-                        maxLength={6}
-                        inputMode="numeric"
-                        onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+             
               </div>
             </div>
 
@@ -699,7 +699,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-6">
               <div>
-                <p className="text-sm font-semibold text-foreground">Delivery challan</p>
+                <p className="text-sm font-semibold text-foreground">Delivery challan*</p>
                 <p className="text-xs text-muted-foreground mt-1">Upload a clear photo of the signed challan. Required before saving.</p>
               </div>
 
@@ -793,7 +793,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <div className="border-t border-border/60 pt-6 space-y-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Site photos & notes</p>
+                    <p className="text-sm font-semibold text-foreground">Site photos</p>
                     <p className="text-xs text-muted-foreground">Optional — pair each image with a short caption.</p>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => photoFields.append({ imageUrl: "", comment: "" })}>
@@ -917,12 +917,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </FormItem>
               )} />
             </div>
-
-          
-
-            <FormField control={form.control} name="notes" render={({ field }) => (
-              <FormItem><FormLabel>Notes</FormLabel><FormControl><Textarea rows={3} {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
-            )} />
 
             <div className="flex justify-end gap-2 pt-2">
               <Link href="/orders"><Button type="button" variant="outline">Cancel</Button></Link>
