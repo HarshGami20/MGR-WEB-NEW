@@ -12,8 +12,9 @@ import {
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ImageIcon, Plus, Trash2, Upload, X } from "lucide-react";
 import { z } from "zod";
-import { useFieldArray, useForm, type FieldErrors } from "react-hook-form";
+import { useFieldArray, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -344,14 +345,14 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     });
   }, [isEdit, order, form]);
 
-  const watchedItems = form.watch("items");
-  const watchedAdvance = form.watch("advanceAmount");
+  const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
+  const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
   const orderSummary = useMemo(() => {
     const subtotal = watchedItems.reduce(
-      (acc, item) => acc + Number(item.quantity || 0) * Number(item.unitPrice || 0),
+      (acc, item) => acc + Number(item?.quantity || 0) * Number(item?.unitPrice || 0),
       0,
     );
-    const advance = Number(watchedAdvance || 0);
+    const advance = Number(watchedAdvance ?? 0);
     return { subtotal, remaining: Math.max(0, subtotal - advance) };
   }, [watchedItems, watchedAdvance]);
 
@@ -457,25 +458,72 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
   const pending = createOrder.isPending || updateOrder.isPending;
 
-  return (
-    <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
-      <div className="max-w-3xl">
-        <div className="flex  ">
-          <Link href="/orders">
-            <Button type="button" variant="ghost" size="icon" className="mr-2 -top-0.5 rounded-full text-foreground hover:bg-transparent hover:text-foreground/80">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <div>  
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{isEdit ? "Edit order" : "Create order"}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Enter full order details, payments and delivery controls.</p>
-          </div>
-        </div>
+  const lastUpdatedLabel = useMemo(() => {
+    if (!isEdit || !order) return null;
+    const raw = (order as { updatedAt?: string }).updatedAt;
+    if (!raw) return null;
+    try {
+      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(raw));
+    } catch {
+      return String(raw);
+    }
+  }, [isEdit, order]);
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit, onSubmitInvalid)} className="mt-8 space-y-6">
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-              <p className="text-sm font-semibold text-foreground">Order details</p>
+  return (
+    <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit, onSubmitInvalid)} className="mx-auto max-w-6xl space-y-6">
+          <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="flex min-w-0 items-start gap-3">
+              <Link href="/orders">
+                <Button type="button" variant="ghost" size="icon" className="mt-0.5 shrink-0 rounded-full">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{isEdit ? "Edit order" : "Create order"}</h1>
+                  {isEdit ? (
+                    <Badge variant="secondary" className="font-normal">
+                      #{orderId}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="font-normal">
+                      New
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">Customer, line items, delivery slot, payment, and proof photos.</p>
+                {lastUpdatedLabel ? <p className="text-xs text-muted-foreground">Last updated {lastUpdatedLabel}</p> : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link href="/orders">
+                <Button type="button" variant="outline" className="rounded-full px-5">
+                  Cancel
+                </Button>
+              </Link>
+              <Button type="submit" className="rounded-full px-6 shadow-sm" disabled={pending || uploading}>
+                {uploading ? (
+                  <>
+                    <Upload className="mr-2 h-4 w-4 animate-pulse" /> Uploading…
+                  </>
+                ) : isEdit ? (
+                  "Save changes"
+                ) : (
+                  "Create order"
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="order-1 space-y-6 lg:order-2 lg:col-span-8">
+            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-5">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Order details</h2>
+                <p className="text-xs text-muted-foreground">Customer identity and delivery address.</p>
+              </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name*</FormLabel><FormControl><Input {...field} placeholder="Enter customer name" /></FormControl><FormMessage /></FormItem>
@@ -485,10 +533,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 )} />
               </div>
 
-              <div className="sm:flex grid items-center justify-center gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
                 <FormField control={form.control} name="isGst" render={({ field }) => (
-                  <FormItem className="flex h-full items-center justify-between gap-3 space-y-0 ">
-                    <FormLabel className=" font-normal">GST Invoice</FormLabel>
+                  <FormItem className="flex items-center justify-between gap-3 space-y-0 rounded-xl border border-border/50 bg-muted/10 px-3 py-2.5 sm:py-3">
+                    <FormLabel className="!mt-0 font-normal">GST Invoice</FormLabel>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
@@ -497,7 +545,26 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 <FormField control={form.control}  name="customerGstNumber" render={({ field }) => (
                   <FormItem className="flex-1"><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter GST number" disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
                 )} />
-                   <FormField control={form.control} name="customerPincode" render={({ field }) => (
+                  
+              </div>
+
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Address*</FormLabel>
+                  <FormControl>
+                    <GoogleAddressInput
+                      value={field.value || ""}
+                      onChangeAddress={field.onChange}
+                      onResolved={onGoogleResolved}
+                      placeholder="Search or type full address"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="customerPincode" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Pincode</FormLabel>
                     <FormControl>
@@ -514,47 +581,36 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
               </div>
-
-              <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Address*</FormLabel>
-                  <FormControl>
-                    <GoogleAddressInput
-                      value={field.value || ""}
-                      onChangeAddress={field.onChange}
-                      onResolved={onGoogleResolved}
-                      placeholder="Search or type full address"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             
-              </div>
             </div>
 
 
-            <div className="space-y-4 rounded-xl border border-border/60 bg-white p-5">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium">Product details</h4>
-                <Button type="button" variant="outline" size="sm" onClick={() => append({ productId: 0, variantId: null, quantity: 1, unitPrice: 0 })}>
+            <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold tracking-tight">Line items</h2>
+                  <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => append({ productId: 0, variantId: null, quantity: 1, unitPrice: 0 })}>
                   <Plus className="h-4 w-4 mr-2" /> Add Item
                 </Button>
               </div>
               {fields.map((field, index) => (
-                <div key={field.id} className="flex gap-2 items-start border p-3 rounded-md">
+                <div key={field.id} className="flex gap-3 rounded-xl border border-border/60 bg-muted/10 p-4 shadow-sm">
                   <div className="flex-1 space-y-4">
                     <ProductVariantSelect
                       products={productsData?.data ?? []}
                       productId={Number(form.watch(`items.${index}.productId`) ?? 0)}
                       variantId={form.watch(`items.${index}.variantId`) ?? null}
                       onProductChange={(productId) => {
-                        form.setValue(`items.${index}.productId`, productId);
-                        form.setValue(`items.${index}.variantId`, null);
+                        form.setValue(`items.${index}.productId`, productId, { shouldDirty: true, shouldValidate: true });
+                        form.setValue(`items.${index}.variantId`, null, { shouldDirty: true, shouldValidate: true });
                       }}
-                      onVariantChange={(variantId) => form.setValue(`items.${index}.variantId`, variantId)}
-                      onPriceChange={(price) => form.setValue(`items.${index}.unitPrice`, Number(price || 0))}
+                      onVariantChange={(variantId) =>
+                        form.setValue(`items.${index}.variantId`, variantId, { shouldDirty: true, shouldValidate: true })
+                      }
+                      onPriceChange={(price) =>
+                        form.setValue(`items.${index}.unitPrice`, Number(price || 0), { shouldDirty: true, shouldValidate: true })
+                      }
                     />
                     {(form.formState.errors.items?.[index]?.productId?.message ||
                       form.formState.errors.items?.[index]?.variantId?.message) && (
@@ -584,8 +640,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             </div>
 
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-              <p className="text-sm font-semibold text-foreground">Status & payment details</p>
+            <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Status &amp; payment</h2>
+                <p className="text-xs text-muted-foreground">Fulfillment, payment mode, delivery date and slot.</p>
+              </div>
               <div className={cn("grid grid-cols-1 gap-4", isEdit ? "md:grid-cols-3" : "md:grid-cols-2")}>
                 {isEdit && (
                 <FormField control={form.control} name="status" render={({ field }) => (
@@ -664,9 +723,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assign to (team)</FormLabel>
-                      <p className="text-xs text-muted-foreground mb-2">
+                      {/* <p className="text-xs text-muted-foreground mb-2">
                         Search and select one or more staff. Notifications go to all assignees.
-                      </p>
+                      </p> */}
                       <AssigneesMultiSelect
                         options={(assignableUsersData?.data ?? []).map((u) => ({
                           id: u.id,
@@ -697,131 +756,119 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-6">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Delivery challan*</p>
-                <p className="text-xs text-muted-foreground mt-1">Upload a clear photo of the signed challan. Required before saving.</p>
-              </div>
+            </div>
+            
+            <aside className="order-2 space-y-6 lg:order-2 lg:col-span-4">
+              <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+                <div>
+                  <h2 className="text-base font-semibold tracking-tight">Challan &amp; photos</h2>
+                  <p className="text-xs text-muted-foreground">Signed challan is required. Site photos are optional.</p>
+                </div>
 
-              <FormField
-                control={form.control}
-                name="challanImages.0.imageUrl"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <div className="flex flex-col gap-4 md:flex-row md:items-stretch">
-                      <div className="relative md:w-[min(100%,280px)] shrink-0">
-                        <input
-                          id="challan-upload-input"
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            void handleUploadToFieldArray(file, (url) => {
-                              field.onChange(url);
-                              form.clearErrors("challanImages.0.imageUrl");
-                            });
-                            e.target.value = "";
-                          }}
-                          disabled={uploading}
-                        />
+                <FormField
+                  control={form.control}
+                  name="challanImages.0.imageUrl"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-3">
+                      <input
+                        id="challan-upload-input"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          void handleUploadToFieldArray(file, (url) => {
+                            field.onChange(url);
+                            form.clearErrors("challanImages.0.imageUrl");
+                          });
+                          e.target.value = "";
+                        }}
+                        disabled={uploading}
+                      />
+                      <div className="relative overflow-hidden rounded-xl border-2 border-dashed bg-muted/25 transition-colors hover:bg-muted/35">
                         <label
                           htmlFor="challan-upload-input"
                           className={cn(
-                            "group flex aspect-[4/3] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/20 transition-colors hover:bg-muted/40",
-                            field.value ? "border-primary/40 p-1" : "border-border p-6",
-                            fieldState.error && "border-destructive/70 ring-1 ring-destructive/25",
+                            "relative flex aspect-[4/3] max-h-[220px] w-full cursor-pointer items-center justify-center overflow-hidden rounded-[calc(0.75rem-2px)]",
+                            field.value ? "border-transparent p-0" : "border-transparent p-6",
+                            fieldState.error && "ring-2 ring-destructive/40",
                           )}
                           aria-invalid={fieldState.invalid}
                         >
                           {field.value ? (
-                            <img src={field.value} alt="Challan preview" className="h-full w-full rounded-lg object-contain" />
+                            <img src={field.value} alt="Challan" className="h-full w-full object-contain" />
                           ) : (
                             <div className="flex flex-col items-center gap-2 text-center">
                               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                                 <ImageIcon className="h-6 w-6" />
                               </span>
-                              <span className="text-sm font-medium text-foreground">Add challan photo</span>
+                              <span className="text-sm font-medium text-foreground">Add challan</span>
                               <span className="text-xs text-muted-foreground">Camera or gallery</span>
                             </div>
                           )}
+                          {field.value ? (
+                            <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+                              Challan
+                            </span>
+                          ) : null}
                         </label>
-                        {field.value ? (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="gap-1.5"
-                              disabled={uploading}
-                              onClick={() => document.getElementById("challan-upload-input")?.click()}
-                            >
-                              <Upload className="h-3.5 w-3.5" />
-                              Replace
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 text-destructive hover:text-destructive"
-                              onClick={() => {
-                                field.onChange("");
-                                const inp = document.getElementById("challan-upload-input") as HTMLInputElement | null;
-                                if (inp) inp.value = "";
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Remove
-                            </Button>
-                          </div>
-                        ) : null}
                       </div>
-                      <div className="flex min-w-0 flex-1 flex-col justify-center rounded-lg border border-border/80 bg-muted/10 p-4">
-                        <p className="text-sm text-foreground/90">
-                          {field.value
-                            ? "Challan is attached. You can replace it or remove it before saving."
-                            : "A challan image is required. Tap the frame on the left or use Replace after uploading."}
-                        </p>
-                        <FormMessage className="mt-3 text-sm" />
-                      </div>
-                    </div>
-                  </FormItem>
-                )}
-              />
-
-              <div className="border-t border-border/60 pt-6 space-y-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Site photos</p>
-                    <p className="text-xs text-muted-foreground">Optional — pair each image with a short caption.</p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => photoFields.append({ imageUrl: "", comment: "" })}>
-                    <Plus className="h-4 w-4 mr-2" /> Add row
-                  </Button>
-                </div>
-                <div className="space-y-4">
-                  {photoFields.fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="rounded-xl border border-border/60 bg-muted/5 p-4 shadow-sm"
-                    >
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Photo {index + 1}</span>
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0"
-                          onClick={() => photoFields.remove(index)}
-                          disabled={photoFields.fields.length === 1}
-                          aria-label="Remove photo row"
+                          variant="secondary"
+                          size="sm"
+                          className="rounded-full"
+                          disabled={uploading}
+                          onClick={() => document.getElementById("challan-upload-input")?.click()}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Upload className="mr-1.5 h-3.5 w-3.5" />
+                          {field.value ? "Replace" : "Upload"}
                         </Button>
+                        {field.value ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="rounded-full text-destructive hover:text-destructive"
+                            onClick={() => {
+                              field.onChange("");
+                              const el = document.getElementById("challan-upload-input") as HTMLInputElement | null;
+                              if (el) el.value = "";
+                            }}
+                          >
+                            <X className="mr-1.5 h-3.5 w-3.5" />
+                            Remove
+                          </Button>
+                        ) : null}
                       </div>
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
-                        <div className="lg:w-44 shrink-0">
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="border-t border-border/60 pt-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold tracking-tight">Site photos</h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => photoFields.append({ imageUrl: "", comment: "" })}
+                    >
+                      <Plus className="mr-1 h-4 w-4" /> Add
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                    {photoFields.fields.map((field, index) => {
+                      const photoUrl = form.watch(`photoComments.${index}.imageUrl`);
+                      return (
+                        <div
+                          key={field.id}
+                          className="group flex flex-col gap-1.5 rounded-xl border border-border/60 bg-muted/15 p-2 shadow-sm"
+                        >
                           <input
                             id={`photo-upload-${index}`}
                             type="file"
@@ -837,96 +884,125 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                             }}
                             disabled={uploading}
                           />
-                          <label
-                            htmlFor={`photo-upload-${index}`}
-                            className={cn(
-                              "flex aspect-square w-full max-w-[200px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-muted/30 lg:max-w-none",
-                              form.watch(`photoComments.${index}.imageUrl`) ? "border-primary/35 p-0.5" : "border-border p-3",
-                            )}
-                          >
-                            {form.watch(`photoComments.${index}.imageUrl`) ? (
-                              <img
-                                src={form.watch(`photoComments.${index}.imageUrl`) || ""}
-                                alt={`Photo ${index + 1}`}
-                                className="h-full w-full rounded-md object-cover"
-                              />
-                            ) : (
-                              <div className="flex flex-col items-center gap-1.5 px-1 text-center">
+                          <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-background">
+                            <label
+                              htmlFor={`photo-upload-${index}`}
+                              className={cn(
+                                "absolute inset-0 flex cursor-pointer items-center justify-center",
+                                photoUrl ? "p-0" : "p-2",
+                              )}
+                            >
+                              {photoUrl ? (
+                                <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+                              ) : (
                                 <Upload className="h-5 w-5 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground">Upload</span>
-                              </div>
+                              )}
+                            </label>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="icon"
+                              className="absolute right-1 top-1 h-7 w-7 rounded-full opacity-90 shadow-sm"
+                              onClick={() => photoFields.remove(index)}
+                              disabled={photoFields.fields.length === 1}
+                              aria-label="Remove photo"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name={`photoComments.${index}.comment`}
+                            render={({ field: commentField }) => (
+                              <FormItem className="space-y-0">
+                                <FormControl>
+                                  <Textarea
+                                    rows={2}
+                                    className="resize-y text-xs leading-snug"
+                                    placeholder="Caption"
+                                    {...commentField}
+                                    value={commentField.value || ""}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
                             )}
-                          </label>
-                          {form.watch(`photoComments.${index}.imageUrl`) ? (
-                            <div className="mt-2 flex gap-2">
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                className="h-7 flex-1 text-xs"
-                                disabled={uploading}
-                                onClick={() => document.getElementById(`photo-upload-${index}`)?.click()}
-                              >
-                                Replace
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 flex-1 text-xs text-destructive"
-                                onClick={() => {
-                                  form.setValue(`photoComments.${index}.imageUrl`, "");
-                                  const inp = document.getElementById(`photo-upload-${index}`) as HTMLInputElement | null;
-                                  if (inp) inp.value = "";
-                                }}
-                              >
-                                Clear
-                              </Button>
-                            </div>
+                          />
+                          {photoUrl ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-[11px] text-muted-foreground"
+                              disabled={uploading}
+                              onClick={() => document.getElementById(`photo-upload-${index}`)?.click()}
+                            >
+                              Replace image
+                            </Button>
                           ) : null}
                         </div>
-                        <FormField
-                          control={form.control}
-                          name={`photoComments.${index}.comment`}
-                          render={({ field: commentField }) => (
-                            <FormItem className="min-w-0 flex-1 flex flex-col">
-                              <FormLabel className="text-xs text-muted-foreground">Caption / comment</FormLabel>
-                              <FormControl>
-                                <Textarea
-                                  rows={4}
-                                  className="min-h-[7rem] resize-y bg-background lg:min-h-0 lg:flex-1"
-                                  placeholder="What should staff know about this photo?"
-                                  {...commentField}
-                                  value={commentField.value || ""}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => photoFields.append({ imageUrl: "", comment: "" })}
+                      className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-border/80 bg-muted/10 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/25"
+                    >
+                      <Plus className="h-6 w-6" />
+                      <span className="text-[10px] font-medium">Add photo</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-              <FormField control={form.control} name="staffCommentsText" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Comments By Staff</FormLabel>
-                  <FormControl><Textarea rows={4} placeholder="Enter staff comments (one comment per line)" {...field} value={field.value || ""} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Link href="/orders"><Button type="button" variant="outline">Cancel</Button></Link>
-              <Button type="submit" disabled={pending || uploading}>
-                {uploading ? <><Upload className="h-4 w-4 mr-2 animate-pulse" /> Uploading...</> : isEdit ? "Update Order" : "Create Order"}
+              <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+                <div className="mb-3">
+                  <h2 className="text-base font-semibold tracking-tight">Staff comments</h2>
+                  <p className="text-xs text-muted-foreground">Internal notes — one comment per line is saved as separate entries.</p>
+                </div>
+                <FormField
+                  control={form.control}
+                  name="staffCommentsText"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Textarea
+                          rows={5}
+                          className="min-h-[7.5rem] resize-y"
+                          placeholder="Enter staff comments (one comment per line)"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </aside>
+
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Link href="/orders" className="w-fit">
+              <Button type="button" variant="outline" className="w-fit rounded-full px-6 sm:w-auto">
+                Cancel
               </Button>
-            </div>
-          </form>
-        </Form>
-      </div>
+            </Link>
+            <Button type="submit" className="w-full rounded-full px-8 shadow-sm sm:w-auto" disabled={pending || uploading}>
+              {uploading ? (
+                <>
+                  <Upload className="mr-2 h-4 w-4 animate-pulse" /> Uploading…
+                </>
+              ) : isEdit ? (
+                "Save changes"
+              ) : (
+                "Create order"
+              )}
+            </Button>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 }
