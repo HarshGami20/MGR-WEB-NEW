@@ -10,7 +10,6 @@ import {
   ShoppingCart,
   FileText,
   CreditCard,
-  Truck,
   Users,
   Settings,
   LogOut,
@@ -28,6 +27,7 @@ import {
   BarChart3,
   Calculator,
   CalendarClock,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -76,6 +76,7 @@ const staffNavSections: StaffSection[] = [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
       { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
+      { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
       { label: "Products", href: "/products", icon: Package },
       // { label: "Categories", href: "/categories", icon: Tags },
       { label: "Inventory", href: "/inventory", icon: Archive },
@@ -97,7 +98,6 @@ const staffNavSections: StaffSection[] = [
   {
     title: "Procurement",
     items: [
-      { label: "Purchase orders", href: "/purchase-orders", icon: Truck },
       { label: "Suppliers", href: "/suppliers", icon: Building2 },
       { label: "Manufacturers", href: "/manufacturers", icon: Factory },
     ],
