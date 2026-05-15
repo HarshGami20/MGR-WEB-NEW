@@ -575,6 +575,66 @@ export const notificationService = {
   async removeFcmToken(userId: number, token: string): Promise<void> {
     await prisma.userFcmToken.deleteMany({ where: { userId, token } });
   },
+
+  /**
+   * Sends an FCM data+notification message to this user's saved tokens only (Chrome / Web Push test).
+   */
+  async sendTestWebPush(userId: number): Promise<{
+    ok: boolean;
+    error?: string;
+    tokenCount?: number;
+    successCount?: number;
+    failureCount?: number;
+  }> {
+    const messaging = await getFirebaseMessaging();
+    if (!messaging) {
+      return { ok: false, error: "Firebase Admin is not configured on the server (service account)." };
+    }
+    const rows = await prisma.userFcmToken.findMany({
+      where: { userId },
+      select: { token: true },
+    });
+    if (rows.length === 0) {
+      return {
+        ok: false,
+        error:
+          "No FCM token for this account on this browser. Allow notifications, ensure Firebase + VAPID env is set, then reload and log in again.",
+      };
+    }
+    const registrationTokens = rows.map((r) => r.token);
+    try {
+      const res = await messaging.sendEachForMulticast({
+        tokens: registrationTokens,
+        notification: {
+          title: "Web push test",
+          body: `MGR CASA ERP — ${new Date().toLocaleString()}`,
+        },
+        data: { type: "web_push_test", ts: String(Date.now()) },
+        android: { priority: "high" },
+        apns: {
+          payload: { aps: { sound: "default", contentAvailable: true } },
+        },
+      });
+      let idx = 0;
+      for (const r of res.responses) {
+        const tok = rows[idx];
+        idx += 1;
+        if (!r.success && r.error?.code === "messaging/registration-token-not-registered") {
+          await prisma.userFcmToken.deleteMany({ where: { token: tok.token } }).catch(() => undefined);
+        }
+      }
+      const ok = res.failureCount === 0;
+      return {
+        ok,
+        tokenCount: registrationTokens.length,
+        successCount: res.successCount,
+        failureCount: res.failureCount,
+        error: ok ? undefined : `FCM failed for ${res.failureCount} of ${registrationTokens.length} token(s).`,
+      };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
 };
 
 function stringifyData(obj: Record<string, string>): Record<string, string> {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, addDays } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useListBranches, type Branch } from "@/api-client";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
@@ -42,7 +43,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { GitBranch, Plus, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Match backend: JS getUTCDay() — 0 Sun … 6 Sat */
@@ -115,10 +116,41 @@ function slotYmd(slotDate: string): string {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/** Branch list for /deliveries when no working branch: prefer API, else `/auth/me` branches, else id stubs (GET /branches needs branches:read). */
+function pickableBranchesForDeliveries(
+  assigned: number[],
+  apiBranches: Branch[] | undefined,
+  userBranches: Branch[] | undefined,
+): Branch[] {
+  const list = apiBranches ?? [];
+  if (assigned.length === 0) return list;
+
+  const fromApi = list.filter((b) => assigned.includes(b.id));
+  if (fromApi.length > 0) return fromApi;
+
+  const fromUser = (userBranches ?? []).filter((b) => assigned.includes(b.id) && b.isActive);
+  if (fromUser.length > 0) return fromUser;
+
+  return assigned.map(
+    (id): Branch => ({
+      id,
+      name: `Branch #${id}`,
+      code: "",
+      isActive: true,
+      createdAt: "",
+    }),
+  );
+}
+
 export default function DeliveriesPage() {
   const { user } = useAuth();
-  const { selectedBranchId } = useBranch();
+  const { selectedBranchId, setSelectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
+  const {
+    data: branchesData,
+    isLoading: branchesLoading,
+    isError: branchesListError,
+  } = useListBranches({ isActive: true, limit: 200 });
   const writeBranchId =
     assigned.length === 1
       ? assigned[0]!
@@ -132,6 +164,13 @@ export default function DeliveriesPage() {
   const queryClient = useQueryClient();
   const [anchor] = useState(() => new Date());
   const range = useMemo(() => tableRangeUtc(anchor), [anchor]);
+
+  const pickableBranches = useMemo(
+    () => pickableBranchesForDeliveries(assigned, branchesData?.data, user?.branches),
+    [assigned, branchesData?.data, user?.branches],
+  );
+
+  const branchPickerLoading = branchesLoading && pickableBranches.length === 0;
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulk, setBulk] = useState({
@@ -408,12 +447,78 @@ export default function DeliveriesPage() {
   }
 
   if (writeBranchId == null) {
+    const branchesSorted = [...pickableBranches].sort((a, b) => a.name.localeCompare(b.name));
     return (
-      <div className="p-6 max-w-lg">
-        <p className="font-medium text-foreground">Choose a branch</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Select your working branch in the header to manage delivery slots for that location.
-        </p>
+      <div className="p-4 md:p-6 max-w-5xl space-y-4">
+        <Card className="border bg-card text-card-foreground shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <GitBranch className="h-5 w-5 text-primary shrink-0" />
+              Select branch
+            </CardTitle>
+            <CardDescription className="text-sm leading-relaxed">
+              Delivery slots are per location. With <strong>All branches</strong> in the header, choose a location below or
+              from the header menu.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {branchPickerLoading ? (
+              <p className="text-sm text-muted-foreground">Loading branches…</p>
+            ) : pickableBranches.length === 0 ? (
+              <div className="space-y-2 text-sm">
+                <p className="text-muted-foreground">
+                  No branches could be loaded. You may need <span className="text-foreground font-medium">Branches → View</span>{" "}
+                  permission to list all locations, or ask an admin to assign you to a branch.
+                </p>
+                {branchesListError ? (
+                  <p className="text-destructive">Branch list request failed (for example, forbidden without branches access).</p>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-foreground">Locations</p>
+                <div
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                  role="list"
+                  aria-label="Branches to manage delivery slots"
+                >
+                  {branchesSorted.map((b) => {
+                    const isSelected = selectedBranchId === b.id;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        role="listitem"
+                        onClick={() => setSelectedBranchId(b.id)}
+                        className={cn(
+                          "flex flex-col items-stretch gap-1.5 rounded-lg border bg-background p-4 text-left transition-colors",
+                          "hover:bg-accent/40 hover:border-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          isSelected && "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/25",
+                        )}
+                      >
+                        <span className="flex items-start gap-2.5 min-w-0">
+                          <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                          <span className="min-w-0 flex-1">
+                            <span className="line-clamp-2 font-medium leading-snug text-foreground">{b.name}</span>
+                            {b.code ? (
+                              <span className="mt-0.5 block font-mono text-xs text-muted-foreground">{b.code}</span>
+                            ) : null}
+                          </span>
+                        </span>
+                        <span className="text-[11px] text-muted-foreground tabular-nums">ID {b.id}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {branchesListError && assigned.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Full branch list is unavailable; showing your assigned locations from your profile.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   }

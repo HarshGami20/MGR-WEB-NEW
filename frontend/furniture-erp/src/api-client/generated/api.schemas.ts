@@ -86,6 +86,16 @@ export interface ResetPasswordBody {
   newPassword: string;
 }
 
+export interface AssignableOrderUser {
+  id: number;
+  name: string;
+  mobile: string;
+}
+
+export interface AssignableOrderUsersResponse {
+  data: AssignableOrderUser[];
+}
+
 export interface CreateUserBody {
   name: string;
   mobile: string;
@@ -744,6 +754,10 @@ isGst?: boolean;
 branchId?: number;
 page?: number;
 limit?: number;
+/**
+ * Filter by creator or assignee for the signed-in user. Use `all` or omit for every order.
+ */
+assignmentScope?: ListOrdersAssignmentScope;
 };
 
 export type ListOrdersStatus = typeof ListOrdersStatus[keyof typeof ListOrdersStatus];
@@ -756,6 +770,30 @@ export const ListOrdersStatus = {
   completed: 'completed',
   cancelled: 'cancelled',
 } as const;
+
+export type ListOrdersAssignmentScope = typeof ListOrdersAssignmentScope[keyof typeof ListOrdersAssignmentScope];
+
+
+export const ListOrdersAssignmentScope = {
+  all: 'all',
+  created_by_me: 'created_by_me',
+  assigned_to_me: 'assigned_to_me',
+} as const;
+
+export type ListAssignableOrderUsersParams = {
+/**
+ * Optional if `X-Branch-Id` is set; must be a branch the signed-in user may write to.
+ */
+branchId?: number;
+/**
+ * Filter by name (case-insensitive) or mobile substring.
+ */
+search?: string;
+/**
+ * Max rows returned (capped server-side).
+ */
+limit?: number;
+};
 
 export type ListInvoicesParams = {
 orderId?: number;

@@ -1,8 +1,16 @@
 import fs from "node:fs";
 import { logger } from "./logger";
 
-let admin: typeof import("firebase-admin") | null = null;
+type FirebaseAdminModule = typeof import("firebase-admin");
+
+let admin: FirebaseAdminModule | null = null;
 let initAttempted = false;
+
+/** Node ESM `import()` often exposes CJS firebase-admin on `.default`. */
+function resolveFirebaseAdminModule(mod: FirebaseAdminModule): FirebaseAdminModule {
+  const wrapped = mod as unknown as { default?: FirebaseAdminModule };
+  return wrapped.default ?? mod;
+}
 
 function loadServiceAccount(): object | null {
   const json = process.env["FIREBASE_SERVICE_ACCOUNT_JSON"]?.trim();
@@ -32,7 +40,12 @@ export async function getFirebaseMessaging(): Promise<
   import("firebase-admin/messaging").Messaging | null
 > {
   if (initAttempted) {
-    return admin?.messaging() ?? null;
+    if (!admin || typeof admin.messaging !== "function") return null;
+    try {
+      return admin.messaging();
+    } catch {
+      return null;
+    }
   }
   initAttempted = true;
   const cred = loadServiceAccount();
@@ -44,7 +57,8 @@ export async function getFirebaseMessaging(): Promise<
     return null;
   }
   try {
-    admin = await import("firebase-admin");
+    const mod = await import("firebase-admin");
+    admin = resolveFirebaseAdminModule(mod);
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(cred as import("firebase-admin/app").ServiceAccount),
@@ -57,7 +71,10 @@ export async function getFirebaseMessaging(): Promise<
     logger.info({ firebaseProjectId: projectId }, "Firebase Admin ready for FCM");
     return admin.messaging();
   } catch (e) {
-    logger.error({ e }, "Firebase Admin init failed");
+    admin = null;
+    const msg = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack : undefined;
+    logger.error({ err: msg, stack }, "Firebase Admin init failed");
     return null;
   }
 }

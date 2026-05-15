@@ -3,21 +3,22 @@ import { Link, Redirect, useLocation, useRoute } from "wouter";
 import {
   useCreateOrder,
   useGetOrder,
-  useListUsers,
+  useListAssignableOrderUsers,
   useListProducts,
   useUpdateOrder,
   getGetOrderQueryKey,
   getListOrdersQueryKey,
 } from "@/api-client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ImageIcon, Plus, Trash2, Upload, X } from "lucide-react";
 import { z } from "zod";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +27,9 @@ import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import ProductVariantSelect from "@/components/product-variant-select";
 import { GoogleAddressInput } from "@/components/google-address-input";
-import { fetchAvailableDeliverySlots } from "@/lib/delivery-api";
+import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
+
+const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
 
 const orderItemSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
@@ -69,14 +72,20 @@ const orderSchema = z.object({
   paymentStatus: z.string().default("due"),
   advanceAmount: z.coerce.number().min(0).default(0),
   paymentMode: z.string().default("cash"),
-  assignedToId: z.coerce.number().nullable().optional(),
+  assigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryDate: z.string().nullable().optional(),
-  challanImages: z.array(z.object({ imageUrl: z.string().min(1) })).default([]),
+  challanImages: z
+    .array(
+      z.object({
+        imageUrl: z.string().min(1, "Upload a challan photo before saving"),
+      }),
+    )
+    .default([]),
   photoComments: z.array(z.object({
     imageUrl: z.string().optional().default(""),
     comment: z.string().optional().default(""),
   })).default([]),
-  staffCommentsText: z.string().optional().default(""),
+  staffCommentsText: z.string().optional().default(""),                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
   notes: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
   if (data.isGst && !data.customerGstNumber?.trim()) {
@@ -96,6 +105,13 @@ const orderSchema = z.object({
 });
 
 type OrderFormValues = z.infer<typeof orderSchema>;
+
+function collectFormErrorMessages(err: unknown): string[] {
+  if (!err || typeof err !== "object") return [];
+  const e = err as Record<string, unknown>;
+  if (typeof e.message === "string" && e.message.trim()) return [e.message];
+  return Object.values(e).flatMap(collectFormErrorMessages);
+}
 
 const ORDER_STATUS_OPTIONS = [
   { value: "order_received", label: "Order Received" },
@@ -128,9 +144,19 @@ async function uploadOrderImage(file: File, branchId: number | null | undefined)
     headers,
     body: fd,
   });
-  if (!resp.ok) throw new Error("Failed to upload image");
-  const data = await resp.json();
-  return data.imageUrl as string;
+  const raw = await resp.text();
+  if (!resp.ok) {
+    let detail = "Failed to upload image";
+    try {
+      const j = JSON.parse(raw) as { error?: string; message?: string };
+      detail = j.error || j.message || detail;
+    } catch {
+      if (raw.trim()) detail = raw.slice(0, 200);
+    }
+    throw new Error(detail);
+  }
+  const data = JSON.parse(raw) as { imageUrl: string };
+  return data.imageUrl;
 }
 
 function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
@@ -153,7 +179,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         : selectedBranchId;
 
   const { data: productsData } = useListProducts({ limit: 1000 });
-  const { data: usersData } = useListUsers({ isActive: true, limit: 1000 });
+  const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
+    writeBranchId != null ? { branchId: writeBranchId, limit: 1000 } : undefined,
+    { query: { enabled: writeBranchId != null } },
+  );
   const { data: order, isLoading: orderLoading, isError: orderError } = useGetOrder(orderId, {
     query: { enabled: isEdit && Number.isFinite(orderId) && orderId > 0 },
   });
@@ -214,7 +243,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       paymentStatus: "due",
       advanceAmount: 0,
       paymentMode: "cash",
-      assignedToId: null,
+      assigneeUserIds: [] as number[],
       deliveryDate: null,
       challanImages: [{ imageUrl: "" }],
       photoComments: [{ imageUrl: "", comment: "" }],
@@ -226,7 +255,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const deliveryDateWatch = form.watch("deliveryDate");
   const pincodeWatch = form.watch("customerPincode");
 
-  const { data: slotOptions = [] } = useQuery({
+  const { data: slotOptionsRaw } = useQuery({
     queryKey: ["availableSlots", writeBranchId, deliveryDateWatch, pincodeWatch, isEdit ? orderId : 0],
     queryFn: () =>
       fetchAvailableDeliverySlots({
@@ -240,6 +269,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       !!deliveryDateWatch &&
       String(deliveryDateWatch).trim().length >= 8,
   });
+  const slotOptions = slotOptionsRaw ?? EMPTY_AVAIL_SLOTS;
 
   useEffect(() => {
     if (!deliveryDateWatch || !slotOptions.length) return;
@@ -268,7 +298,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     control: form.control,
     name: "items",
   });
-  const challanFields = useFieldArray({ control: form.control, name: "challanImages" });
   const photoFields = useFieldArray({ control: form.control, name: "photoComments" });
 
   useEffect(() => {
@@ -298,7 +327,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       paymentStatus: orderAny.paymentStatus ?? "due",
       advanceAmount: orderAny.advanceAmount ?? orderAny.paidAmount ?? 0,
       paymentMode: orderAny.paymentMode ?? "cash",
-      assignedToId: orderAny.assignedToId ?? null,
+      assigneeUserIds: Array.isArray(orderAny.assignees)
+        ? orderAny.assignees.map((a: { id: number }) => a.id).filter((x: number) => Number.isFinite(x))
+        : orderAny.assignedToId != null
+          ? [Number(orderAny.assignedToId)]
+          : [],
       deliveryDate: orderAny.deliveryDate ? String(orderAny.deliveryDate).slice(0, 10) : null,
       challanImages: Array.isArray(orderAny.challanImages) && orderAny.challanImages.length > 0
         ? [{ imageUrl: String(orderAny.challanImages[0] || "") }]
@@ -314,12 +347,16 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     });
   }, [isEdit, order, form]);
 
+  const watchedItems = form.watch("items");
+  const watchedAdvance = form.watch("advanceAmount");
   const orderSummary = useMemo(() => {
-    const items = form.watch("items");
-    const subtotal = items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-    const advance = Number(form.watch("advanceAmount") || 0);
+    const subtotal = watchedItems.reduce(
+      (acc, item) => acc + Number(item.quantity || 0) * Number(item.unitPrice || 0),
+      0,
+    );
+    const advance = Number(watchedAdvance || 0);
     return { subtotal, remaining: Math.max(0, subtotal - advance) };
-  }, [form.watch("items"), form.watch("advanceAmount")]);
+  }, [watchedItems, watchedAdvance]);
 
   const handleUploadToFieldArray = async (
     file: File | undefined,
@@ -377,7 +414,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
       paymentMode: data.paymentMode || "cash",
-      assignedToId: data.assignedToId ? Number(data.assignedToId) : null,
+      assigneeUserIds: (data.assigneeUserIds ?? []).filter((id) => Number.isFinite(id) && id > 0),
       deliveryDate: data.deliveryDate || null,
       challanImages: data.challanImages.map((x) => x.imageUrl).filter(Boolean),
       photoComments: data.photoComments
@@ -401,6 +438,22 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     createOrder.mutate({ data: payload as any });
   };
 
+  const onSubmitInvalid = useCallback(
+    (errors: FieldErrors<OrderFormValues>) => {
+      const msgs = collectFormErrorMessages(errors);
+      const summary = msgs.slice(0, 4).join(" · ");
+      toast({
+        title: "Cannot save — fix the issues below",
+        description: summary || "Some required fields are missing or invalid.",
+        variant: "destructive",
+      });
+      requestAnimationFrame(() => {
+        document.querySelector("form [aria-invalid='true']")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    },
+    [toast],
+  );
+
   if (isEdit && (!Number.isFinite(orderId) || orderId <= 0)) return <Redirect to="/orders" />;
   if (isEdit && orderLoading) return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
   if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
@@ -423,7 +476,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit, onSubmitInvalid)} className="mt-8 space-y-6">
             <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
               <p className="text-sm font-semibold text-foreground">Order details</p>
               <div className="grid grid-cols-2 gap-4">
@@ -605,21 +658,38 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="assignedToId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Assign To</FormLabel>
-                    <Select value={field.value ? String(field.value) : "unassigned"} onValueChange={(v) => field.onChange(v === "unassigned" ? null : Number(v))}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                        {(usersData?.data ?? []).map((u) => (
-                          <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                <FormField
+                  control={form.control}
+                  name="assigneeUserIds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assign to (team)</FormLabel>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Search and select one or more staff. Notifications go to all assignees.
+                      </p>
+                      <AssigneesMultiSelect
+                        options={(assignableUsersData?.data ?? []).map((u) => ({
+                          id: u.id,
+                          name: u.name,
+                          mobile: u.mobile,
+                        }))}
+                        value={field.value ?? []}
+                        onChange={field.onChange}
+                        disabled={writeBranchId == null}
+                        placeholder={
+                          writeBranchId == null
+                            ? "Select a branch in the header first"
+                            : assignableUsersError
+                              ? "Could not load staff (check orders permission)"
+                              : (assignableUsersData?.data ?? []).length === 0
+                                ? "No staff available for this branch"
+                                : "Select staff…"
+                        }
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">Computed Subtotal</label>
                   <Input value={orderSummary.subtotal.toFixed(2)} disabled />
@@ -627,79 +697,214 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-5">
-              <p className="text-sm font-semibold">Challan image </p>
-
-              <div className="space-y-3">
-                {/* <p className="text-xs text-muted-foreground">Challan image</p> */}
-                <input
-                  id="challan-upload-input"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => handleUploadToFieldArray(e.target.files?.[0], (url) => form.setValue("challanImages.0.imageUrl", url))}
-                  disabled={uploading}
-                />
-                <label
-                  htmlFor="challan-upload-input"
-                  className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-border p-4 hover:bg-muted/30"
-                >
-                  {form.watch("challanImages.0.imageUrl") ? (
-                    <img
-                      src={form.watch("challanImages.0.imageUrl") || ""}
-                      alt="Challan preview"
-                      className="h-28 w-28 rounded-md border object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm text-muted-foreground">Tap to upload challan</span>
-                  )}
-                </label>
+            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-6">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Delivery challan</p>
+                <p className="text-xs text-muted-foreground mt-1">Upload a clear photo of the signed challan. Required before saving.</p>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Upload photos and comment</p>
+              <FormField
+                control={form.control}
+                name="challanImages.0.imageUrl"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-stretch">
+                      <div className="relative md:w-[min(100%,280px)] shrink-0">
+                        <input
+                          id="challan-upload-input"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            void handleUploadToFieldArray(file, (url) => {
+                              field.onChange(url);
+                              form.clearErrors("challanImages.0.imageUrl");
+                            });
+                            e.target.value = "";
+                          }}
+                          disabled={uploading}
+                        />
+                        <label
+                          htmlFor="challan-upload-input"
+                          className={cn(
+                            "group flex aspect-[4/3] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/20 transition-colors hover:bg-muted/40",
+                            field.value ? "border-primary/40 p-1" : "border-border p-6",
+                            fieldState.error && "border-destructive/70 ring-1 ring-destructive/25",
+                          )}
+                          aria-invalid={fieldState.invalid}
+                        >
+                          {field.value ? (
+                            <img src={field.value} alt="Challan preview" className="h-full w-full rounded-lg object-contain" />
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-center">
+                              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                <ImageIcon className="h-6 w-6" />
+                              </span>
+                              <span className="text-sm font-medium text-foreground">Add challan photo</span>
+                              <span className="text-xs text-muted-foreground">Camera or gallery</span>
+                            </div>
+                          )}
+                        </label>
+                        {field.value ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="gap-1.5"
+                              disabled={uploading}
+                              onClick={() => document.getElementById("challan-upload-input")?.click()}
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              Replace
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                field.onChange("");
+                                const inp = document.getElementById("challan-upload-input") as HTMLInputElement | null;
+                                if (inp) inp.value = "";
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-col justify-center rounded-lg border border-border/80 bg-muted/10 p-4">
+                        <p className="text-sm text-foreground/90">
+                          {field.value
+                            ? "Challan is attached. You can replace it or remove it before saving."
+                            : "A challan image is required. Tap the frame on the left or use Replace after uploading."}
+                        </p>
+                        <FormMessage className="mt-3 text-sm" />
+                      </div>
+                    </div>
+                  </FormItem>
+                )}
+              />
 
+              <div className="border-t border-border/60 pt-6 space-y-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Site photos & notes</p>
+                    <p className="text-xs text-muted-foreground">Optional — pair each image with a short caption.</p>
+                  </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => photoFields.append({ imageUrl: "", comment: "" })}>
-                    <Plus className="h-4 w-4 mr-2" /> Add
+                    <Plus className="h-4 w-4 mr-2" /> Add row
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-4">
                   {photoFields.fields.map((field, index) => (
-                    <div key={field.id} className="rounded-md border p-3 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <p className="text-xs text-muted-foreground">Photo {index + 1}</p>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => photoFields.remove(index)} disabled={photoFields.fields.length === 1}>
+                    <div
+                      key={field.id}
+                      className="rounded-xl border border-border/60 bg-muted/5 p-4 shadow-sm"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Photo {index + 1}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => photoFields.remove(index)}
+                          disabled={photoFields.fields.length === 1}
+                          aria-label="Remove photo row"
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
-                      <input
-                        id={`photo-upload-${index}`}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={(e) => handleUploadToFieldArray(e.target.files?.[0], (url) => form.setValue(`photoComments.${index}.imageUrl`, url))}
-                        disabled={uploading}
-                      />
-                      <label
-                        htmlFor={`photo-upload-${index}`}
-                        className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-border p-3 hover:bg-muted/30"
-                      >
-                        {form.watch(`photoComments.${index}.imageUrl`) ? (
-                          <img
-                            src={form.watch(`photoComments.${index}.imageUrl`) || ""}
-                            alt={`Photo preview ${index + 1}`}
-                            className="h-24 w-24 rounded-md border object-cover"
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+                        <div className="lg:w-44 shrink-0">
+                          <input
+                            id={`photo-upload-${index}`}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              void handleUploadToFieldArray(file, (url) => {
+                                form.setValue(`photoComments.${index}.imageUrl`, url);
+                              });
+                              e.target.value = "";
+                            }}
+                            disabled={uploading}
                           />
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Tap to upload photo</span>
-                        )}
-                      </label>
-                      <FormField control={form.control} name={`photoComments.${index}.comment`} render={({ field }) => (
-                        <FormItem><FormControl><Textarea rows={3} placeholder="Enter your comment" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
-                      )} />
+                          <label
+                            htmlFor={`photo-upload-${index}`}
+                            className={cn(
+                              "flex aspect-square w-full max-w-[200px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed transition-colors hover:bg-muted/30 lg:max-w-none",
+                              form.watch(`photoComments.${index}.imageUrl`) ? "border-primary/35 p-0.5" : "border-border p-3",
+                            )}
+                          >
+                            {form.watch(`photoComments.${index}.imageUrl`) ? (
+                              <img
+                                src={form.watch(`photoComments.${index}.imageUrl`) || ""}
+                                alt={`Photo ${index + 1}`}
+                                className="h-full w-full rounded-md object-cover"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center gap-1.5 px-1 text-center">
+                                <Upload className="h-5 w-5 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Upload</span>
+                              </div>
+                            )}
+                          </label>
+                          {form.watch(`photoComments.${index}.imageUrl`) ? (
+                            <div className="mt-2 flex gap-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 flex-1 text-xs"
+                                disabled={uploading}
+                                onClick={() => document.getElementById(`photo-upload-${index}`)?.click()}
+                              >
+                                Replace
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 flex-1 text-xs text-destructive"
+                                onClick={() => {
+                                  form.setValue(`photoComments.${index}.imageUrl`, "");
+                                  const inp = document.getElementById(`photo-upload-${index}`) as HTMLInputElement | null;
+                                  if (inp) inp.value = "";
+                                }}
+                              >
+                                Clear
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                        <FormField
+                          control={form.control}
+                          name={`photoComments.${index}.comment`}
+                          render={({ field: commentField }) => (
+                            <FormItem className="min-w-0 flex-1 flex flex-col">
+                              <FormLabel className="text-xs text-muted-foreground">Caption / comment</FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  rows={4}
+                                  className="min-h-[7rem] resize-y bg-background lg:min-h-0 lg:flex-1"
+                                  placeholder="What should staff know about this photo?"
+                                  {...commentField}
+                                  value={commentField.value || ""}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>

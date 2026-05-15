@@ -145,6 +145,31 @@ function generateOrderNumber() {
   return `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+function normalizeAssigneeUserIds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+async function assertActiveUserIdsExist(userIds: number[]): Promise<void> {
+  if (userIds.length === 0) return;
+  const found = await prisma.user.count({ where: { id: { in: userIds }, isActive: true } });
+  if (found !== userIds.length) {
+    throw new Error("One or more assignees are invalid or inactive");
+  }
+}
+
+async function replaceOrderAssignees(tx: Prisma.TransactionClient, orderId: number, userIds: number[]): Promise<void> {
+  const unique = [...new Set(userIds.filter((n) => Number.isFinite(n) && n > 0))];
+  await tx.orderAssignee.deleteMany({ where: { orderId } });
+  if (unique.length > 0) {
+    await tx.orderAssignee.createMany({ data: unique.map((userId) => ({ orderId, userId })) });
+  }
+  await tx.order.update({
+    where: { id: orderId },
+    data: { assignedToId: unique.length > 0 ? unique[0]! : null },
+  });
+}
+
 async function enrichOrder(order: any) {
   const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
   const enrichedItems = await Promise.all(items.map(async (item) => {
@@ -163,12 +188,40 @@ async function enrichOrder(order: any) {
     const b = await prisma.branch.findUnique({ where: { id: order.branchId } });
     if (b) branch = b;
   }
-  if (order.assignedToId) {
+  const assigneeRows = await prisma.orderAssignee.findMany({
+    where: { orderId: order.id },
+    include: { user: { select: { id: true, name: true, mobile: true } } },
+    orderBy: [{ userId: "asc" }],
+  });
+  let assignees: Array<{ id: number; name: string; mobile: string }> = assigneeRows
+    .map((r) => r.user)
+    .filter((u): u is { id: number; name: string; mobile: string } => u != null);
+  if (assignees.length === 0 && order.assignedToId) {
+    const u = await prisma.user.findUnique({
+      where: { id: order.assignedToId },
+      select: { id: true, name: true, mobile: true },
+    });
+    if (u) {
+      assignees = [u as any];
+      assignedTo = u as any;
+    }
+  } else if (assignees.length > 0) {
+    assignedTo = assignees[0] as any;
+  } else if (order.assignedToId) {
     const u = await prisma.user.findUnique({
       where: { id: order.assignedToId },
       select: { id: true, name: true, mobile: true },
     });
     if (u) assignedTo = u as any;
+  }
+  let createdBy: { id: number; name: string; mobile: string } | null = null;
+  const creatorId = (order as { createdById?: number | null }).createdById;
+  if (creatorId) {
+    const c = await prisma.user.findUnique({
+      where: { id: creatorId },
+      select: { id: true, name: true, mobile: true },
+    });
+    if (c) createdBy = c as any;
   }
   let deliverySlot: Awaited<ReturnType<typeof prisma.deliverySlot.findUnique>> = null;
   if (order.deliverySlotId) {
@@ -194,6 +247,8 @@ async function enrichOrder(order: any) {
     items: enrichedItems,
     branch,
     assignedTo,
+    assignees,
+    createdBy,
     deliverySlot: deliverySlot
       ? {
           id: deliverySlot.id,
@@ -223,18 +278,15 @@ router.post(
 );
 
 router.get("/orders", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
-  const { search, status, isGst, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { search, status, isGst, branchId, page = "1", limit = "20", assignmentScope } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
+  const authUser = (req as { user?: { id: number } }).user;
+  const userId = authUser?.id;
+
   const where: any = {};
-  if (search) {
-    where.OR = [
-      { customerName: { contains: search, mode: "insensitive" } },
-      { orderNumber: { contains: search, mode: "insensitive" } },
-    ];
-  }
   if (status) {
     if (status === "complete") {
       where.status = { in: ["complete", "delivered"] };
@@ -245,11 +297,103 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   if (isGst !== undefined) where.isGst = isGst === "true";
   if (branchId) where.branchId = parseInt(branchId, 10);
 
+  const clauses: any[] = [];
+  if (search) {
+    clauses.push({
+      OR: [
+        { customerName: { contains: search, mode: "insensitive" } },
+        { orderNumber: { contains: search, mode: "insensitive" } },
+      ],
+    });
+  }
+  const scope = typeof assignmentScope === "string" ? assignmentScope : "all";
+  if (scope === "created_by_me" && userId != null) {
+    clauses.push({ createdById: userId });
+  } else if (scope === "assigned_to_me" && userId != null) {
+    clauses.push({
+      OR: [{ assignedToId: userId }, { assignees: { some: { userId } } }],
+    });
+  }
+  if (clauses.length === 1) {
+    Object.assign(where, clauses[0]);
+  } else if (clauses.length > 1) {
+    where.AND = clauses;
+  }
+
   const total = await prisma.order.count({ where });
   const orders = await prisma.order.findMany({ where, skip: offset, take: limitNum, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
   const data = await Promise.all(orders.map(enrichOrder));
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
+
+/** Pick assignees on the order form — allowed with orders create/update, without users module read. */
+router.get(
+  "/orders/assignable-users",
+  requireAuth,
+  requirePermissionAny([
+    { module: "orders", action: "create" },
+    { module: "orders", action: "update" },
+  ]),
+  async (req, res): Promise<void> => {
+    const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const branchId = await requireWriteBranchId(req, res, user);
+    if (branchId == null) return;
+
+    const { search } = req.query as Record<string, string>;
+    const limitRaw = (req.query as Record<string, string>).limit;
+    const limitNum = Math.min(2000, Math.max(1, parseInt(limitRaw || "1000", 10) || 1000));
+    const searchTrim = search?.trim() ?? "";
+
+    const branchScope: Prisma.UserWhereInput = {
+      OR: [
+        { role: { name: "Super Admin" } },
+        { userBranches: { some: { branchId } } },
+        {
+          AND: [{ userBranches: { none: {} } }, { branchId }],
+        },
+        {
+          AND: [{ userBranches: { none: {} } }, { branchId: null }],
+        },
+      ],
+    };
+
+    const where: Prisma.UserWhereInput = {
+      isActive: true,
+      AND: [
+        branchScope,
+        ...(searchTrim
+          ? [
+              {
+                OR: [
+                  { name: { contains: searchTrim, mode: "insensitive" } },
+                  { mobile: { contains: searchTrim } },
+                ],
+              } satisfies Prisma.UserWhereInput,
+            ]
+          : []),
+      ],
+    };
+
+    const rows = await prisma.user.findMany({
+      where,
+      take: limitNum,
+      select: {
+        id: true,
+        name: true,
+        mobile: true,
+      },
+      orderBy: [{ name: "asc" }],
+    });
+
+    res.json({
+      data: rows.map((u) => ({ id: u.id, name: u.name, mobile: u.mobile })),
+    });
+  },
+);
 
 router.post("/orders", requireAuth, requirePermission("orders", "create"), async (req, res): Promise<void> => {
   const parsed = CreateOrderBody.safeParse(req.body);
@@ -272,6 +416,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     addressLng,
     googlePlaceId,
     deliveryStatus,
+    assigneeUserIds: inputAssigneeUserIds,
+    assignedToId: clientAssignedToId,
     ...orderData
   } = parsed.data as any;
   let subtotal = 0;
@@ -298,6 +444,22 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const requestedPaymentStatus = typeof orderData.paymentStatus === "string" ? orderData.paymentStatus : undefined;
   const paymentStatus = normalizePaymentStatus(totalAmount, safeAdvanceAmount, requestedPaymentStatus);
   const orderNumber = generateOrderNumber();
+
+  const assigneeIdsFromBody = Array.isArray(inputAssigneeUserIds)
+    ? normalizeAssigneeUserIds(inputAssigneeUserIds)
+    : clientAssignedToId != null && Number.isFinite(Number(clientAssignedToId))
+      ? [Number(clientAssignedToId)]
+      : [];
+
+  try {
+    await assertActiveUserIdsExist(assigneeIdsFromBody);
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
+  }
+
+  const actor = (req as { user?: { id: number } }).user;
+  const actorId = actor?.id ?? null;
 
   let createdOrder;
   try {
@@ -345,7 +507,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           challanImages: JSON.stringify(Array.isArray(orderData.challanImages) ? orderData.challanImages : []),
           photoComments: JSON.stringify(Array.isArray(orderData.photoComments) ? orderData.photoComments : []),
           staffComments: JSON.stringify(Array.isArray(orderData.staffComments) ? orderData.staffComments : []),
-          assignedToId: orderData.assignedToId ?? null,
+          assignedToId: assigneeIdsFromBody[0] ?? null,
+          createdById: actorId,
           deliveryDate: orderData.deliveryDate ? new Date(orderData.deliveryDate) : null,
           deliverySlotId: resolvedDeliverySlotId,
           deliveryStatus: "pending",
@@ -361,6 +524,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
               : null,
         },
       });
+
+      await replaceOrderAssignees(tx, order.id, assigneeIdsFromBody);
 
       for (const item of resolvedItems) {
         await tx.orderItem.create({
@@ -425,13 +590,12 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     return;
   }
 
-  const actor = (req as { user?: { id: number } }).user;
   emitSafe("ORDER_CREATED", {
     orderId: createdOrder.id,
     orderNumber: createdOrder.orderNumber,
     branchId: createdOrder.branchId,
     assignedToId: createdOrder.assignedToId,
-    createdById: actor?.id,
+    createdById: actorId ?? undefined,
   });
 
   res.status(201).json(await enrichOrder(createdOrder));
@@ -602,6 +766,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         addressLat: payloadAddressLat,
         addressLng: payloadAddressLng,
         googlePlaceId: payloadGooglePlaceId,
+        assigneeUserIds: payloadAssigneeUserIds,
+        assignedToId: payloadAssignedToIdField,
         ...orderFields
       } = payload;
       const eo = existingOrder as any;
@@ -727,7 +893,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       const normalizedChallanImages = Array.isArray(orderFields.challanImages) ? orderFields.challanImages : safeJsonParse<string[]>(existingOrder.challanImages, []);
       const normalizedPhotoComments = Array.isArray(orderFields.photoComments) ? orderFields.photoComments : safeJsonParse<any[]>(existingOrder.photoComments, []);
       const normalizedStaffComments = Array.isArray(orderFields.staffComments) ? orderFields.staffComments : safeJsonParse<any[]>(existingOrder.staffComments, []);
-      const updatedOrder = await tx.order.update({
+      await tx.order.update({
         where: { id },
         data: {
           ...orderFields,
@@ -750,6 +916,19 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         },
       });
 
+      if (
+        Object.prototype.hasOwnProperty.call(payload, "assigneeUserIds") ||
+        Object.prototype.hasOwnProperty.call(payload, "assignedToId")
+      ) {
+        const nextAssigneeIds = Object.prototype.hasOwnProperty.call(payload, "assigneeUserIds")
+          ? normalizeAssigneeUserIds(payloadAssigneeUserIds)
+          : payloadAssignedToIdField != null && Number.isFinite(Number(payloadAssignedToIdField))
+            ? [Number(payloadAssignedToIdField)]
+            : [];
+        await assertActiveUserIdsExist(nextAssigneeIds);
+        await replaceOrderAssignees(tx, id, nextAssigneeIds);
+      }
+
       const invoice = await tx.invoice.findFirst({ where: { orderId: id } });
       if (invoice) {
         const cgst = nextIsGst ? taxAmount / 2 : 0;
@@ -766,7 +945,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         });
       }
 
-      return updatedOrder;
+      return (await tx.order.findUnique({ where: { id } }))!;
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

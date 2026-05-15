@@ -77,6 +77,10 @@ function loadGooglePlaces(apiKey: string): Promise<void> {
 export function GoogleAddressInput({ value, onChangeAddress, onResolved, disabled, placeholder, className }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const acRef = useRef<GAutocomplete | null>(null);
+  const onChangeAddressRef = useRef(onChangeAddress);
+  const onResolvedRef = useRef(onResolved);
+  onChangeAddressRef.current = onChangeAddress;
+  onResolvedRef.current = onResolved;
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
   useEffect(() => {
@@ -103,8 +107,8 @@ export function GoogleAddressInput({ value, onChangeAddress, onResolved, disable
           const loc = place.geometry?.location;
           const lat = loc ? loc.lat() : null;
           const lng = loc ? loc.lng() : null;
-          onChangeAddress(formatted);
-          onResolved({
+          onChangeAddressRef.current(formatted);
+          onResolvedRef.current({
             formattedAddress: formatted,
             placeId: place.place_id ?? "",
             pincode: pin,
@@ -127,7 +131,7 @@ export function GoogleAddressInput({ value, onChangeAddress, onResolved, disable
       }
       acRef.current = null;
     };
-  }, [apiKey, onChangeAddress, onResolved]);
+  }, [apiKey]);
 
   if (!apiKey?.trim()) {
     return (

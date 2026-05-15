@@ -5,15 +5,18 @@ import { cn } from "@/lib/utils"
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, onWheel, ...props }, ref) => {
     const inputRef = React.useRef<HTMLInputElement | null>(null)
+    const forwardedRef = React.useRef(ref)
+    forwardedRef.current = ref
 
-    const setRef = React.useCallback(
-      (node: HTMLInputElement | null) => {
-        inputRef.current = node
-        if (typeof ref === "function") ref(node)
-        else if (ref) (ref as React.MutableRefObject<HTMLInputElement | null>).current = node
-      },
-      [ref],
-    )
+    const setRef = React.useCallback((node: HTMLInputElement | null) => {
+      inputRef.current = node
+      const r = forwardedRef.current
+      if (typeof r === "function") {
+        r(node)
+      } else if (r) {
+        ;(r as React.MutableRefObject<HTMLInputElement | null>).current = node
+      }
+    }, [])
 
     React.useEffect(() => {
       const el = inputRef.current

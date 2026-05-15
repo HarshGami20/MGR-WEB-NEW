@@ -100,6 +100,8 @@ model User {
   supplier       Supplier?     @relation(fields: [supplierId], references: [id])
   manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
   assignedOrders Order[]       @relation("OrderAssignee")
+  createdOrders  Order[]       @relation("OrderCreatedBy")
+  orderAssignees OrderAssignee[]
 
   notificationsSent       Notification[]           @relation("NotificationSender")
   notificationRecipients  NotificationRecipient[]
@@ -314,6 +316,7 @@ model Order {
   photoComments     String?  @map("photo_comments")
   staffComments     String?  @map("staff_comments")
   assignedToId      Int?     @map("assigned_to_id")
+  createdById       Int?     @map("created_by_id")
   deliveryDate      DateTime? @map("delivery_date") @db.Timestamptz(6)
   subtotal          Decimal  @default(0) @db.Decimal(12, 2)
   taxAmount         Decimal  @default(0) @map("tax_amount") @db.Decimal(12, 2)
@@ -334,11 +337,25 @@ model Order {
   branch       Branch?       @relation(fields: [branchId], references: [id])
   deliverySlot DeliverySlot? @relation(fields: [deliverySlotId], references: [id], onDelete: SetNull)
   assignedTo   User?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
+  createdBy    User?         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignees    OrderAssignee[]
   items        OrderItem[]
   invoices     Invoice[]
   payments     Payment[]
 
   @@map("orders")
+}
+
+model OrderAssignee {
+  orderId Int @map("order_id")
+  userId  Int @map("user_id")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, userId])
+  @@index([userId])
+  @@map("order_assignees")
 }
 
 model OrderItem {

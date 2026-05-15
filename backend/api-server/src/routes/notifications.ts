@@ -121,6 +121,13 @@ router.delete("/notifications/:recipientId", requireAuth, notificationMutationLi
   res.status(204).end();
 });
 
+/** Trigger FCM web push to the signed-in user's registered device(s) only. */
+router.post("/notifications/test-web-push", requireAuth, notificationMutationLimiter, async (req, res): Promise<void> => {
+  const userId = (req as { user?: { id: number } }).user!.id;
+  const result = await notificationService.sendTestWebPush(userId);
+  res.json(result);
+});
+
 router.post("/notifications/fcm-token", requireAuth, notificationMutationLimiter, async (req, res): Promise<void> => {
   const parsed = SaveFcmBody.safeParse(req.body);
   if (!parsed.success) {

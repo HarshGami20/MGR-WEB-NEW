@@ -26,6 +26,7 @@ import type {
 
 import type {
   AdjustInventoryBody,
+  AssignableOrderUsersResponse,
   AttributeCatalogResponse,
   AttributeKeyWithValues,
   AttributeOptionListResponse,
@@ -57,6 +58,7 @@ import type {
   InventoryLogListResponse,
   Invoice,
   InvoiceListResponse,
+  ListAssignableOrderUsersParams,
   ListBranchesParams,
   ListInventoryLogsParams,
   ListInvoicesParams,
@@ -3261,6 +3263,115 @@ export const useCreateOrder = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCreateOrderMutationOptions(options), queryClient);
     }
+
+/**
+ * Branch-scoped staff list for the assignee picker. Requires **orders** create or update permission; does not require the **users** module. Send the working branch via `X-Branch-Id` or `branchId` query (same rules as creating an order).
+ * @summary List users available as order assignees
+ */
+export const getListAssignableOrderUsersUrl = (params?: ListAssignableOrderUsersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/orders/assignable-users?${stringifiedParams}` : `/api/orders/assignable-users`
+}
+
+export const listAssignableOrderUsers = async (params?: ListAssignableOrderUsersParams, options?: RequestInit): Promise<AssignableOrderUsersResponse> => {
+
+  return customFetch<AssignableOrderUsersResponse>(getListAssignableOrderUsersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAssignableOrderUsersQueryKey = (params?: ListAssignableOrderUsersParams,) => {
+    return [
+    `/api/orders/assignable-users`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAssignableOrderUsersQueryOptions = <TData = Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError = ErrorType<void>>(params?: ListAssignableOrderUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAssignableOrderUsersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssignableOrderUsers>>> = ({ signal }) => listAssignableOrderUsers(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListAssignableOrderUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listAssignableOrderUsers>>>
+export type ListAssignableOrderUsersQueryError = ErrorType<void>
+
+
+export function useListAssignableOrderUsers<TData = Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError = ErrorType<void>>(
+ params: undefined |  ListAssignableOrderUsersParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAssignableOrderUsers>>,
+          TError,
+          Awaited<ReturnType<typeof listAssignableOrderUsers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAssignableOrderUsers<TData = Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError = ErrorType<void>>(
+ params?: ListAssignableOrderUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAssignableOrderUsers>>,
+          TError,
+          Awaited<ReturnType<typeof listAssignableOrderUsers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListAssignableOrderUsers<TData = Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError = ErrorType<void>>(
+ params?: ListAssignableOrderUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List users available as order assignees
+ */
+
+export function useListAssignableOrderUsers<TData = Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError = ErrorType<void>>(
+ params?: ListAssignableOrderUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAssignableOrderUsers>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListAssignableOrderUsersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * @summary Get order detail

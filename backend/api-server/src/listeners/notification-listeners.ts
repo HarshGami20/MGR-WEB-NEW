@@ -13,10 +13,13 @@ export function registerNotificationEventListeners(): void {
     void (async () => {
       try {
         const targets = new Set<number>();
-        if (payload.assignedToId) targets.add(payload.assignedToId);
-        if (payload.createdById && payload.createdById !== payload.assignedToId) {
-          targets.add(payload.createdById);
-        }
+        const assigneeRows = await prisma.orderAssignee.findMany({
+          where: { orderId: payload.orderId },
+          select: { userId: true },
+        });
+        for (const r of assigneeRows) targets.add(r.userId);
+        if (assigneeRows.length === 0 && payload.assignedToId) targets.add(payload.assignedToId);
+        if (payload.createdById) targets.add(payload.createdById);
         if (targets.size === 0) {
           evLog.debug({ orderId: payload.orderId }, "ORDER_CREATED: no notification targets");
           return;
@@ -54,20 +57,32 @@ export function registerNotificationEventListeners(): void {
           where: { id: payload.orderId },
           select: { orderNumber: true, assignedToId: true },
         });
-        if (!order?.assignedToId) {
-          evLog.debug({ orderId: payload.orderId }, "PAYMENT_RECEIVED: no assignee — skip notify");
+        if (!order) {
+          evLog.debug({ orderId: payload.orderId }, "PAYMENT_RECEIVED: order not found");
+          return;
+        }
+        const assigneeRows = await prisma.orderAssignee.findMany({
+          where: { orderId: payload.orderId },
+          select: { userId: true },
+        });
+        let recipientIds = assigneeRows.map((r) => r.userId);
+        if (recipientIds.length === 0 && order.assignedToId) {
+          recipientIds = [order.assignedToId];
+        }
+        if (recipientIds.length === 0) {
+          evLog.debug({ orderId: payload.orderId }, "PAYMENT_RECEIVED: no assignees — skip notify");
           return;
         }
         evLog.info(
           {
             orderId: payload.orderId,
-            assigneeId: order.assignedToId,
+            assigneeIds: recipientIds,
             type: "PAYMENT_RECEIVED",
           },
           "domain event → notifications",
         );
-        await notificationService.sendToUser(
-          order.assignedToId,
+        await notificationService.sendToUsers(
+          recipientIds,
           {
             title: "Payment recorded",
             message: `Payment for order ${order.orderNumber} was received.`,

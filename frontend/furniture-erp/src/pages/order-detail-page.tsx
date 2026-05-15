@@ -187,6 +187,16 @@ export default function OrderDetailPage() {
                 </p>
               ) : null}
               {order.isGst ? <p className="text-sm font-mono mt-2">GST: {order.customerGstNumber || "—"}</p> : null}
+              {Array.isArray(orderAny.assignees) && orderAny.assignees.length > 0 ? (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Assigned to: {orderAny.assignees.map((a: { name?: string }) => a.name).filter(Boolean).join(", ")}
+                </p>
+              ) : orderAny.assignedTo?.name ? (
+                <p className="text-sm text-muted-foreground mt-2">Assigned to: {orderAny.assignedTo.name}</p>
+              ) : null}
+              {orderAny.createdBy?.name ? (
+                <p className="text-xs text-muted-foreground mt-1">Created by {orderAny.createdBy.name}</p>
+              ) : null}
             </div>
             <div className="md:text-right">
               <h2 className="text-sm font-semibold mb-2">Payment Summary</h2>

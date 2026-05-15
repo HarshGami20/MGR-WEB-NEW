@@ -57,3 +57,16 @@ export async function saveFcmToken(body: {
     body: JSON.stringify(body),
   });
 }
+
+export type TestWebPushResponse = {
+  ok: boolean;
+  error?: string;
+  tokenCount?: number;
+  successCount?: number;
+  failureCount?: number;
+};
+
+/** Ask the server to send an FCM notification to this browser’s saved token(s). */
+export async function sendTestWebPush(): Promise<TestWebPushResponse> {
+  return customFetch<TestWebPushResponse>("/api/notifications/test-web-push", { method: "POST" });
+}

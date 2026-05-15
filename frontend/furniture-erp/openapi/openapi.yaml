@@ -837,6 +837,12 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: assignmentScope
+          in: query
+          schema:
+            type: string
+            enum: [all, created_by_me, assigned_to_me]
+          description: Filter by creator or assignee for the signed-in user. Use `all` or omit for every order.
       responses:
         "200":
           description: Orders list
@@ -862,6 +868,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+
+  /orders/assignable-users:
+    get:
+      operationId: listAssignableOrderUsers
+      tags: [orders]
+      summary: List users available as order assignees
+      description: >-
+        Branch-scoped staff list for the assignee picker. Requires **orders** create or update permission;
+        does not require the **users** module. Send the working branch via `X-Branch-Id` or `branchId` query (same rules as creating an order).
+      parameters:
+        - name: branchId
+          in: query
+          schema:
+            type: integer
+          description: Optional if `X-Branch-Id` is set; must be a branch the signed-in user may write to.
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Filter by name (case-insensitive) or mobile substring.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 1000
+          description: Max rows returned (capped server-side).
+      responses:
+        "200":
+          description: Minimal user rows for assignment UI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignableOrderUsersResponse"
+        "400":
+          description: Branch missing or invalid for this user
+        "403":
+          description: Missing orders create/update permission
 
   /orders/{id}:
     get:
@@ -1760,6 +1803,26 @@ components:
           type: string
           format: date-time
       required: [id, name, mobile, isActive, createdAt]
+
+    AssignableOrderUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        mobile:
+          type: string
+      required: [id, name, mobile]
+
+    AssignableOrderUsersResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignableOrderUser"
+      required: [data]
 
     CreateUserBody:
       type: object

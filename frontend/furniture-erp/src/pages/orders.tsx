@@ -38,6 +38,7 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
+  const [assignmentScope, setAssignmentScope] = useState<"all" | "created_by_me" | "assigned_to_me">("all");
   const [page, setPage] = useState(1);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
@@ -73,6 +74,7 @@ export default function Orders() {
     status: status !== "all" ? (status as any) : undefined,
     isGst: isGst !== "all" ? isGst === "true" : undefined,
     branchId: selectedBranchId ?? undefined,
+    assignmentScope: assignmentScope !== "all" ? (assignmentScope as any) : undefined,
     page,
     limit: 10,
   });
@@ -295,6 +297,25 @@ export default function Orders() {
           <span className="text-xs text-muted-foreground">{row.original.customerMobile ? ` ${row.original.customerMobile}` : ""}</span>
           </div>
         ),
+      },
+      {
+        id: "assignees",
+        header: "Assignees",
+        meta: { cellClassName: "max-w-[160px]" },
+        cell: ({ row }) => {
+          const ord = row.original as any;
+          const list: { id?: number; name?: string }[] = Array.isArray(ord.assignees) ? ord.assignees : [];
+          if (list.length === 0 && ord.assignedTo?.name) {
+            return <span className="text-sm text-muted-foreground truncate">{ord.assignedTo.name}</span>;
+          }
+          if (list.length === 0) return <span className="text-sm text-muted-foreground">—</span>;
+          const text = list.map((a) => a.name).filter(Boolean).join(", ");
+          return (
+            <span className="text-sm text-muted-foreground line-clamp-2" title={text}>
+              {text}
+            </span>
+          );
+        },
       },
       {
         accessorKey: "createdAt",
@@ -521,6 +542,16 @@ export default function Orders() {
               <SelectItem value="all">All Orders</SelectItem>
               <SelectItem value="true">GST</SelectItem>
               <SelectItem value="false">Non-GST</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={assignmentScope} onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => { setAssignmentScope(val); setPage(1); }}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="My orders" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All orders</SelectItem>
+              <SelectItem value="created_by_me">Created by me</SelectItem>
+              <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
             </SelectContent>
           </Select>
         </div>

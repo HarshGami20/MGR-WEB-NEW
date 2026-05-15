@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, Loader2, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -18,11 +18,13 @@ import {
   getUnreadCount,
   markAllNotificationsRead,
   markNotificationRead,
+  sendTestWebPush,
   type NotificationRow,
 } from "@/lib/notification-api";
 import { useAuth } from "@/lib/auth";
 import { isPartnerPortalUser } from "@/lib/partner";
 import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 function NotificationLine({
   row,
@@ -52,6 +54,7 @@ function NotificationLine({
 export function NotificationBell() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: unread } = useQuery({
     queryKey: ["notifications", "unread-count"],
@@ -77,6 +80,31 @@ export function NotificationBell() {
     mutationFn: markAllNotificationsRead,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const testPushMut = useMutation({
+    mutationFn: sendTestWebPush,
+    onSuccess: (r) => {
+      if (r.ok) {
+        toast({
+          title: "Test push sent",
+          description:
+            r.tokenCount != null
+              ? `Check for a system notification (try minimizing this tab). ${r.successCount ?? 0} device(s).`
+              : "Check for a system notification.",
+        });
+        return;
+      }
+      toast({
+        title: "Test push did not send",
+        description: r.error ?? "Unknown error",
+        variant: "destructive",
+      });
+    },
+    onError: (e: unknown) => {
+      const msg = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
+      toast({ title: "Test push failed", description: msg, variant: "destructive" });
     },
   });
 
@@ -136,6 +164,22 @@ export function NotificationBell() {
           )}
         </ScrollArea>
         <DropdownMenuSeparator className="m-0" />
+        <div className="px-2 py-2 border-b border-border">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 text-xs"
+            disabled={testPushMut.isPending}
+            onClick={() => testPushMut.mutate()}
+          >
+            {testPushMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> : <Radio className="h-3.5 w-3.5 shrink-0" />}
+            Test Chrome web push
+          </Button>
+          <p className="text-[10px] text-muted-foreground mt-1.5 px-0.5 leading-snug">
+            Sends a real FCM notification to this browser. Put the tab in the background to see the OS banner.
+          </p>
+        </div>
         <DropdownMenuItem asChild className="rounded-none cursor-pointer">
           <Link href="/notifications" className="justify-center text-primary font-medium py-3">
             View all notifications
