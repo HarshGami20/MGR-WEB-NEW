@@ -25,11 +25,20 @@ import {
   Video,
   ClipboardList,
   ChevronDown,
+  Truck,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { fetchDeliverySlots } from "@/lib/delivery-api";
+import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
+import {
+  computeDeliveryDayStats,
+  localTodayYmd,
+  type DeliveryOrderRow,
+} from "@/lib/delivery-stats";
 
 const chartOrders = "hsl(var(--chart-1))";
 const chartRevenue = "hsl(var(--chart-2))";
@@ -176,6 +185,24 @@ function StaffDashboard() {
   }, [summary, recentOrders]);
 
   const loadingBlock = summaryLoading || statusLoading;
+  const todayYmd = localTodayYmd();
+  const deliveryOrders = (analyticsOrdersData?.data ?? []) as DeliveryOrderRow[];
+  const { data: todaySlots = [], isLoading: todaySlotsLoading } = useQuery({
+    queryKey: ["deliverySlots", selectedBranchId, todayYmd, todayYmd],
+    queryFn: () =>
+      fetchDeliverySlots({
+        branchId: selectedBranchId!,
+        from: todayYmd,
+        to: todayYmd,
+      }),
+    enabled: selectedBranchId != null,
+  });
+  const todaySlotCapacity = todaySlots.reduce((sum, s) => sum + s.maxOrders, 0);
+  const todayDeliveryStats = computeDeliveryDayStats(
+    deliveryOrders,
+    todayYmd,
+    todaySlotCapacity || 0,
+  );
   const annualRevenue = annualSalesReport?.reduce((sum, item) => sum + item.revenue, 0) ?? 0;
   const yearOptions = useMemo(
     () => Array.from({ length: 6 }, (_, idx) => currentYear - idx),
@@ -621,7 +648,51 @@ function StaffDashboard() {
             </p>
           </div>
         </div>
+
+
+        
       </div>
+
+
+      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <div className="lg:col-span-6">
+          <DeliveryProgressKpi
+            stats={todayDeliveryStats}
+            loading={analyticsOrdersLoading || todaySlotsLoading}
+          />
+        </div>
+        <div className="lg:col-span-6 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col justify-between min-h-[280px]">
+          <div>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">Today&apos;s actions</h2>
+                <p className="text-muted-foreground text-sm mt-3 leading-snug">{reminder.title}</p>
+              </div>
+              <Badge variant="secondary" className="rounded-full shrink-0 capitalize">
+                <CalendarClock className="h-3.5 w-3.5 mr-1 opacity-70" aria-hidden />
+                Today
+              </Badge>
+            </div>
+            <p className="text-sm mt-4 text-muted-foreground">{reminder.meta}</p>
+          </div>
+          <div className="flex flex-wrap gap-3 mt-6">
+            <Button className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground flex-1 min-w-[140px]" size="lg" asChild>
+              <Link href="/deliveries">
+                <Truck className="h-4 w-4 mr-2" aria-hidden />
+                Deliveries
+              </Link>
+            </Button>
+            <Button variant="outline" className="rounded-full flex-1 min-w-[140px]" size="lg" asChild>
+              <Link href="/orders">
+                <Video className="h-4 w-4 mr-2" aria-hidden />
+                Open orders
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      
     </div>
   );
 }

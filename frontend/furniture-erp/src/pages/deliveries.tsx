@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, addDays } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useListBranches, type Branch } from "@/api-client";
+import { useListBranches, useListOrders, type Branch } from "@/api-client";
+import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
+import { DeliveryScheduleList } from "@/components/delivery-schedule-list";
+import {
+  addDaysYmd,
+  computeDeliveryDayStats,
+  localTodayYmd,
+  normalizeYmdRange,
+  type DeliveryOrderRow,
+} from "@/lib/delivery-stats";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
@@ -16,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -194,6 +204,9 @@ export default function DeliveriesPage() {
   const [filterPincode, setFilterPincode] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
 
+  const [bookedDateFrom, setBookedDateFrom] = useState(() => localTodayYmd());
+  const [bookedDateTo, setBookedDateTo] = useState(() => addDaysYmd(localTodayYmd(), 28));
+
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<DeliverySlotRow | null>(null);
   const [editForm, setEditForm] = useState({
@@ -215,6 +228,33 @@ export default function DeliveriesPage() {
       }),
     enabled: writeBranchId != null && can("deliveries", "view"),
   });
+
+  const todayYmd = localTodayYmd();
+  const bookedRange = useMemo(
+    () => normalizeYmdRange(bookedDateFrom, bookedDateTo),
+    [bookedDateFrom, bookedDateTo],
+  );
+  const bookedRangeActive = bookedDateFrom !== todayYmd || bookedDateTo !== addDaysYmd(todayYmd, 28);
+  const canViewOrders = can("orders", "view");
+  const canUpdateDeliveryStatus = can("deliveries", "edit") || can("orders", "edit");
+
+  const { data: ordersData, isLoading: ordersLoading } = useListOrders(
+    {
+      page: 1,
+      limit: 1000,
+      branchId: writeBranchId ?? undefined,
+    },
+    { query: { enabled: writeBranchId != null && canViewOrders } },
+  );
+  const deliveryOrders = (ordersData?.data ?? []) as DeliveryOrderRow[];
+  const todaySlotCapacity = rows
+    .filter((s) => slotYmd(s.slotDate) === todayYmd)
+    .reduce((sum, s) => sum + s.maxOrders, 0);
+  const todayDeliveryStats = computeDeliveryDayStats(
+    deliveryOrders,
+    todayYmd,
+    todaySlotCapacity,
+  );
 
   const filteredRows = useMemo(() => {
     const labelQ = filterLabel.trim().toLowerCase();
@@ -261,6 +301,11 @@ export default function DeliveriesPage() {
     setFilterPincode("");
     setFilterAvailability("all");
   }, []);
+
+  const resetBookedDateRange = useCallback(() => {
+    setBookedDateFrom(todayYmd);
+    setBookedDateTo(addDaysYmd(todayYmd, 28));
+  }, [todayYmd]);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["deliverySlots", writeBranchId, range.from, range.to] });
@@ -381,7 +426,11 @@ export default function DeliveriesPage() {
 
   const rowIds = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
   useEffect(() => {
-    setSelectedSlotIds((prev) => prev.filter((id) => rowIds.has(id)));
+    setSelectedSlotIds((prev) => {
+      const next = prev.filter((id) => rowIds.has(id));
+      if (next.length === prev.length && next.every((id, i) => id === prev[i])) return prev;
+      return next;
+    });
   }, [rowIds]);
 
   const selectedCount = selectedSlotIds.length;
@@ -541,214 +590,310 @@ export default function DeliveriesPage() {
           </Button>
         ) : null}
       </div>
+{/* 
+      <DeliveryProgressKpi
+        stats={todayDeliveryStats}
+        loading={ordersLoading || isLoading}
+        linkHref="/deliveries"
+      /> */}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Next 8 weeks</CardTitle>
-          <CardDescription>
-            {range.from} → {range.to} · Branch #{writeBranchId}
-            {filtersActive && rows.length > 0 ? (
-              <span className="block mt-1 text-foreground/90">
-                Showing {filteredRows.length} of {rows.length} slot{rows.length === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No slots in this window. Use Add slots to generate them.</p>
-          ) : (
-            <>
+      <Tabs defaultValue="booked" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="booked">Booked deliveries</TabsTrigger>
+          <TabsTrigger value="slots">Delivery slots</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="booked">
+          <Card>
+            <CardHeader>
+              <CardTitle>Booked deliveries</CardTitle>
+              <CardDescription>
+                Orders grouped by delivery date and time slot. Update delivery status inline.
+                {bookedRange.fromYmd && bookedRange.toYmd ? (
+                  <span className="block mt-1 text-foreground/90 tabular-nums">
+                    Showing {bookedRange.fromYmd} → {bookedRange.toYmd}
+                  </span>
+                ) : null}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">Filters</p>
+                  <p className="text-sm font-medium text-foreground">Date range</p>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-8 text-muted-foreground"
-                    onClick={resetTableFilters}
-                    disabled={!filtersActive}
+                    onClick={resetBookedDateRange}
+                    disabled={!bookedRangeActive}
                   >
-                    Reset filters
+                    Reset range
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-                  <div className="grid gap-1.5 sm:col-span-2">
-                    <Label htmlFor="slot-filter-label" className="text-xs">
-                      Label contains
-                    </Label>
-                    <Input
-                      id="slot-filter-label"
-                      placeholder="e.g. Morning, Van 1"
-                      value={filterLabel}
-                      onChange={(e) => setFilterLabel(e.target.value)}
-                    />
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
                   <div className="grid gap-1.5">
-                    <Label htmlFor="slot-filter-from" className="text-xs">
+                    <Label htmlFor="booked-filter-from" className="text-xs">
                       From date
                     </Label>
                     <Input
-                      id="slot-filter-from"
+                      id="booked-filter-from"
                       type="date"
-                      value={filterDateFrom}
-                      min={range.from}
-                      max={range.to}
-                      onChange={(e) => setFilterDateFrom(e.target.value)}
+                      value={bookedDateFrom}
+                      onChange={(e) => setBookedDateFrom(e.target.value)}
                     />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="slot-filter-to" className="text-xs">
+                    <Label htmlFor="booked-filter-to" className="text-xs">
                       To date
                     </Label>
                     <Input
-                      id="slot-filter-to"
+                      id="booked-filter-to"
                       type="date"
-                      value={filterDateTo}
-                      min={range.from}
-                      max={range.to}
-                      onChange={(e) => setFilterDateTo(e.target.value)}
+                      value={bookedDateTo}
+                      onChange={(e) => setBookedDateTo(e.target.value)}
                     />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="slot-filter-pin" className="text-xs">
-                      Pincode
-                    </Label>
-                    <Input
-                      id="slot-filter-pin"
-                      placeholder="Matches list or all pincodes"
-                      value={filterPincode}
-                      onChange={(e) => setFilterPincode(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">Capacity</Label>
-                    <Select
-                      value={filterAvailability}
-                      onValueChange={(v) => setFilterAvailability(v as "all" | "available" | "full")}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="available">Has availability</SelectItem>
-                        <SelectItem value="full">Fully booked</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                 </div>
               </div>
 
-              {can("deliveries", "delete") && selectedCount > 0 ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2.5 mb-3">
-                  <span className="text-sm text-muted-foreground">{selectedCount} slot(s) selected</span>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" type="button" onClick={() => setSelectedSlotIds([])}>
-                      Clear
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      type="button"
-                      onClick={() => setBulkDeleteOpen(true)}
-                      disabled={bulkDeleteMut.isPending}
-                    >
-                      Delete selected
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-              {filteredRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center">
-                  No slots match your filters.
-                  <button
-                    type="button"
-                    className="ml-1 text-primary underline-offset-4 hover:underline font-medium"
-                    onClick={resetTableFilters}
-                  >
-                    Reset filters
-                  </button>
+              {!canViewOrders ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  Orders view permission is required to see booked deliveries.
+                </p>
+              ) : !bookedRange.fromYmd || !bookedRange.toYmd ? (
+                <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-dashed">
+                  Select both a from and to date to view booked deliveries.
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {can("deliveries", "delete") ? (
-                        <TableHead className="w-[44px] pr-0">
-                          <Checkbox
-                            checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
-                            onCheckedChange={(v) => toggleSelectAllRows(Boolean(v))}
-                            disabled={bulkDeleteMut.isPending || filteredRows.length === 0}
-                            aria-label="Select all slots matching current filters"
-                          />
-                        </TableHead>
-                      ) : null}
-                      <TableHead>Date</TableHead>
-                      <TableHead>Window</TableHead>
-                      <TableHead>Label</TableHead>
-                      <TableHead className="text-right">Capacity</TableHead>
-                      <TableHead>Pincodes</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRows.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        className={selectedSlotIds.includes(r.id) ? "bg-muted/40" : undefined}
-                      >
-                        {can("deliveries", "delete") ? (
-                          <TableCell className="w-[44px] pr-0">
-                            <Checkbox
-                              checked={selectedSlotIds.includes(r.id)}
-                              onCheckedChange={(v) => toggleSelectSlot(r.id, Boolean(v))}
-                              disabled={bulkDeleteMut.isPending}
-                              aria-label={`Select slot ${r.label}`}
-                            />
-                          </TableCell>
-                        ) : null}
-                        <TableCell className="whitespace-nowrap">{r.slotDate?.toString?.().slice(0, 10) ?? r.slotDate}</TableCell>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {r.startTime}–{r.endTime}
-                        </TableCell>
-                        <TableCell>{r.label}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {r.bookedCount}/{r.maxOrders}
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
-                          {(r.servicePincodes ?? []).length ? (r.servicePincodes ?? []).join(", ") : "All"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {can("deliveries", "edit") ? (
-                            <Button variant="ghost" size="icon" onClick={() => openEdit(r)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          ) : null}
-                          {can("deliveries", "delete") ? (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                if (confirm("Delete this slot?")) deleteMut.mutate(r.id);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <DeliveryScheduleList
+                  orders={deliveryOrders}
+                  slots={rows}
+                  branchId={writeBranchId}
+                  fromYmd={bookedRange.fromYmd}
+                  toYmd={bookedRange.toYmd}
+                  loading={ordersLoading}
+                  canUpdateStatus={canUpdateDeliveryStatus}
+                />
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="slots">
+          <Card>
+            <CardHeader>
+              <CardTitle>Next 8 weeks</CardTitle>
+              <CardDescription>
+                {range.from} → {range.to} · Branch #{writeBranchId}
+                {filtersActive && rows.length > 0 ? (
+                  <span className="block mt-1 text-foreground/90">
+                    Showing {filteredRows.length} of {rows.length} slot{rows.length === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No slots in this window. Use Add slots to generate them.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <p className="text-sm font-medium text-foreground">Filters</p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-muted-foreground"
+                        onClick={resetTableFilters}
+                        disabled={!filtersActive}
+                      >
+                        Reset filters
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+                      <div className="grid gap-1.5 sm:col-span-2">
+                        <Label htmlFor="slot-filter-label" className="text-xs">
+                          Label contains
+                        </Label>
+                        <Input
+                          id="slot-filter-label"
+                          placeholder="e.g. Morning, Van 1"
+                          value={filterLabel}
+                          onChange={(e) => setFilterLabel(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="slot-filter-from" className="text-xs">
+                          From date
+                        </Label>
+                        <Input
+                          id="slot-filter-from"
+                          type="date"
+                          value={filterDateFrom}
+                          min={range.from}
+                          max={range.to}
+                          onChange={(e) => setFilterDateFrom(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="slot-filter-to" className="text-xs">
+                          To date
+                        </Label>
+                        <Input
+                          id="slot-filter-to"
+                          type="date"
+                          value={filterDateTo}
+                          min={range.from}
+                          max={range.to}
+                          onChange={(e) => setFilterDateTo(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="slot-filter-pin" className="text-xs">
+                          Pincode
+                        </Label>
+                        <Input
+                          id="slot-filter-pin"
+                          placeholder="Matches list or all pincodes"
+                          value={filterPincode}
+                          onChange={(e) => setFilterPincode(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs">Capacity</Label>
+                        <Select
+                          value={filterAvailability}
+                          onValueChange={(v) => setFilterAvailability(v as "all" | "available" | "full")}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="available">Has availability</SelectItem>
+                            <SelectItem value="full">Fully booked</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {can("deliveries", "delete") && selectedCount > 0 ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2.5 mb-3">
+                      <span className="text-sm text-muted-foreground">{selectedCount} slot(s) selected</span>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" type="button" onClick={() => setSelectedSlotIds([])}>
+                          Clear
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          type="button"
+                          onClick={() => setBulkDeleteOpen(true)}
+                          disabled={bulkDeleteMut.isPending}
+                        >
+                          Delete selected
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {filteredRows.length === 0 ? (
+                    <p className="text-sm text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center">
+                      No slots match your filters.
+                      <button
+                        type="button"
+                        className="ml-1 text-primary underline-offset-4 hover:underline font-medium"
+                        onClick={resetTableFilters}
+                      >
+                        Reset filters
+                      </button>
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {can("deliveries", "delete") ? (
+                            <TableHead className="w-[44px] pr-0">
+                              <Checkbox
+                                checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+                                onCheckedChange={(v) => toggleSelectAllRows(Boolean(v))}
+                                disabled={bulkDeleteMut.isPending || filteredRows.length === 0}
+                                aria-label="Select all slots matching current filters"
+                              />
+                            </TableHead>
+                          ) : null}
+                          <TableHead>Date</TableHead>
+                          <TableHead>Window</TableHead>
+                          <TableHead>Label</TableHead>
+                          <TableHead className="text-right">Capacity</TableHead>
+                          <TableHead>Pincodes</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRows.map((r) => (
+                          <TableRow
+                            key={r.id}
+                            className={selectedSlotIds.includes(r.id) ? "bg-muted/40" : undefined}
+                          >
+                            {can("deliveries", "delete") ? (
+                              <TableCell className="w-[44px] pr-0">
+                                <Checkbox
+                                  checked={selectedSlotIds.includes(r.id)}
+                                  onCheckedChange={(v) => toggleSelectSlot(r.id, Boolean(v))}
+                                  disabled={bulkDeleteMut.isPending}
+                                  aria-label={`Select slot ${r.label}`}
+                                />
+                              </TableCell>
+                            ) : null}
+                            <TableCell className="whitespace-nowrap">
+                              {r.slotDate?.toString?.().slice(0, 10) ?? r.slotDate}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                              {r.startTime}–{r.endTime}
+                            </TableCell>
+                            <TableCell>{r.label}</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {r.bookedCount}/{r.maxOrders}
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
+                              {(r.servicePincodes ?? []).length ? (r.servicePincodes ?? []).join(", ") : "All"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {can("deliveries", "edit") ? (
+                                <Button variant="ghost" size="icon" onClick={() => openEdit(r)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                              {can("deliveries", "delete") ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    if (confirm("Delete this slot?")) deleteMut.mutate(r.id);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              ) : null}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
         <DialogContent className="max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto">

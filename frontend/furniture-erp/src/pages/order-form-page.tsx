@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
 import {
   useCreateOrder,
@@ -269,19 +269,20 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       String(deliveryDateWatch).trim().length >= 8,
   });
   const slotOptions = slotOptionsRaw ?? EMPTY_AVAIL_SLOTS;
+  const { setValue, getValues, reset } = form;
+  const freeSlotIds = useMemo(
+    () => slotOptions.filter((s) => s.remaining > 0).map((s) => s.id),
+    [slotOptions],
+  );
 
   useEffect(() => {
-    if (!deliveryDateWatch || !slotOptions.length) return;
-    const free = slotOptions.filter((s) => s.remaining > 0);
-    if (!free.length) return;
-    const cur = form.getValues("deliverySlotId");
-    if (cur != null && free.some((s) => s.id === cur)) return;
-    if (cur != null && !free.some((s) => s.id === cur)) {
-      form.setValue("deliverySlotId", free[0]!.id);
-      return;
-    }
-    if (cur == null) form.setValue("deliverySlotId", free[0]!.id);
-  }, [deliveryDateWatch, pincodeWatch, slotOptions, form]);
+    if (!deliveryDateWatch || freeSlotIds.length === 0) return;
+    const cur = getValues("deliverySlotId");
+    if (cur != null && freeSlotIds.includes(cur)) return;
+    const nextId = freeSlotIds[0]!;
+    if (cur === nextId) return;
+    setValue("deliverySlotId", nextId, { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+  }, [deliveryDateWatch, pincodeWatch, freeSlotIds, getValues, setValue]);
 
   const onGoogleResolved = useCallback(
     (sel: import("@/components/google-address-input").GoogleAddressSelection) => {
@@ -298,12 +299,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     name: "items",
   });
   const photoFields = useFieldArray({ control: form.control, name: "photoComments" });
+  const hydratedOrderIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!isEdit || !order) return;
+    if (!isEdit || !order?.id) return;
+    if (hydratedOrderIdRef.current === order.id) return;
+    hydratedOrderIdRef.current = order.id;
     const orderAny = order as any;
     const existingStaffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
-    form.reset({
+    reset({
       customerName: order.customerName ?? "",
       customerMobile: order.customerMobile ?? "",
       customerAddress: order.customerAddress ?? "",
@@ -343,7 +347,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         .filter(Boolean)
         .join("\n"),
     });
-  }, [isEdit, order, form]);
+  }, [isEdit, order, reset]);
+
+  useEffect(() => {
+    if (!isEdit) hydratedOrderIdRef.current = null;
+  }, [isEdit]);
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
@@ -452,10 +460,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     [toast],
   );
 
-  if (isEdit && (!Number.isFinite(orderId) || orderId <= 0)) return <Redirect to="/orders" />;
-  if (isEdit && orderLoading) return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
-  if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
-
   const pending = createOrder.isPending || updateOrder.isPending;
 
   const lastUpdatedLabel = useMemo(() => {
@@ -468,6 +472,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       return String(raw);
     }
   }, [isEdit, order]);
+
+  if (isEdit && (!Number.isFinite(orderId) || orderId <= 0)) return <Redirect to="/orders" />;
+  if (isEdit && orderLoading) return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
+  if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
