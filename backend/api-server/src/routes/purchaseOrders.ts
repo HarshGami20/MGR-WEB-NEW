@@ -3,12 +3,59 @@ import { Router, IRouter } from "express";
 import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody, GetPurchaseOrderParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { prisma, toNumber } from "../lib/prisma";
-import { incrementProductStock } from "../lib/product-stock";
+import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import { getPartnerScope, purchaseOrderMatchesScope, PARTNER_ALLOWED_PO_STATUSES } from "../lib/partner-scope";
 import { requirePermission } from "../lib/permissions";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
+
+class PurchaseOrderDeleteBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PurchaseOrderDeleteBlockedError";
+  }
+}
+
+/** Reverses inbound stock when a delivered PO is removed, then deletes the PO (items cascade). */
+async function deletePurchaseOrderById(
+  id: number,
+  logBranchId: number | null,
+): Promise<boolean> {
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id },
+    include: { items: true },
+  });
+  if (!existing) return false;
+
+  await prisma.$transaction(async (tx) => {
+    if (existing.status === "delivered") {
+      for (const item of existing.items) {
+        try {
+          await decrementProductStock(item.productId, item.quantity, tx);
+          if (logBranchId != null) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: item.productId,
+                type: "out",
+                quantity: item.quantity,
+                notes: `PO ${existing.poNumber} deleted (stock reversed)`,
+                branchId: logBranchId,
+              },
+            });
+          }
+        } catch {
+          throw new PurchaseOrderDeleteBlockedError(
+            `Cannot delete delivered PO ${existing.poNumber}: not enough stock to reverse inbound quantities. Adjust stock first.`,
+          );
+        }
+      }
+    }
+    await tx.purchaseOrder.delete({ where: { id } });
+  });
+
+  return true;
+}
 
 function generatePONumber() {
   return `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -158,9 +205,39 @@ router.delete("/purchase-orders/:id", requireAuth, requirePermission("purchaseOr
   }
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const po = await prisma.purchaseOrder.delete({ where: { id } }).catch(() => null);
-  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
-  res.json({ success: true });
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid purchase order id" });
+    return;
+  }
+
+  const existing = await prisma.purchaseOrder.findUnique({ where: { id } });
+  if (!existing) {
+    res.status(404).json({ error: "Purchase order not found" });
+    return;
+  }
+
+  const user = (req as { user?: { branchId: number | null } }).user;
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
+
+  try {
+    const deleted = await deletePurchaseOrderById(id, logBranchId);
+    if (!deleted) {
+      res.status(404).json({ error: "Purchase order not found" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (e: unknown) {
+    if (e instanceof PurchaseOrderDeleteBlockedError) {
+      res.status(409).json({ error: e.message });
+      return;
+    }
+    const msg = e instanceof Error ? e.message : "Failed to delete purchase order";
+    res.status(500).json({ error: msg });
+  }
 });
 
 router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purchaseOrders", "update"), async (req, res): Promise<void> => {

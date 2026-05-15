@@ -5,6 +5,75 @@ import { isPartnerPortalUser } from "@/lib/partner";
 
 export type PermissionUiAction = keyof PermissionSet;
 
+/** All ERP modules — keep in sync with backend PERMISSION_MODULE_KEYS. */
+export const PERMISSION_MODULES: { key: string; label: string }[] = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "users", label: "Users" },
+  { key: "roles", label: "Roles" },
+  { key: "branches", label: "Branches" },
+  { key: "categories", label: "Categories" },
+  { key: "products", label: "Products" },
+  { key: "inventory", label: "Inventory" },
+  { key: "orders", label: "Orders" },
+  { key: "deliveries", label: "Deliveries" },
+  { key: "invoices", label: "Invoices" },
+  { key: "payments", label: "Payments" },
+  { key: "reports", label: "Reports" },
+  { key: "suppliers", label: "Suppliers" },
+  { key: "manufacturers", label: "Manufacturers" },
+  { key: "purchaseOrders", label: "Purchase orders" },
+  { key: "settings", label: "Settings" },
+];
+
+export function emptyPermissionsMatrix(): Record<string, PermissionSet> {
+  const row: PermissionSet = { view: false, add: false, edit: false, delete: false };
+  return Object.fromEntries(PERMISSION_MODULES.map(({ key }) => [key, { ...row }]));
+}
+
+/** Normalize API/DB permissions into the UI matrix (read↔view, create↔add, update↔edit). */
+export function permissionsToFormMatrix(
+  raw: Record<string, unknown> | null | undefined,
+): Record<string, PermissionSet> {
+  const out = emptyPermissionsMatrix();
+  if (!raw || typeof raw !== "object") return out;
+  for (const { key } of PERMISSION_MODULES) {
+    const slice = raw[key];
+    if (!slice || typeof slice !== "object") continue;
+    const r = slice as Record<string, unknown>;
+    out[key] = {
+      view: !!(r.view ?? r.read),
+      add: !!(r.add ?? r.create),
+      edit: !!(r.edit ?? r.update),
+      delete: !!r.delete,
+    };
+  }
+  return out;
+}
+
+/** Coerce listRoles response (array or `{ data }`) into a role array. */
+export function coerceRoleList(data: unknown): { id: number; name: string; permissions?: Record<string, unknown> }[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && Array.isArray((data as { data?: unknown }).data)) {
+    return (data as { data: { id: number; name: string; permissions?: Record<string, unknown> }[] }).data;
+  }
+  return [];
+}
+
+export function countGrantedPermissions(matrix: Record<string, PermissionSet | undefined> | null | undefined): {
+  modules: number;
+  actions: number;
+} {
+  const normalized = permissionsToFormMatrix(matrix as Record<string, unknown> | undefined);
+  let actions = 0;
+  let modules = 0;
+  for (const row of Object.values(normalized)) {
+    const n = (row.view ? 1 : 0) + (row.add ? 1 : 0) + (row.edit ? 1 : 0) + (row.delete ? 1 : 0);
+    if (n > 0) modules += 1;
+    actions += n;
+  }
+  return { modules, actions };
+}
+
 /** Single module slice from DB (supports view/add/edit/delete or read/create/update/delete). */
 function normalizeSlice(slice: unknown): PermissionSet | null {
   if (!slice || typeof slice !== "object") return null;

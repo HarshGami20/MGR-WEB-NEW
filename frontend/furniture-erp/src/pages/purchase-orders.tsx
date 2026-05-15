@@ -5,6 +5,7 @@ import {
   useListPurchaseOrders, 
   useCreatePurchaseOrder, 
   useUpdatePurchaseOrderStatus,
+  useDeletePurchaseOrder,
   useListSuppliers,
   useListManufacturers,
   useListProducts,
@@ -92,6 +93,21 @@ export default function PurchaseOrders() {
         queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
         toast({ title: "PO status updated" });
       },
+    },
+  });
+
+  const deletePO = useDeletePurchaseOrder({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+        toast({ title: "Purchase order deleted" });
+      },
+      onError: (e: { data?: { error?: string }; message?: string }) =>
+        toast({
+          title: "Delete failed",
+          description: e?.data?.error ?? e?.message,
+          variant: "destructive",
+        }),
     },
   });
 
@@ -236,8 +252,41 @@ export default function PurchaseOrders() {
             "—"
           ),
       },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[60px]", cellClassName: "text-right" },
+        cell: ({ row }) => {
+          const po = row.original;
+          if (!can("purchaseOrders", "delete")) return null;
+          return (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+              aria-label={`Delete ${po.poNumber}`}
+              disabled={deletePO.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Delete purchase order ${po.poNumber}?${
+                      po.status === "delivered"
+                        ? " Stock added on delivery will be reversed."
+                        : ""
+                    }`,
+                  )
+                ) {
+                  deletePO.mutate({ id: po.id });
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          );
+        },
+      },
     ],
-    [can, getStatusBadge, updateStatus],
+    [can, deletePO, getStatusBadge, updateStatus],
   );
 
   return (

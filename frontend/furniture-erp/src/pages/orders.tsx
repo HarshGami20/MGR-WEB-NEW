@@ -228,13 +228,21 @@ export default function Orders() {
 
     const results = await Promise.allSettled(idsToDelete.map((id) => deleteOrder.mutateAsync({ id })));
     const ok = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.length - ok;
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     if (ok > 0) {
       setSelectedOrderIds([]);
       toast({ title: singleDeleteOrderId != null ? "Order deleted successfully" : `${ok} order(s) deleted` });
     }
-    if (failed > 0) {
-      toast({ title: `${failed} deletion(s) failed`, variant: "destructive" });
+    if (failed.length > 0) {
+      const firstErr = failed[0]?.reason as { data?: { error?: string }; message?: string } | undefined;
+      const detail =
+        firstErr?.data?.error ??
+        (typeof firstErr?.message === "string" ? firstErr.message : undefined);
+      toast({
+        title: `${failed.length} deletion(s) failed`,
+        description: detail,
+        variant: "destructive",
+      });
     }
     setDeleteConfirmOpen(false);
     setDeleteInput("");

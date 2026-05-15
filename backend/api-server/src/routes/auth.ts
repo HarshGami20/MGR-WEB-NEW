@@ -4,6 +4,14 @@ import { comparePassword, signToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
+import { normalizePermissionsForUi } from "../lib/permissions";
+
+async function loadRoleForClient(roleId: number | null | undefined) {
+  if (roleId == null) return null;
+  const r = await prisma.role.findUnique({ where: { id: roleId } });
+  if (!r) return null;
+  return { ...r, permissions: normalizePermissionsForUi(JSON.parse(r.permissions)) };
+}
 import { z } from "zod";
 import multer from "multer";
 import fs from "node:fs";
@@ -62,11 +70,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
   const token = signToken({ userId: user.id, roleId: user.roleId });
-  let role: any = null;
-  if (user.roleId) {
-    const r = await prisma.role.findUnique({ where: { id: user.roleId } });
-    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
-  }
+  const role = await loadRoleForClient(user.roleId);
   const publicUser = await loadUserPublicById(user.id);
   if (!publicUser) {
     res.status(401).json({ error: "Invalid credentials" });
@@ -81,11 +85,7 @@ router.post("/auth/logout", (_req, res): void => {
 
 router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
   const user = (req as any).user;
-  let role: any = null;
-  if (user.roleId) {
-    const r = await prisma.role.findUnique({ where: { id: user.roleId } });
-    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
-  }
+  const role = await loadRoleForClient(user.roleId);
   const publicUser = await loadUserPublicById(user.id);
   if (!publicUser) {
     res.status(401).json({ error: "Unauthorized" });
@@ -131,11 +131,7 @@ router.patch("/auth/me", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  let role: any = null;
-  if (publicUser.roleId) {
-    const r = await prisma.role.findUnique({ where: { id: publicUser.roleId } });
-    if (r) role = { ...r, permissions: JSON.parse(r.permissions) };
-  }
+  const role = await loadRoleForClient(publicUser.roleId);
   res.json({ ...publicUser, role });
 });
 

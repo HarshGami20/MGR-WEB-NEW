@@ -192,9 +192,17 @@ router.delete("/products/:productId/variants/:variantId", requireAuth, requirePe
     res.status(404).json({ error: "Variant not found" });
     return;
   }
-  await prisma.productVariant.delete({ where: { id: variantId } });
-  await syncProductStockFromVariants(productId);
-  res.json({ success: true });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.inventoryLog.deleteMany({ where: { variantId } });
+      await tx.productVariant.delete({ where: { id: variantId } });
+    });
+    await syncProductStockFromVariants(productId);
+    res.json({ success: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Failed to delete variant";
+    res.status(500).json({ error: msg });
+  }
 });
 
 export default router;

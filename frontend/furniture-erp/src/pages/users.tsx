@@ -28,7 +28,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { usePermissions } from "@/lib/permissions";
+import { coerceRoleList, usePermissions } from "@/lib/permissions";
 
 const userSchema = z
   .object({
@@ -129,7 +129,7 @@ export default function Users() {
     defaultValues: emptyForm,
   });
 
-  const roleRows = ((rolesData as any)?.data ?? (rolesData as any) ?? []) as { id: number; name: string }[];
+  const roleRows = coerceRoleList(rolesData) as { id: number; name: string }[];
   const roleIdWatch = form.watch("roleId");
   const selectedRoleIsSuperAdmin = useMemo(() => {
     const r = roleRows.find((x) => x.id === roleIdWatch);
@@ -354,9 +354,7 @@ export default function Users() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
-            {(rolesData as any)?.data?.map((r: any) => (
-              <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
-            )) ?? (rolesData as any)?.map?.((r: any) => (
+            {roleRows.map((r) => (
               <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
             ))}
           </SelectContent>
@@ -446,7 +444,7 @@ export default function Users() {
                           <SelectTrigger><SelectValue placeholder="Select Role" /></SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {((rolesData as any)?.data ?? (rolesData as any))?.map?.((r: any) => (
+                          {roleRows.map((r) => (
                             <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
                           ))}
                         </SelectContent>

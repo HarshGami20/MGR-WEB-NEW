@@ -2,11 +2,86 @@ import type { Request, Response, NextFunction } from "express";
 
 export type StdPermission = "read" | "create" | "update" | "delete";
 
+/** UI / OpenAPI permission shape (view, add, edit, delete). */
+export interface UiPermissionSet {
+  view: boolean;
+  add: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+/** All modules enforced in roles UI and seed — keep in sync with frontend PERMISSION_MODULES. */
+export const PERMISSION_MODULE_KEYS = [
+  "dashboard",
+  "users",
+  "roles",
+  "branches",
+  "categories",
+  "products",
+  "inventory",
+  "orders",
+  "deliveries",
+  "invoices",
+  "payments",
+  "reports",
+  "suppliers",
+  "manufacturers",
+  "purchaseOrders",
+  "settings",
+] as const;
+
+export type PermissionModuleKey = (typeof PERMISSION_MODULE_KEYS)[number];
+
 export interface NormalizedModulePerms {
   read: boolean;
   create: boolean;
   update: boolean;
   delete: boolean;
+}
+
+export function emptyUiPermissionsMatrix(): Record<PermissionModuleKey, UiPermissionSet> {
+  const row: UiPermissionSet = { view: false, add: false, edit: false, delete: false };
+  return Object.fromEntries(PERMISSION_MODULE_KEYS.map((k) => [k, { ...row }])) as Record<
+    PermissionModuleKey,
+    UiPermissionSet
+  >;
+}
+
+/** DB JSON (read/create/update/delete or view/add/edit/delete) → UI matrix for API responses. */
+export function normalizePermissionsForUi(raw: unknown): Record<string, UiPermissionSet> {
+  const out = emptyUiPermissionsMatrix() as Record<string, UiPermissionSet>;
+  if (!raw || typeof raw !== "object") return out;
+
+  for (const [mod, actions] of Object.entries(raw as Record<string, unknown>)) {
+    if (!actions || typeof actions !== "object") continue;
+    const a = actions as Record<string, unknown>;
+    out[mod] = {
+      view: !!(a.view ?? a.read),
+      add: !!(a.add ?? a.create),
+      edit: !!(a.edit ?? a.update),
+      delete: !!a.delete,
+    };
+  }
+  return out;
+}
+
+/** UI matrix from client → ensure every known module is present before persisting. */
+export function ensureFullUiPermissionsMatrix(
+  partial: Record<string, UiPermissionSet | undefined> | null | undefined,
+): Record<PermissionModuleKey, UiPermissionSet> {
+  const base = emptyUiPermissionsMatrix();
+  if (!partial || typeof partial !== "object") return base;
+  for (const key of PERMISSION_MODULE_KEYS) {
+    const slice = partial[key];
+    if (!slice || typeof slice !== "object") continue;
+    base[key] = {
+      view: !!slice.view,
+      add: !!slice.add,
+      edit: !!slice.edit,
+      delete: !!slice.delete,
+    };
+  }
+  return base;
 }
 
 /** Accepts Role JSON from DB — supports seed shape (read/create/update/delete) and UI shape (view/add/edit/delete). */

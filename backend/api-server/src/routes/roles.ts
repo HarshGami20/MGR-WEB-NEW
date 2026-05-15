@@ -1,12 +1,22 @@
 import { Router, IRouter } from "express";
 import { CreateRoleBody, GetRoleParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission } from "../lib/permissions";
+import { ensureFullUiPermissionsMatrix, normalizePermissionsForUi, requirePermission } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
 
 const router: IRouter = Router();
 
-const parseRole = (r: any) => ({ ...r, permissions: JSON.parse(r.permissions) });
+const parseRole = (r: { permissions: string; [key: string]: unknown }) => ({
+  ...r,
+  permissions: normalizePermissionsForUi(JSON.parse(r.permissions)),
+});
+
+function serializePermissions(body: { permissions?: Record<string, unknown> }): string {
+  const merged = ensureFullUiPermissionsMatrix(
+    body.permissions as Record<string, import("../lib/permissions").UiPermissionSet> | undefined,
+  );
+  return JSON.stringify(merged);
+}
 
 router.get("/roles", requireAuth, requirePermission("roles", "read"), async (_req, res): Promise<void> => {
   const roles = await prisma.role.findMany();
@@ -18,7 +28,7 @@ router.post("/roles", requireAuth, requirePermission("roles", "create"), async (
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const role = await prisma.role.create({ data: {
     name: parsed.data.name,
-    permissions: JSON.stringify(parsed.data.permissions),
+    permissions: serializePermissions(parsed.data),
   }});
   res.status(201).json(parseRole(role));
 });
@@ -38,7 +48,7 @@ router.put("/roles/:id", requireAuth, requirePermission("roles", "update"), asyn
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const role = await prisma.role.update({ where: { id }, data: {
     name: parsed.data.name,
-    permissions: JSON.stringify(parsed.data.permissions),
+    permissions: serializePermissions(parsed.data),
   }}).catch(() => null);
   if (!role) { res.status(404).json({ error: "Role not found" }); return; }
   res.json(parseRole(role));

@@ -170,6 +170,20 @@ async function replaceOrderAssignees(tx: Prisma.TransactionClient, orderId: numb
   });
 }
 
+/** Payments and invoices reference orders without DB cascade — remove them before deleting the order. */
+async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
+  const existing = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
+  if (!existing) return false;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.deleteMany({ where: { orderId } });
+    await tx.invoice.deleteMany({ where: { orderId } });
+    await tx.order.delete({ where: { id: orderId } });
+  });
+
+  return true;
+}
+
 async function enrichOrder(order: any) {
   const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
   const enrichedItems = await Promise.all(items.map(async (item) => {
@@ -963,9 +977,21 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
 router.delete("/orders/:id", requireAuth, requirePermission("orders", "delete"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const order = await prisma.order.delete({ where: { id } }).catch(() => null);
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  res.json({ success: true });
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid order id" });
+    return;
+  }
+  try {
+    const deleted = await deleteOrderWithDependents(id);
+    if (!deleted) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete order";
+    res.status(500).json({ error: msg });
+  }
 });
 
 router.patch(

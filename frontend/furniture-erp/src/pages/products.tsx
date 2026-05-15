@@ -94,8 +94,12 @@ export default function Products() {
         queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
         toast({ title: "Product deleted successfully" });
       },
-      onError: (e: any) =>
-        toast({ title: "Delete failed", description: e?.message, variant: "destructive" }),
+      onError: (e: { data?: { error?: string }; message?: string }) =>
+        toast({
+          title: "Delete failed",
+          description: e?.data?.error ?? e?.message,
+          variant: "destructive",
+        }),
     },
   });
 

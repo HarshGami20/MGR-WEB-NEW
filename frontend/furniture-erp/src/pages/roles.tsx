@@ -20,7 +20,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { usePermissions } from "@/lib/permissions";
+import {
+  PERMISSION_MODULES,
+  coerceRoleList,
+  countGrantedPermissions,
+  emptyPermissionsMatrix,
+  permissionsToFormMatrix,
+  usePermissions,
+} from "@/lib/permissions";
 
 const permissionSetSchema = z.object({
   view: z.boolean(),
@@ -36,33 +43,7 @@ const roleSchema = z.object({
 
 type RoleFormValues = z.infer<typeof roleSchema>;
 
-/** Must match backend `requirePermission` module keys and seed JSON. */
-const ROLE_MODULES: { key: string; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "users", label: "Users" },
-  { key: "roles", label: "Roles" },
-  { key: "branches", label: "Branches" },
-  { key: "categories", label: "Categories" },
-  { key: "products", label: "Products" },
-  { key: "inventory", label: "Inventory" },
-  { key: "orders", label: "Orders" },
-  { key: "deliveries", label: "Deliveries" },
-  { key: "invoices", label: "Invoices" },
-  { key: "payments", label: "Payments" },
-  { key: "reports", label: "Reports" },
-  { key: "suppliers", label: "Suppliers" },
-  { key: "manufacturers", label: "Manufacturers" },
-  { key: "purchaseOrders", label: "Purchase orders" },
-  { key: "settings", label: "Settings" },
-];
-
-const DEFAULT_PERMISSIONS = ROLE_MODULES.reduce(
-  (acc, { key }) => {
-    acc[key] = { view: false, add: false, edit: false, delete: false };
-    return acc;
-  },
-  {} as Record<string, { view: boolean; add: boolean; edit: boolean; delete: boolean }>
-);
+const DEFAULT_PERMISSIONS = emptyPermissionsMatrix();
 
 export default function Roles() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -125,7 +106,7 @@ export default function Roles() {
     form.reset({
       name: role.name,
       // Merge existing permissions with defaults to ensure all modules exist
-      permissions: { ...DEFAULT_PERMISSIONS, ...(role.permissions || {}) },
+      permissions: permissionsToFormMatrix(role.permissions as Record<string, unknown>),
     });
     setIsDialogOpen(true);
   };
@@ -144,7 +125,7 @@ export default function Roles() {
     }
   };
 
-  const rolesList = (Array.isArray(rolesData) ? rolesData : (rolesData as any)?.data ?? []) as any[];
+  const rolesList = coerceRoleList(rolesData) as any[];
 
   const columns = useMemo<ColumnDef<(typeof rolesList)[number]>[]>(
     () => [
@@ -156,11 +137,14 @@ export default function Roles() {
       {
         id: "overview",
         header: "Permissions Overview",
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            Custom configuration across {Object.keys(row.original.permissions || {}).length} modules
-          </span>
-        ),
+        cell: ({ row }) => {
+          const { modules, actions } = countGrantedPermissions(row.original.permissions);
+          return (
+            <span className="text-sm text-muted-foreground">
+              {modules} modules · {actions} permissions enabled
+            </span>
+          );
+        },
       },
       {
         id: "actions",
@@ -245,7 +229,7 @@ export default function Roles() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {ROLE_MODULES.map(({ key, label }) => (
+                      {PERMISSION_MODULES.map(({ key, label }) => (
                         <TableRow key={key}>
                           <TableCell className="font-medium">{label}</TableCell>
                           {["view", "add", "edit", "delete"].map((action) => (

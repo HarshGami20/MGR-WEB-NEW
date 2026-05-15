@@ -12,6 +12,40 @@ import path from "node:path";
 
 const router: IRouter = Router();
 
+class ProductDeleteBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProductDeleteBlockedError";
+  }
+}
+
+/** Inventory logs block product delete; order/PO line items must be removed manually. */
+async function deleteProductWithDependents(productId: number): Promise<void> {
+  const existing = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+  if (!existing) {
+    throw Object.assign(new Error("Product not found"), { code: "NOT_FOUND" });
+  }
+
+  const [orderItemCount, poItemCount] = await Promise.all([
+    prisma.orderItem.count({ where: { productId } }),
+    prisma.purchaseOrderItem.count({ where: { productId } }),
+  ]);
+
+  if (orderItemCount > 0 || poItemCount > 0) {
+    const parts: string[] = [];
+    if (orderItemCount > 0) parts.push(`${orderItemCount} order line item(s)`);
+    if (poItemCount > 0) parts.push(`${poItemCount} purchase order line item(s)`);
+    throw new ProductDeleteBlockedError(
+      `Cannot delete this product: it is referenced by ${parts.join(" and ")}. Remove those references first.`,
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.inventoryLog.deleteMany({ where: { productId } });
+    await tx.product.delete({ where: { id: productId } });
+  });
+}
+
 const productImageUploadDir = path.resolve(process.cwd(), "uploads", "products");
 if (!fs.existsSync(productImageUploadDir)) fs.mkdirSync(productImageUploadDir, { recursive: true });
 
@@ -357,12 +391,21 @@ router.delete("/products/:id", requireAuth, requirePermission("products", "delet
     return;
   }
   const id = params.data.id;
-  const product = await prisma.product.delete({ where: { id } }).catch(() => null);
-  if (!product) {
-    res.status(404).json({ error: "Product not found" });
-    return;
+  try {
+    await deleteProductWithDependents(id);
+    res.json({ success: true });
+  } catch (e: unknown) {
+    if (e instanceof ProductDeleteBlockedError) {
+      res.status(409).json({ error: e.message });
+      return;
+    }
+    const err = e as { code?: string; message?: string };
+    if (err?.code === "NOT_FOUND") {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+    res.status(500).json({ error: err?.message ?? "Failed to delete product" });
   }
-  res.json({ success: true });
 });
 
 export default router;
