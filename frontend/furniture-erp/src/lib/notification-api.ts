@@ -1,4 +1,5 @@
 import { customFetch } from "@/api-client/custom-fetch";
+import { pushLog } from "@/lib/push-notification-log";
 
 export type NotificationRow = {
   recipientId: string;
@@ -51,6 +52,10 @@ export async function saveFcmToken(body: {
   platform: "web";
   deviceId?: string | null;
 }): Promise<void> {
+  pushLog("debug", "api_token_save", "POST /api/notifications/fcm-token", {
+    platform: body.platform,
+    tokenLength: body.token.length,
+  });
   await customFetch("/api/notifications/fcm-token", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -68,5 +73,23 @@ export type TestWebPushResponse = {
 
 /** Ask the server to send an FCM notification to this browser’s saved token(s). */
 export async function sendTestWebPush(): Promise<TestWebPushResponse> {
-  return customFetch<TestWebPushResponse>("/api/notifications/test-web-push", { method: "POST" });
+  pushLog("info", "api_test_push", "POST /api/notifications/test-web-push");
+  const res = await customFetch<TestWebPushResponse>("/api/notifications/test-web-push", { method: "POST" });
+  pushLog(res.ok ? "info" : "warn", "api_test_push_result", res.ok ? "Test push accepted by server" : (res.error ?? "Failed"), res);
+  return res;
+}
+
+export type ServerPushLogRow = {
+  id: string;
+  userId: number | null;
+  notificationId: string | null;
+  channel: string;
+  status: string;
+  detail: unknown;
+  createdAt: string;
+};
+
+export async function getServerPushLogs(limit = 50): Promise<{ data: ServerPushLogRow[] }> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  return customFetch<{ data: ServerPushLogRow[] }>(`/api/notifications/push-logs?${qs}`);
 }

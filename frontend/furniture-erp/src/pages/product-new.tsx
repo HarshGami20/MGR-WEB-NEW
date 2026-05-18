@@ -15,6 +15,7 @@ import { usePermissions } from "@/lib/permissions";
 import { CategoryPickerWithManage, resolveLeafCategoryId, type CategoryRoot } from "@/components/category-picker-with-manage";
 import {
   attrsToJson,
+  variantImagesToApi,
   emptyVariantDraft,
   AttributesEditorBlock,
   productNewSchema,
@@ -23,7 +24,7 @@ import {
 } from "@/pages/products-shared";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { ProductImageField } from "@/components/product-image-field";
+import { ProductImagesField } from "@/components/product-images-field";
 
 type ProductFormValues = ProductNewFormValues;
 
@@ -65,7 +66,8 @@ export default function ProductNew() {
       gstPercent: 18,
       lowStockThreshold: 10,
       inventoryMode: "simple",
-      imageUrl: "",
+      imageUrls: [],
+      attributes: [],
       variants: [],
     },
   });
@@ -88,25 +90,26 @@ export default function ProductNew() {
         name: data.name,
         sku: data.sku,
         categoryId: leafId,
-        imageUrl:
-          data.inventoryMode === "simple" ? ((data.imageUrl && data.imageUrl.trim()) || null) : null,
+        imageUrls: data.imageUrls.length > 0 ? data.imageUrls : undefined,
+        imageUrl: data.imageUrls[0] ?? null,
         price: data.inventoryMode === "variants" ? 0 : data.price,
         gstPercent: data.gstPercent,
         lowStockThreshold: data.lowStockThreshold,
         description: (data.description && data.description.trim()) || null,
         inventoryMode: data.inventoryMode,
+        attributes: data.inventoryMode === "simple" ? attrsToJson(data.attributes) : null,
         initialVariants:
           data.inventoryMode === "variants" && data.variants.length > 0
             ? data.variants.map((v) => ({
                 name: v.name,
                 sku: v.sku,
-                imageUrl: (v.imageUrl && v.imageUrl.trim()) || null,
+                ...variantImagesToApi(v),
                 price: v.price == null ? null : Number(v.price),
                 lowStockThreshold: v.lowStockThreshold,
                 attributes: attrsToJson(v.attributes),
               }))
             : undefined,
-      },
+      } as any,
     });
   };
 
@@ -232,7 +235,7 @@ export default function ProductNew() {
                           if (v === "simple") {
                             form.setValue("variants", []);
                           } else {
-                            form.setValue("imageUrl", "");
+                            form.setValue("attributes", []);
                             form.setValue("price", 0);
                           }
                         }}
@@ -274,32 +277,39 @@ export default function ProductNew() {
               />
             </div>
 
+            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-2">
+              <p className="text-sm font-semibold text-foreground">Product photos</p>
+              <p className="text-xs text-muted-foreground">Add one or more images. The first photo is the main thumbnail.</p>
+              <FormField
+                control={form.control}
+                name="imageUrls"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <ProductImagesField value={field.value ?? []} onChange={field.onChange} label="Catalog photos" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             {inventoryMode === "simple" && (
-              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-2">
-                <p className="text-sm font-semibold text-foreground">Product image</p>
-                <FormField
-                  control={form.control}
-                  name="imageUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <ProductImageField
-                          value={field.value ?? ""}
-                          onChange={field.onChange}
-                          label="Catalog photo"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Product variables</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Size, colour, fabric, and other specs for this single SKU (optional).
+                  </p>
+                </div>
+                <AttributesEditorBlock control={form.control} namePrefix="attributes" />
               </div>
             )}
 
             {inventoryMode === "simple" && (
               <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
                 <p className="text-sm font-semibold text-foreground">Pricing</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 pricing-fields">
                   <FormField
                     control={form.control}
                     name="price"
@@ -470,11 +480,15 @@ export default function ProductNew() {
                         </div>
                         <FormField
                           control={form.control}
-                          name={`variants.${vidx}.imageUrl`}
+                          name={`variants.${vidx}.imageUrls`}
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <ProductImageField value={field.value ?? ""} onChange={field.onChange} label="Variant image" />
+                                <ProductImagesField
+                                  value={Array.isArray(field.value) ? field.value : []}
+                                  onChange={(urls) => field.onChange(urls)}
+                                  label="Variant photos"
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>

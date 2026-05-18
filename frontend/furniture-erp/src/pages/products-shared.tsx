@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateProductVariant,
@@ -23,7 +23,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ProductImageField } from "@/components/product-image-field";
+import { ProductImagesField } from "@/components/product-images-field";
+import { variantImageList } from "@/lib/image-urls";
 
 export function flattenCategoryRoots(roots: unknown[]): { id: number; name: string; parentId?: number | null }[] {
   const out: { id: number; name: string; parentId?: number | null }[] = [];
@@ -42,8 +43,7 @@ export function flattenCategoryRoots(roots: unknown[]): { id: number; name: stri
 const variantObjectSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200, "Use at most 200 characters"),
   sku: z.string().trim().min(1, "SKU is required").max(80, "SKU must be 80 characters or less"),
-  /** Optional path returned from upload endpoint */
-  imageUrl: z.string().max(500).optional(),
+  imageUrls: z.array(z.string()).default([]),
   price: z.coerce.number().nullable().optional(),
   stockQty: z.coerce.number().int().min(0, "Must be ≥ 0"),
   lowStockThreshold: z.coerce.number().int().min(0),
@@ -51,29 +51,19 @@ const variantObjectSchema = z.object({
   attributes: z.array(z.object({ key: z.string(), value: z.string() })),
 });
 
-function refineVariantImageUrl(data: z.infer<typeof variantObjectSchema>, ctx: z.RefinementCtx) {
-  refineOptionalImageUrlField(data.imageUrl, ["imageUrl"], ctx);
-}
-
-export const variantSchema = variantObjectSchema.superRefine(refineVariantImageUrl);
+export const variantSchema = variantObjectSchema;
 export type VariantFormValues = z.infer<typeof variantSchema>;
 
 const variantDraftObjectSchema = variantObjectSchema.omit({ isActive: true });
 
-function refineVariantDraftImageUrl(data: z.infer<typeof variantDraftObjectSchema>, ctx: z.RefinementCtx) {
-  refineOptionalImageUrlField(data.imageUrl, ["imageUrl"], ctx);
-}
-
-export const variantDraftSchema = variantDraftObjectSchema.superRefine(refineVariantDraftImageUrl);
+export const variantDraftSchema = variantDraftObjectSchema;
 
 export type VariantDraftFormValues = z.infer<typeof variantDraftSchema>;
 
 /** Edit/create form row — `variantId` set when syncing an existing API variant */
-export const variantDraftWithPersistedIdSchema = variantDraftObjectSchema
-  .extend({
-    variantId: z.number().optional(),
-  })
-  .superRefine(refineVariantDraftImageUrl);
+export const variantDraftWithPersistedIdSchema = variantDraftObjectSchema.extend({
+  variantId: z.number().optional(),
+});
 export type VariantDraftWithPersistedId = z.infer<typeof variantDraftWithPersistedIdSchema>;
 
 export const MAX_PRODUCT_PRICE = 999_999_999.99;
@@ -131,8 +121,42 @@ const baseProductFormFields = {
     .min(0, "Must be ≥ 0")
     .max(999_999_999, "Value is too large"),
   inventoryMode: z.enum(["simple", "variants"]),
-  imageUrl: z.string().max(500).optional(),
+  imageUrls: z.array(z.string()).default([]),
+  attributes: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
 };
+
+function refineAttributeRows(
+  attrs: { key: string; value: string }[],
+  pathPrefix: (string | number)[],
+  ctx: z.RefinementCtx,
+) {
+  attrs.forEach((attr, ai) => {
+    const k = attr.key.trim();
+    const val = attr.value.trim();
+    if (k && !val) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter a value or remove the attribute row",
+        path: [...pathPrefix, ai, "value"],
+      });
+    }
+    if (!k && val) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter an attribute name or clear the value",
+        path: [...pathPrefix, ai, "key"],
+      });
+    }
+  });
+}
+
+export function refineSimpleProductAttributes(
+  data: { inventoryMode: "simple" | "variants"; attributes: { key: string; value: string }[] },
+  ctx: z.RefinementCtx,
+) {
+  if (data.inventoryMode !== "simple") return;
+  refineAttributeRows(data.attributes, ["attributes"], ctx);
+}
 
 export function refineProductFormVariantRows(
   data: {
@@ -141,7 +165,7 @@ export function refineProductFormVariantRows(
     variants: Array<{
       name: string;
       sku: string;
-      imageUrl?: string;
+      imageUrls?: string[];
       price?: number | null;
       lowStockThreshold: number;
       attributes: { key: string; value: string }[];
@@ -236,8 +260,18 @@ export function refineProductFormVariantRows(
       }
     });
 
-    refineOptionalImageUrlField(v.imageUrl, ["variants", i, "imageUrl"], ctx);
+    (v.imageUrls ?? []).forEach((url, ui) => {
+      refineOptionalImageUrlField(url, ["variants", i, "imageUrls", ui], ctx);
+    });
   });
+}
+
+export function variantImagesToApi(v: { imageUrls?: string[] | null }): {
+  imageUrls?: string[];
+  imageUrl: string | null;
+} {
+  const urls = (v.imageUrls ?? []).map((u) => u.trim()).filter(Boolean);
+  return { imageUrls: urls.length > 0 ? urls : undefined, imageUrl: urls[0] ?? null };
 }
 
 export const productNewObjectSchema = z.object({
@@ -245,11 +279,14 @@ export const productNewObjectSchema = z.object({
   variants: z.array(variantDraftSchema),
 });
 
+function refineProductImageUrls(urls: string[], ctx: z.RefinementCtx) {
+  urls.forEach((url, i) => refineOptionalImageUrlField(url, ["imageUrls", i], ctx));
+}
+
 export const productNewSchema = productNewObjectSchema.superRefine((data, ctx) => {
   refineProductFormVariantRows(data, ctx);
-  if (data.inventoryMode === "simple") {
-    refineOptionalImageUrlField(data.imageUrl, ["imageUrl"], ctx);
-  }
+  refineSimpleProductAttributes(data, ctx);
+  refineProductImageUrls(data.imageUrls ?? [], ctx);
 });
 
 export const productEditObjectSchema = z.object({
@@ -259,9 +296,8 @@ export const productEditObjectSchema = z.object({
 
 export const productEditSchema = productEditObjectSchema.superRefine((data, ctx) => {
   refineProductFormVariantRows(data, ctx);
-  if (data.inventoryMode === "simple") {
-    refineOptionalImageUrlField(data.imageUrl, ["imageUrl"], ctx);
-  }
+  refineSimpleProductAttributes(data, ctx);
+  refineProductImageUrls(data.imageUrls ?? [], ctx);
 });
 
 export type ProductNewFormValues = z.infer<typeof productNewObjectSchema>;
@@ -272,7 +308,7 @@ export function productVariantToDraftRow(v: ProductVariant): VariantDraftWithPer
     variantId: v.id,
     name: v.name,
     sku: v.sku,
-    imageUrl: v.imageUrl ?? "",
+    imageUrls: variantImageList(v as { imageUrls?: string | string[] | null; imageUrl?: string | null }),
     price: v.price ?? undefined,
     stockQty: v.stockQty,
     lowStockThreshold: v.lowStockThreshold,
@@ -283,7 +319,7 @@ export function productVariantToDraftRow(v: ProductVariant): VariantDraftWithPer
 export const emptyVariantDraft: VariantDraftFormValues = {
   name: "",
   sku: "",
-  imageUrl: "",
+  imageUrls: [],
   price: undefined,
   stockQty: 0,
   lowStockThreshold: 10,
@@ -293,7 +329,7 @@ export const emptyVariantDraft: VariantDraftFormValues = {
 export const emptyVariantForm: VariantFormValues = {
   name: "",
   sku: "",
-  imageUrl: "",
+  imageUrls: [],
   price: undefined,
   stockQty: 0,
   lowStockThreshold: 10,
@@ -567,25 +603,37 @@ export function VariantFormDialog({
 
   const form = useForm<VariantFormValues>({
     resolver: zodResolver(variantSchema),
-    defaultValues: editingVariant
-      ? {
-          name: editingVariant.name,
-          sku: editingVariant.sku,
-          imageUrl: editingVariant.imageUrl ?? "",
-          price: editingVariant.price ?? undefined,
-          stockQty: editingVariant.stockQty,
-          lowStockThreshold: editingVariant.lowStockThreshold ?? 10,
-          isActive: editingVariant.isActive,
-          attributes: jsonToAttrs(editingVariant.attributes),
-        }
-      : { ...emptyVariantForm, sku: `${parentSku}-V${Date.now().toString().slice(-4)}` },
+    defaultValues: { ...emptyVariantForm },
   });
 
+  useEffect(() => {
+    if (!open) return;
+    if (editingVariant) {
+      form.reset({
+        name: editingVariant.name,
+        sku: editingVariant.sku,
+        imageUrls: variantImageList(editingVariant),
+        price: editingVariant.price ?? undefined,
+        stockQty: editingVariant.stockQty,
+        lowStockThreshold: editingVariant.lowStockThreshold ?? 10,
+        isActive: editingVariant.isActive,
+        attributes: jsonToAttrs(editingVariant.attributes),
+      });
+    } else {
+      form.reset({
+        ...emptyVariantForm,
+        sku: `${parentSku}-V${Date.now().toString().slice(-4)}`,
+      });
+    }
+  }, [open, editingVariant, parentSku, form]);
+
   const onSubmit = (data: VariantFormValues) => {
+    const imgs = variantImagesToApi(data);
     const payload: CreateProductVariantBody = {
       name: data.name,
       sku: data.sku,
-      imageUrl: (data.imageUrl && data.imageUrl.trim()) || null,
+      imageUrl: imgs.imageUrl,
+      imageUrls: imgs.imageUrls,
       price: data.price ?? null,
       stockQty: data.stockQty,
       lowStockThreshold: data.lowStockThreshold,
@@ -593,7 +641,7 @@ export function VariantFormDialog({
       attributes: attrsToJson(data.attributes),
     };
     if (editingVariant) {
-      updateVariant.mutate({ productId, variantId: editingVariant.id, data: payload as UpdateProductVariantBody });
+      updateVariant.mutate({ productId, variantId: editingVariant.id, data: payload });
     } else {
       createVariant.mutate({ productId, data: payload });
     }
@@ -638,11 +686,15 @@ export function VariantFormDialog({
 
             <FormField
               control={form.control}
-              name="imageUrl"
+              name="imageUrls"
               render={({ field }) => (
                 <FormItem>
                   <FormControl>
-                    <ProductImageField value={field.value ?? ""} onChange={field.onChange} label="Variant image" />
+                    <ProductImagesField
+                      value={Array.isArray(field.value) ? field.value : []}
+                      onChange={(urls) => field.onChange(urls)}
+                      label="Variant photos"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

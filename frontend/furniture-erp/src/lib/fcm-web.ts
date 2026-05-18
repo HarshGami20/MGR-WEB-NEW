@@ -1,7 +1,7 @@
 import { initializeApp, type FirebaseApp, getApps } from "firebase/app";
 import { getMessaging, getToken, isSupported, onMessage, type Messaging } from "firebase/messaging";
 import { saveFcmToken } from "@/lib/notification-api";
-import { notifyDebug, notifyWarn } from "@/lib/notification-debug";
+import { pushLog } from "@/lib/push-notification-log";
 
 /** Dotenv / Vite sometimes leaves wrapping quotes on values. */
 function envStr(key: keyof ImportMetaEnv): string | undefined {
@@ -63,26 +63,29 @@ function ensureFirebaseApp(): FirebaseApp | null {
  * Registers FCM web token with the API when env is complete and permission granted.
  */
 export async function registerWebPush(): Promise<void> {
-  notifyDebug("registerWebPush: starting");
+  pushLog("debug", "register_start", "Starting web push registration");
   if (!(await isSupported())) {
-    notifyWarn("registerWebPush: Firebase messaging not supported in this browser");
+    pushLog("warn", "unsupported", "Firebase messaging not supported in this browser");
     return;
   }
   const cfg = firebaseConfigFromEnv();
   const vapidKey = envStr("VITE_FIREBASE_VAPID_KEY");
   const fb = ensureFirebaseApp();
   if (!fb || !cfg || !vapidKey) {
-    notifyDebug("registerWebPush: skipped (missing firebase env or VAPID)");
+    pushLog("debug", "register_skip", "Skipped — missing Firebase env or VAPID key");
     return;
   }
 
   if (looksLikeInvalidVapidKey(vapidKey)) {
-    notifyWarn(
-      "VITE_FIREBASE_VAPID_KEY looks wrong (e.g. Google Analytics `G-...`). " +
-        "Use Firebase Console → Cloud Messaging → Web Push certificates → Key pair.",
+    pushLog(
+      "warn",
+      "invalid_vapid",
+      "VITE_FIREBASE_VAPID_KEY looks invalid (use Firebase Web Push key pair, not G- analytics ID)",
     );
     return;
   }
+
+  pushLog("debug", "permission", `Notification.permission = ${Notification.permission}`);
 
   try {
     const reg =
@@ -92,25 +95,60 @@ export async function registerWebPush(): Promise<void> {
     await navigator.serviceWorker.ready;
     const active = reg.active ?? reg.installing ?? reg.waiting;
     active?.postMessage({ type: "INIT_FIREBASE", config: cfg });
+    pushLog("info", "sw_ready", "Service worker registered", {
+      scope: reg.scope,
+      state: active?.state,
+    });
 
     messaging = getMessaging(fb);
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
-    console.log("token", token);
     if (!token) {
-      notifyWarn("getToken returned empty — check VAPID key and Firebase Web app config.");
+      pushLog("warn", "token_empty", "getToken returned empty — check VAPID and Firebase web app config");
       return;
     }
 
-    notifyDebug("FCM token obtained, registering with API", { tokenLength: token.length });
+    pushLog("info", "token_obtained", "FCM token obtained", { tokenLength: token.length });
     await saveFcmToken({ token, platform: "web", deviceId: "web" });
-    notifyDebug("FCM token saved to backend");
+    pushLog("info", "token_saved", "FCM token saved to backend");
   } catch (e) {
-    notifyWarn("registerWebPush failed:", e);
+    pushLog("error", "register_failed", e instanceof Error ? e.message : String(e), e);
+  }
+}
+
+export type FcmMessagePayload = {
+  notification?: { title?: string; body?: string };
+  data?: Record<string, string>;
+};
+
+/**
+ * Chrome does not auto-show OS banners when the ERP tab is focused — FCM uses `onMessage` instead.
+ * Call this to still show a system notification via the service worker (same as background path).
+ */
+export async function showSystemNotification(payload: FcmMessagePayload): Promise<void> {
+  if (typeof window === "undefined" || Notification.permission !== "granted") {
+    pushLog("debug", "system_notification_skip", "Skipped OS banner — permission not granted");
+    return;
+  }
+
+  const title = payload.notification?.title ?? "Notification";
+  const body = payload.notification?.body ?? "";
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(title, {
+      body,
+      data: payload.data ?? {},
+      tag: payload.data?.type ?? title,
+      requireInteraction: false,
+    });
+    pushLog("info", "system_notification", "OS notification shown (foreground fallback)", { title, body });
+  } catch (e) {
+    pushLog("warn", "system_notification_failed", e instanceof Error ? e.message : String(e), e);
   }
 }
 
 export function onForegroundMessage(
-  cb: (payload: { notification?: { title?: string; body?: string }; data?: Record<string, string> }) => void,
+  cb: (payload: FcmMessagePayload) => void,
 ): (() => void) | null {
   const fb = ensureFirebaseApp();
   if (!fb) return null;
@@ -121,5 +159,12 @@ export function onForegroundMessage(
       return null;
     }
   }
-  return onMessage(messaging, (payload) => cb(payload));
+  return onMessage(messaging, (payload) => {
+    pushLog("info", "foreground_message", "FCM message while tab is focused", {
+      title: payload.notification?.title,
+      body: payload.notification?.body,
+      data: payload.data,
+    });
+    cb(payload);
+  });
 }

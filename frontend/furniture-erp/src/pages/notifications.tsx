@@ -12,6 +12,8 @@ import {
   type NotificationRow,
 } from "@/lib/notification-api";
 import { formatDistanceToNow } from "date-fns";
+import { WebPushLogPanel } from "@/components/web-push-log-panel";
+import { ServerPushLogPanel } from "@/components/server-push-log-panel";
 
 const PAGE_SIZE = 25;
 
@@ -135,6 +137,20 @@ export default function NotificationsPage() {
               ) : null}
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Web push debug</CardTitle>
+          <CardDescription>
+            Browser events (token, foreground, service worker) and server FCM delivery records.
+            Set <code className="text-xs">VITE_DEBUG_NOTIFICATIONS=true</code> for verbose console logs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-4">
+          <WebPushLogPanel />
+          <ServerPushLogPanel />
         </CardContent>
       </Card>
     </div>

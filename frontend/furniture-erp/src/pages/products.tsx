@@ -16,19 +16,23 @@ import type { CategoryRoot } from "@/components/category-picker-with-manage";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { formatInr } from "@/lib/format-currency";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
+import { productImageList, variantImageList } from "@/lib/image-urls";
 
 type ProductRow = Record<string, any>;
 
 function ProductNameCell({ product }: { product: ProductRow }) {
-  const hasProductImage = Boolean(product.imageUrl && String(product.imageUrl).trim());
+  const gallery = productImageList(product);
+  const hasProductImage = gallery.length > 0;
   const hasVariants = Number(product.variantCount ?? 0) > 0;
   const { data: variantsData } = useListProductVariants(product.id, {
     query: { enabled: !hasProductImage && hasVariants },
   });
 
   const variantFallback =
-    Array.isArray(variantsData) && variantsData.length > 0 ? resolvedProductImageUrl(variantsData[0]?.imageUrl) : undefined;
-  const imageSrc = resolvedProductImageUrl(product.imageUrl) ?? variantFallback;
+    Array.isArray(variantsData) && variantsData.length > 0
+      ? resolvedProductImageUrl(variantImageList(variantsData[0] as { imageUrls?: string | string[] | null; imageUrl?: string | null })[0])
+      : undefined;
+  const imageSrc = resolvedProductImageUrl(gallery[0]) ?? variantFallback;
 
   return (
     <div className="flex items-start gap-3 min-w-0 max-w-[280px]">

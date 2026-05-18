@@ -1,6 +1,6 @@
 import { Link, Redirect, useRoute } from "wouter";
 import { getGetOrderQueryKey, useCreatePayment, useGetOrder, useListPayments, useUpdateOrder } from "@/api-client";
-import { ArrowLeft, ImageIcon, PencilLine, UserRound } from "lucide-react";
+import { ArrowLeft, ImageIcon, Package, PencilLine, Truck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,6 +14,35 @@ import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
+import { isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
+import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
+import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
+import { resolvedProductImageUrl } from "@/lib/product-image-url";
+
+type OrderLineItemRow = {
+  id: number;
+  isCustom?: boolean;
+  customName?: string | null;
+  customImageUrl?: string | null;
+  customImageUrls?: string[] | string | null;
+  description?: string | null;
+  productId?: number | null;
+  product?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  gstPercent?: number;  
+};
+
+function orderLineImageUrls(item: OrderLineItemRow): string[] {
+  const raw = item.isCustom
+    ? parseImageUrlsList(item.customImageUrls, item.customImageUrl)
+    : item.product
+      ? productImageList(item.product)
+      : [];
+  return raw.map((u) => resolvedProductImageUrl(u)).filter((u): u is string => Boolean(u));
+}
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -73,7 +102,9 @@ export default function OrderDetailPage() {
   const [paymentMode, setPaymentMode] = useState("cash");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
+  const [paymentChequeNumber, setPaymentChequeNumber] = useState("");
   const [newStaffComment, setNewStaffComment] = useState("");
+  const [newDeliveryComment, setNewDeliveryComment] = useState("");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const updateOrder = useUpdateOrder({
@@ -92,6 +123,7 @@ export default function OrderDetailPage() {
         queryClient.invalidateQueries({ queryKey: ["listPayments"] });
         setPaymentAmount("");
         setPaymentNote("");
+        setPaymentChequeNumber("");
         toast({ title: "Payment added" });
       },
       onError: (error: any) => toast({ title: "Payment failed", description: error?.response?.data?.error ?? error?.message, variant: "destructive" }),
@@ -132,7 +164,9 @@ export default function OrderDetailPage() {
   const challanImages: string[] = Array.isArray(orderAny.challanImages) ? orderAny.challanImages : [];
   const photoComments = Array.isArray(orderAny.photoComments) ? orderAny.photoComments : [];
   const staffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
+  const deliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
+  const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
   const applyStatusUpdate = () => {
     updateOrder.mutate({
@@ -153,6 +187,24 @@ export default function OrderDetailPage() {
       data: { staffComments: next } as any,
     });
     setNewStaffComment("");
+  };
+
+  const addDeliveryComment = () => {
+    const text = newDeliveryComment.trim();
+    if (!text) return;
+    const next = [
+      ...deliveryComments,
+      {
+        comment: text,
+        authorName: user?.name ?? undefined,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    updateOrder.mutate({
+      id: order.id,
+      data: { deliveryComments: next } as any,
+    });
+    setNewDeliveryComment("");
   };
 
   return (
@@ -200,7 +252,19 @@ export default function OrderDetailPage() {
             </div>
             <div className="md:text-right">
               <h2 className="text-sm font-semibold mb-2">Payment Summary</h2>
-              <p className="text-sm">Total: ₹{order.totalAmount.toLocaleString()}</p>
+              {order.isGst ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Taxable: ₹{Number(orderAny.subtotal ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    GST: ₹{Number(orderAny.taxAmount ?? 0).toLocaleString()}
+                  </p>
+                </>
+              ) : null}
+              <p className="text-sm font-medium">
+                Total{order.isGst ? " (incl. GST)" : ""}: ₹{order.totalAmount.toLocaleString()}
+              </p>
               <p className="text-sm text-green-600">Paid: ₹{order.paidAmount.toLocaleString()}</p>
               <p className="text-sm font-medium mt-1">Balance: ₹{balance.toLocaleString()}</p>
               <p className="text-xs text-muted-foreground mt-1">Payment status: {orderAny.paymentStatus ?? "due"}</p>
@@ -262,6 +326,38 @@ export default function OrderDetailPage() {
                 Save delivery status
               </Button>
             </div>
+
+            <div className="border-t pt-4 space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Truck className="h-4 w-4" />
+                Delivery comments / notes
+              </h4>
+              {deliveryComments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No delivery notes yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {deliveryComments.map((entry: { comment?: string; authorName?: string; createdAt?: string }, index: number) => (
+                    <div key={index} className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+                      <p className="whitespace-pre-wrap">{entry.comment || "—"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.authorName ? `${entry.authorName} · ` : ""}
+                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Textarea
+                value={newDeliveryComment}
+                onChange={(e) => setNewDeliveryComment(e.target.value)}
+                placeholder="Gate code, driver instructions, reschedule notes, etc."
+                rows={3}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addDeliveryComment} disabled={!newDeliveryComment.trim()}>
+                <PencilLine className="h-4 w-4 mr-2" />
+                Add delivery note
+              </Button>
+            </div>
           </div>
 
           <div>
@@ -276,14 +372,66 @@ export default function OrderDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.items?.map((item) => (
+                {order.items?.map((item) => {
+                  const row = item as OrderLineItemRow;
+                  const custom = !!row.isCustom;
+                  const lineDesc = row.description?.trim();
+                  const label = custom
+                    ? row.customName ?? "Custom item"
+                    : row.product?.name || `Product #${row.productId}`;
+                  const lineImages = orderLineImageUrls(row);
+                  return (
                   <TableRow key={item.id}>
-                    <TableCell>{item.product?.name || `Product #${item.productId}`}</TableCell>
+                    <TableCell>
+                      <div className="flex items-start gap-3 min-w-[200px]">
+                        {lineImages.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 shrink-0 max-w-[140px]">
+                            {lineImages.map((url, imgIndex) => (
+                              <img
+                                key={`${url}-${imgIndex}`}
+                                src={url}
+                                alt={label}
+                                className="h-12 w-12 rounded-md object-cover border bg-muted cursor-zoom-in hover:opacity-90 transition-opacity"
+                                onClick={() => setPreviewImage(url)}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="h-12 w-12 rounded-md border bg-muted shrink-0 flex items-center justify-center">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p>
+                            {label}
+                            {custom ? (
+                              <span className="ml-2 text-xs text-muted-foreground">(custom)</span>
+                            ) : null}
+                          </p>
+                          {lineDesc ? (
+                            <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{lineDesc}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-right">₹{item.unitPrice.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      ₹
+                      {(order.isGst && (item as { gstPercent?: number }).gstPercent
+                        ? inclusiveUnitFromExclusive(
+                            item.unitPrice,
+                            Number((item as { gstPercent?: number }).gstPercent ?? 0),
+                          )
+                        : item.unitPrice
+                      ).toLocaleString()}
+                      {order.isGst ? (
+                        <span className="block text-[10px] text-muted-foreground">incl. GST</span>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="text-right font-medium">₹{item.totalPrice.toLocaleString()}</TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -382,13 +530,30 @@ export default function OrderDetailPage() {
                 <p className="text-lg font-medium">Payments</p>
                 <Button
                   type="button"
-                  onClick={() => createPayment.mutate({ data: { orderId: order.id, amount: Number(paymentAmount || 0), mode: paymentMode, notes: paymentNote || null } as any })}
-                  disabled={!paymentAmount || createPayment.isPending}
+                  onClick={() => {
+                    if (paymentMode === "cheque" && !paymentChequeNumber.trim()) {
+                      toast({ title: "Cheque number required", variant: "destructive" });
+                      return;
+                    }
+                    const payload: Record<string, unknown> = {
+                      orderId: order.id,
+                      amount: Number(paymentAmount || 0),
+                      mode: paymentMode,
+                      notes: paymentNote || null,
+                    };
+                    if (paymentMode === "cheque") payload.chequeNumber = paymentChequeNumber.trim();
+                    createPayment.mutate({ data: payload as any });
+                  }}
+                  disabled={
+                    !paymentAmount ||
+                    createPayment.isPending ||
+                    (paymentMode === "cheque" && !paymentChequeNumber.trim())
+                  }
                 >
                   Add
                 </Button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className={`grid grid-cols-1 gap-3 ${paymentMode === "cheque" ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
                 <Input type="number" min="0" step="0.01" placeholder="Amount" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
                 <Select value={paymentMode} onValueChange={setPaymentMode}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -399,16 +564,28 @@ export default function OrderDetailPage() {
                     <SelectItem value="cheque">Cheque</SelectItem>
                   </SelectContent>
                 </Select>
+                {paymentMode === "cheque" ? (
+                  <Input
+                    placeholder="Cheque number"
+                    value={paymentChequeNumber}
+                    onChange={(e) => setPaymentChequeNumber(e.target.value)}
+                  />
+                ) : null}
                 <Input placeholder="Payment note (optional)" value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} />
               </div>
               {payments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No Payments added yet.</p>
               ) : (
                 <div className="space-y-2">
-                  {payments.map((payment) => (
-                    <div key={payment.id} className="rounded-md border p-3 text-sm flex justify-between">
-                      <span>{payment.mode} - ₹{payment.amount.toLocaleString()}</span>
-                      <span className="text-muted-foreground">{new Date(payment.createdAt).toLocaleString()}</span>
+                  {payments.map((payment: { id: number; mode: string; amount: number; chequeNumber?: string | null; notes?: string | null; createdAt: string }) => (
+                    <div key={payment.id} className="rounded-md border p-3 text-sm flex justify-between gap-4">
+                      <span>
+                        {payment.mode}
+                        {payment.mode === "cheque" && payment.chequeNumber ? ` #${payment.chequeNumber}` : ""}
+                        {" — "}₹{payment.amount.toLocaleString()}
+                        {payment.notes ? <span className="text-muted-foreground"> · {payment.notes}</span> : null}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">{new Date(payment.createdAt).toLocaleString()}</span>
                     </div>
                   ))}
                 </div>
@@ -420,6 +597,8 @@ export default function OrderDetailPage() {
               Update Status
             </Button>
           </div>
+
+          {showPaymentFollowUp ? <OrderPaymentFollowUpPanel orderId={order.id} /> : null}
 
           <div className="flex justify-end gap-2 pt-2">
             <Link href={`/orders/${order.id}/edit`}>

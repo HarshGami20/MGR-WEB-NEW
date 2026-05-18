@@ -1,6 +1,7 @@
 import type { Notification, NotificationPriority, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { logger } from "../lib/logger";
+import { logWebPush, persistPushLog } from "../lib/push-notification-log";
 import { getFirebaseMessaging } from "../lib/firebase-admin";
 import { getRedisPublisher } from "../lib/redis-connection";
 import { emitViaBridge } from "../realtime/socket-bridge";
@@ -111,27 +112,29 @@ async function emitToUsers(
   emitViaBridge(redis, io, { rooms: [...rooms], event: SOCKET_EVENT, data: payload });
 }
 
-/** When `true`, send FCM from the API process instead of BullMQ (use if Redis is on but the worker is not running). */
+/**
+ * Send FCM from the API process (same path as test push) unless queue mode is explicitly enabled.
+ * Default inline: works without a separate `worker:notifications` process.
+ * Set NOTIFICATION_PUSH_QUEUE=true when Redis + notification worker are always running.
+ */
 function useInlinePush(): boolean {
-  const v = process.env["NOTIFICATION_PUSH_INLINE"]?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  const queueMode = process.env["NOTIFICATION_PUSH_QUEUE"]?.trim().toLowerCase();
+  if (queueMode === "1" || queueMode === "true" || queueMode === "yes") return false;
+  const forceInline = process.env["NOTIFICATION_PUSH_INLINE"]?.trim().toLowerCase();
+  if (forceInline === "0" || forceInline === "false" || forceInline === "no") return false;
+  return true;
 }
 
 async function sendPushToUsers(userIds: number[], title: string, body: string, data?: Record<string, string>): Promise<void> {
   if (userIds.length === 0) return;
   const queued = Boolean(notificationQueue && !useInlinePush());
-  logger.info(
-    {
-      ns: "notifications",
-      mode: queued ? "bullmq_queue" : "inline_apiprocess",
-      targetUserCount: userIds.length,
-      titlePreview: title.slice(0, 120),
-    },
-    "FCM: scheduling push",
-  );
+  logWebPush(queued ? "push_queued" : "push_inline", {
+    targetUserCount: userIds.length,
+    titlePreview: title.slice(0, 120),
+    mode: queued ? "bullmq" : "inline",
+  });
   if (queued) {
     await enqueuePushBatch({ userIds, title, body, data });
-    logger.info({ ns: "notifications", targetUserCount: userIds.length }, "FCM: push_batch job enqueued");
     return;
   }
   await flushPushBatch({ userIds, title, body, data });
@@ -146,10 +149,7 @@ export async function flushPushBatch(job: {
 }): Promise<void> {
   const messaging = await getFirebaseMessaging();
   if (!messaging) {
-    logger.warn(
-      { ns: "notifications", targetUserCount: job.userIds.length },
-      "FCM: flushPushBatch skipped — Firebase Admin not initialized",
-    );
+    logWebPush("firebase_unavailable", { targetUserCount: job.userIds.length }, "warn");
     return;
   }
 
@@ -158,10 +158,14 @@ export async function flushPushBatch(job: {
     select: { token: true, userId: true },
   });
   if (tokens.length === 0) {
-    logger.info(
-      { ns: "notifications", targetUserIds: job.userIds },
-      "FCM: no device tokens stored for target users — register via POST /api/notifications/fcm-token",
-    );
+    logWebPush("push_no_tokens", { targetUserIds: job.userIds }, "warn");
+    for (const uid of job.userIds) {
+      await persistPushLog({
+        userId: uid,
+        status: "skipped",
+        detail: { reason: "no_fcm_token", title: job.title },
+      });
+    }
     return;
   }
 
@@ -191,33 +195,34 @@ export async function flushPushBatch(job: {
           failedSamples.push(r.error.code);
         }
       }
-      logger.info(
-        {
-          ns: "notifications",
-          chunkIndex: Math.floor(i / chunkSize),
-          tokenCount: registrationTokens.length,
-          successCount: res.successCount,
-          failureCount: res.failureCount,
-          sampleErrors: [...new Set(failedSamples)],
-        },
-        "FCM: multicast batch completed",
-      );
+      logWebPush("push_sent", {
+        chunkIndex: Math.floor(i / chunkSize),
+        tokenCount: registrationTokens.length,
+        successCount: res.successCount,
+        failureCount: res.failureCount,
+        sampleErrors: [...new Set(failedSamples)],
+        titlePreview: job.title.slice(0, 120),
+      });
       await prisma.notificationLog.createMany({
-        data: slice.map((t) => ({
+        data: slice.map((t, idx) => ({
           notificationId: null,
           userId: t.userId,
           channel: "push",
-          status: "sent",
-          detail: { batch: true } as Prisma.InputJsonValue,
+          status: res.responses[idx]?.success ? "sent" : "failed",
+          detail: {
+            batch: true,
+            title: job.title,
+            error: res.responses[idx]?.error?.code ?? null,
+          } as Prisma.InputJsonValue,
         })),
       });
     } catch (err) {
-      logger.error({ err }, "FCM multicast failed");
+      logWebPush("push_failed", { error: String(err), title: job.title }, "error");
       await prisma.notificationLog.create({
         data: {
           channel: "push",
           status: "failed",
-          detail: { error: String(err) } as Prisma.InputJsonValue,
+          detail: { error: String(err), title: job.title } as Prisma.InputJsonValue,
         },
       });
     }
@@ -560,20 +565,22 @@ export const notificationService = {
       create: { userId, token, platform, deviceId: deviceId ?? null },
       update: { userId, platform, deviceId: deviceId ?? null, updatedAt: new Date() },
     });
-    logger.info(
-      {
-        ns: "notifications",
-        userId,
-        platform,
-        deviceId: deviceId ?? null,
-        tokenLength: token.length,
-      },
-      "FCM device token saved",
-    );
+    logWebPush("token_saved", {
+      userId,
+      platform,
+      deviceId: deviceId ?? null,
+      tokenLength: token.length,
+    });
+    await persistPushLog({
+      userId,
+      status: "sent",
+      detail: { event: "token_saved", platform, deviceId: deviceId ?? null },
+    });
   },
 
   async removeFcmToken(userId: number, token: string): Promise<void> {
     await prisma.userFcmToken.deleteMany({ where: { userId, token } });
+    logWebPush("token_removed", { userId, tokenLength: token.length });
   },
 
   /**
@@ -588,6 +595,7 @@ export const notificationService = {
   }> {
     const messaging = await getFirebaseMessaging();
     if (!messaging) {
+      logWebPush("firebase_unavailable", { userId }, "warn");
       return { ok: false, error: "Firebase Admin is not configured on the server (service account)." };
     }
     const rows = await prisma.userFcmToken.findMany({
@@ -595,6 +603,7 @@ export const notificationService = {
       select: { token: true },
     });
     if (rows.length === 0) {
+      logWebPush("push_no_tokens", { userId, context: "test" }, "warn");
       return {
         ok: false,
         error:
@@ -624,6 +633,22 @@ export const notificationService = {
         }
       }
       const ok = res.failureCount === 0;
+      logWebPush(ok ? "push_test" : "push_test_failed", {
+        userId,
+        tokenCount: registrationTokens.length,
+        successCount: res.successCount,
+        failureCount: res.failureCount,
+      }, ok ? "info" : "warn");
+      await persistPushLog({
+        userId,
+        status: ok ? "sent" : "failed",
+        detail: {
+          event: "push_test",
+          tokenCount: registrationTokens.length,
+          successCount: res.successCount,
+          failureCount: res.failureCount,
+        },
+      });
       return {
         ok,
         tokenCount: registrationTokens.length,
@@ -632,7 +657,10 @@ export const notificationService = {
         error: ok ? undefined : `FCM failed for ${res.failureCount} of ${registrationTokens.length} token(s).`,
       };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      const msg = e instanceof Error ? e.message : String(e);
+      logWebPush("push_test_failed", { userId, error: msg }, "error");
+      await persistPushLog({ userId, status: "failed", detail: { event: "push_test", error: msg } });
+      return { ok: false, error: msg };
     }
   },
 };

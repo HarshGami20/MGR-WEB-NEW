@@ -5,6 +5,14 @@ import { requireAuth } from "../middlewares/auth";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import { getPartnerScope, purchaseOrderMatchesScope, PARTNER_ALLOWED_PO_STATUSES } from "../lib/partner-scope";
+import {
+  isCustomLineItem,
+  buildCustomAttributesJson,
+  resolveCustomLineImages,
+  normalizeLineDescription,
+  type IncomingLineItem,
+} from "../lib/custom-line-item";
+import { parseImageUrlsJson } from "../lib/image-urls";
 import { requirePermission } from "../lib/permissions";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 
@@ -31,6 +39,7 @@ async function deletePurchaseOrderById(
   await prisma.$transaction(async (tx) => {
     if (existing.status === "delivered") {
       for (const item of existing.items) {
+        if (item.productId == null) continue;
         try {
           await decrementProductStock(item.productId, item.quantity, tx);
           if (logBranchId != null) {
@@ -64,8 +73,31 @@ function generatePONumber() {
 async function enrichPO(po: any) {
   const items = await prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } });
   const enrichedItems = await Promise.all(items.map(async (item) => {
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
-    return { ...item, unitPrice: toNumber(item.unitPrice), product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null };
+    const product =
+      item.productId != null ? await prisma.product.findUnique({ where: { id: item.productId } }) : null;
+    const variant =
+      item.variantId != null
+        ? await prisma.productVariant.findUnique({ where: { id: item.variantId } })
+        : null;
+    const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
+    return {
+      ...item,
+      isCustom: item.isCustom,
+      customName: item.customName,
+      customImageUrl: customImageUrls[0] ?? null,
+      customImageUrls,
+      customAttributes: item.customAttributes,
+      unitPrice: toNumber(item.unitPrice),
+      product: product
+        ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) }
+        : null,
+      variant: variant
+        ? {
+            ...variant,
+            price: variant.price != null ? toNumber(variant.price) : null,
+          }
+        : null,
+    };
   }));
   let supplier: Awaited<ReturnType<typeof prisma.supplier.findUnique>> = null;
   let manufacturer: Awaited<ReturnType<typeof prisma.manufacturer.findUnique>> = null;
@@ -86,14 +118,18 @@ async function enrichPO(po: any) {
 }
 
 router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
-  const { type, status, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { type, status, branchId, page = "1", limit = "20", openOnly } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
   const scope = await getPartnerScope(req);
   const where: Prisma.PurchaseOrderWhereInput = {};
-  if (status) where.status = status;
+  if (openOnly === "true" || openOnly === "1") {
+    where.status = { in: ["pending", "confirmed", "in_production", "shipped"] };
+  } else if (status) {
+    where.status = status;
+  }
 
   if (scope?.kind === "supplier") {
     if (type && type !== "supplier") {
@@ -155,13 +191,52 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
     totalAmount: String(totalAmount),
     expectedDelivery: poData.expectedDelivery ? new Date(poData.expectedDelivery) : undefined,
   }});
-  for (const item of items) {
-    await prisma.purchaseOrderItem.create({ data: {
-      purchaseOrderId: po.id,
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: String(item.unitPrice),
-    }});
+  for (const raw of items as IncomingLineItem[]) {
+    const custom = isCustomLineItem(raw);
+    if (custom) {
+      const name = raw.customName?.trim();
+      if (!name) {
+        res.status(400).json({ error: "Custom line item name is required" });
+        return;
+      }
+      const imgs = resolveCustomLineImages(raw);
+      await prisma.purchaseOrderItem.create({
+        data: {
+          purchaseOrderId: po.id,
+          isCustom: true,
+          productId: null,
+          variantId: null,
+          customName: name,
+          customImageUrl: imgs.customImageUrl,
+          customImageUrls: imgs.customImageUrls,
+          customAttributes: buildCustomAttributesJson(raw),
+          description: normalizeLineDescription(raw.description),
+          quantity: raw.quantity,
+          unitPrice: String(raw.unitPrice),
+        },
+      });
+      continue;
+    }
+    const productId = Number(raw.productId);
+    if (!productId) {
+      res.status(400).json({ error: "Product is required for catalog line items" });
+      return;
+    }
+    const variantId =
+      raw.variantId != null && Number.isFinite(Number(raw.variantId)) && Number(raw.variantId) > 0
+        ? Number(raw.variantId)
+        : null;
+    await prisma.purchaseOrderItem.create({
+      data: {
+        purchaseOrderId: po.id,
+        isCustom: false,
+        productId,
+        variantId,
+        description: normalizeLineDescription(raw.description),
+        quantity: raw.quantity,
+        unitPrice: String(raw.unitPrice),
+      },
+    });
   }
   res.status(201).json(await enrichPO(po));
 });
@@ -269,6 +344,7 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
       if (applyInbound) {
         const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: id } });
         for (const item of items) {
+          if (item.productId == null) continue;
           await incrementProductStock(item.productId, item.quantity, tx);
           await tx.inventoryLog.create({
             data: {

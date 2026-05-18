@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { format, addDays } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useListBranches, useListOrders, type Branch } from "@/api-client";
@@ -18,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   fetchDeliverySlots,
   createDeliverySlotsBatch,
+  createDeliverySlot,
   updateDeliverySlot,
   deleteDeliverySlot,
   type DeliverySlotRow,
@@ -182,7 +184,17 @@ export default function DeliveriesPage() {
 
   const branchPickerLoading = branchesLoading && pickableBranches.length === 0;
 
-  const [bulkOpen, setBulkOpen] = useState(false);
+  const [addSlotsOpen, setAddSlotsOpen] = useState(false);
+  const [addSlotMode, setAddSlotMode] = useState<"single" | "bulk">("single");
+  const [single, setSingle] = useState({
+    slotDate: format(new Date(), "yyyy-MM-dd"),
+    label: "",
+    timeMode: "morning" as TimeMode,
+    startTime: "09:00",
+    endTime: "12:00",
+    maxOrders: 10,
+    pincodesCsv: "",
+  });
   const [bulk, setBulk] = useState({
     fromDate: format(new Date(), "yyyy-MM-dd"),
     toDate: format(addDays(new Date(), 55), "yyyy-MM-dd"),
@@ -203,9 +215,17 @@ export default function DeliveriesPage() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterPincode, setFilterPincode] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
-
+  const [location] = useLocation();
   const [bookedDateFrom, setBookedDateFrom] = useState(() => localTodayYmd());
   const [bookedDateTo, setBookedDateTo] = useState(() => addDaysYmd(localTodayYmd(), 28));
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get("from")?.trim();
+    const to = params.get("to")?.trim();
+    if (from) setBookedDateFrom(from);
+    if (to) setBookedDateTo(to);
+  }, [location]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<DeliverySlotRow | null>(null);
@@ -350,10 +370,39 @@ export default function DeliveriesPage() {
       if (res.skippedDuplicates) parts.push(`${res.skippedDuplicates} already existed`);
       if (res.skippedOverflow) parts.push(`${res.skippedOverflow} over limit (500/run)`);
       toast({ title: "Slots saved", description: parts.join(" · ") });
-      setBulkOpen(false);
+      setAddSlotsOpen(false);
       invalidate();
     },
     onError: (e: Error) => toast({ title: "Batch failed", description: e.message, variant: "destructive" }),
+  });
+
+  const singleMut = useMutation({
+    mutationFn: () => {
+      const [startTime, endTime] =
+        single.timeMode === "custom"
+          ? [single.startTime, single.endTime]
+          : PRESET_TIMES[single.timeMode as Exclude<TimeMode, "custom">];
+      const pins = single.pincodesCsv
+        .split(/[,;\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const presetLabel = TIME_MODES.find((m) => m.value === single.timeMode)?.label ?? "Delivery";
+      const label = single.label.trim() || `${presetLabel} · ${single.slotDate}`;
+      return createDeliverySlot(writeBranchId!, {
+        slotDate: single.slotDate,
+        label,
+        startTime,
+        endTime,
+        maxOrders: single.maxOrders,
+        servicePincodes: pins,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Delivery slot created" });
+      setAddSlotsOpen(false);
+      invalidate();
+    },
+    onError: (e: Error) => toast({ title: "Could not create slot", description: e.message, variant: "destructive" }),
   });
 
   const updateMut = useMutation({
@@ -455,7 +504,17 @@ export default function DeliveriesPage() {
     }
   };
 
-  const openBulk = useCallback(() => {
+  const openAddSlots = useCallback((mode: "single" | "bulk" = "single") => {
+    setAddSlotMode(mode);
+    setSingle({
+      slotDate: format(new Date(), "yyyy-MM-dd"),
+      label: "",
+      timeMode: "morning",
+      startTime: "09:00",
+      endTime: "12:00",
+      maxOrders: 10,
+      pincodesCsv: "",
+    });
     setBulk({
       fromDate: format(new Date(), "yyyy-MM-dd"),
       toDate: format(addDays(new Date(), 55), "yyyy-MM-dd"),
@@ -467,7 +526,7 @@ export default function DeliveriesPage() {
       maxOrders: 10,
       pincodesCsv: "",
     });
-    setBulkOpen(true);
+    setAddSlotsOpen(true);
   }, []);
 
   const toggleWeekday = (v: number) => {
@@ -584,13 +643,13 @@ export default function DeliveriesPage() {
           </p>
         </div>
         {can("deliveries", "add") ? (
-          <Button onClick={openBulk}>
+          <Button onClick={() => openAddSlots("single")}>
             <Plus className="mr-2 h-4 w-4" />
-            Add slots
+            Add slot
           </Button>
         ) : null}
       </div>
-{/* 
+    {/* 
       <DeliveryProgressKpi
         stats={todayDeliveryStats}
         loading={ordersLoading || isLoading}
@@ -698,7 +757,7 @@ export default function DeliveriesPage() {
                 <p className="text-sm text-muted-foreground">Loading…</p>
               ) : rows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No slots in this window. Use Add slots to generate them.
+                  No slots in this window. Use Add slot to create one, or switch to Bulk for a date range.
                 </p>
               ) : (
                 <>
@@ -895,114 +954,213 @@ export default function DeliveriesPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+      <Dialog open={addSlotsOpen} onOpenChange={setAddSlotsOpen}>
         <DialogContent className="max-w-lg sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create delivery slots (bulk)</DialogTitle>
+            <DialogTitle>Add delivery slots</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="grid gap-2">
-                <Label>From</Label>
-                <Input type="date" value={bulk.fromDate} onChange={(e) => setBulk((b) => ({ ...b, fromDate: e.target.value }))} />
-              </div>
-              <div className="grid gap-2">
-                <Label>To (inclusive)</Label>
-                <Input type="date" value={bulk.toDate} onChange={(e) => setBulk((b) => ({ ...b, toDate: e.target.value }))} />
-              </div>
-            </div>
 
-            <div className="grid gap-2">
-              <Label>Repeat on</Label>
-              <div className="flex flex-wrap gap-3">
-                {WEEKDAY_TOGGLES.map(({ label, value }) => (
-                  <label
-                    key={value}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-                      bulk.weekdays.includes(value) ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
-                    )}
-                  >
-                    <Checkbox
-                      checked={bulk.weekdays.includes(value)}
-                      onCheckedChange={() => toggleWeekday(value)}
+          <Tabs value={addSlotMode} onValueChange={(v) => setAddSlotMode(v as "single" | "bulk")} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="single">Single slot</TabsTrigger>
+              <TabsTrigger value="bulk">Bulk</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="single" className="mt-0 space-y-4">
+              <div className="grid gap-2">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={single.slotDate}
+                  onChange={(e) => setSingle((s) => ({ ...s, slotDate: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Label (optional)</Label>
+                <Input
+                  value={single.label}
+                  onChange={(e) => setSingle((s) => ({ ...s, label: e.target.value }))}
+                  placeholder="e.g. Van 1 — morning run"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to auto-name from the time preset and date.
+                </p>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Time</Label>
+                <Select value={single.timeMode} onValueChange={(v) => setSingle((s) => ({ ...s, timeMode: v as TimeMode }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {single.timeMode === "custom" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Start</Label>
+                    <Input
+                      type="time"
+                      value={single.startTime}
+                      onChange={(e) => setSingle((s) => ({ ...s, startTime: e.target.value }))}
                     />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>End</Label>
+                    <Input
+                      type="time"
+                      value={single.endTime}
+                      onChange={(e) => setSingle((s) => ({ ...s, endTime: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              ) : null}
 
-            <div className="grid gap-2">
-              <Label>Time</Label>
-              <Select value={bulk.timeMode} onValueChange={(v) => setBulk((b) => ({ ...b, timeMode: v as TimeMode }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
+              <div className="grid gap-2">
+                <Label>Max orders</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={single.maxOrders}
+                  onChange={(e) =>
+                    setSingle((s) => ({ ...s, maxOrders: Math.max(1, parseInt(e.target.value, 10) || 1) }))
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Pincodes (optional)</Label>
+                <Input
+                  value={single.pincodesCsv}
+                  onChange={(e) => setSingle((s) => ({ ...s, pincodesCsv: e.target.value }))}
+                  placeholder="Comma-separated; empty = all pincodes"
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="bulk" className="mt-0 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label>From</Label>
+                  <Input type="date" value={bulk.fromDate} onChange={(e) => setBulk((b) => ({ ...b, fromDate: e.target.value }))} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>To (inclusive)</Label>
+                  <Input type="date" value={bulk.toDate} onChange={(e) => setBulk((b) => ({ ...b, toDate: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Repeat on</Label>
+                <div className="flex flex-wrap gap-3">
+                  {WEEKDAY_TOGGLES.map(({ label, value }) => (
+                    <label
+                      key={value}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                        bulk.weekdays.includes(value) ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
+                      )}
+                    >
+                      <Checkbox
+                        checked={bulk.weekdays.includes(value)}
+                        onCheckedChange={() => toggleWeekday(value)}
+                      />
+                      {label}
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {bulk.timeMode === "custom" ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-2">
-                  <Label>Start</Label>
-                  <Input type="time" value={bulk.startTime} onChange={(e) => setBulk((b) => ({ ...b, startTime: e.target.value }))} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>End</Label>
-                  <Input type="time" value={bulk.endTime} onChange={(e) => setBulk((b) => ({ ...b, endTime: e.target.value }))} />
                 </div>
               </div>
-            ) : null}
 
-            <div className="grid gap-2">
-              <Label>Name prefix (optional)</Label>
-              <Input
-                value={bulk.labelPrefix}
-                onChange={(e) => setBulk((b) => ({ ...b, labelPrefix: e.target.value }))}
-                placeholder="e.g. Van 1 — labels become “Van 1 · Mon 2026-05-12”"
-              />
-            </div>
+              <div className="grid gap-2">
+                <Label>Time</Label>
+                <Select value={bulk.timeMode} onValueChange={(v) => setBulk((b) => ({ ...b, timeMode: v as TimeMode }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="grid gap-2">
-              <Label>Max orders per slot</Label>
-              <Input
-                type="number"
-                min={1}
-                value={bulk.maxOrders}
-                onChange={(e) => setBulk((b) => ({ ...b, maxOrders: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
-              />
-            </div>
+              {bulk.timeMode === "custom" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Start</Label>
+                    <Input type="time" value={bulk.startTime} onChange={(e) => setBulk((b) => ({ ...b, startTime: e.target.value }))} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>End</Label>
+                    <Input type="time" value={bulk.endTime} onChange={(e) => setBulk((b) => ({ ...b, endTime: e.target.value }))} />
+                  </div>
+                </div>
+              ) : null}
 
-            <div className="grid gap-2">
-              <Label>Pincodes (optional)</Label>
-              <Input
-                value={bulk.pincodesCsv}
-                onChange={(e) => setBulk((b) => ({ ...b, pincodesCsv: e.target.value }))}
-                placeholder="Comma-separated; empty = all pincodes"
-              />
-            </div>
+              <div className="grid gap-2">
+                <Label>Name prefix (optional)</Label>
+                <Input
+                  value={bulk.labelPrefix}
+                  onChange={(e) => setBulk((b) => ({ ...b, labelPrefix: e.target.value }))}
+                  placeholder="e.g. Van 1 — labels become “Van 1 · Mon 2026-05-12”"
+                />
+              </div>
 
-            <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{plannedCount}</span> calendar day
-              {plannedCount === 1 ? "" : "s"} match your weekdays in this range (existing identical slots are skipped).
-              Up to <span className="font-medium text-foreground">500</span> new rows per save.
-            </p>
-          </div>
+              <div className="grid gap-2">
+                <Label>Max orders per slot</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={bulk.maxOrders}
+                  onChange={(e) => setBulk((b) => ({ ...b, maxOrders: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Pincodes (optional)</Label>
+                <Input
+                  value={bulk.pincodesCsv}
+                  onChange={(e) => setBulk((b) => ({ ...b, pincodesCsv: e.target.value }))}
+                  placeholder="Comma-separated; empty = all pincodes"
+                />
+              </div>
+
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{plannedCount}</span> calendar day
+                {plannedCount === 1 ? "" : "s"} match your weekdays in this range (existing identical slots are skipped).
+                Up to <span className="font-medium text-foreground">500</span> new rows per save.
+              </p>
+            </TabsContent>
+          </Tabs>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkOpen(false)}>
+            <Button variant="outline" onClick={() => setAddSlotsOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => batchMut.mutate()} disabled={!canCreate || batchMut.isPending}>
-              {batchMut.isPending ? "Creating…" : `Create ${Math.min(plannedCount, 500)} slot(s)`}
-            </Button>
+            {addSlotMode === "single" ? (
+              <Button
+                onClick={() => singleMut.mutate()}
+                disabled={!single.slotDate.trim() || singleMut.isPending}
+              >
+                {singleMut.isPending ? "Creating…" : "Create slot"}
+              </Button>
+            ) : (
+              <Button onClick={() => batchMut.mutate()} disabled={!canCreate || batchMut.isPending}>
+                {batchMut.isPending ? "Creating…" : `Create ${Math.min(plannedCount, 500)} slot(s)`}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

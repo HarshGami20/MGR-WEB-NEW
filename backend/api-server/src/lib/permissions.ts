@@ -27,6 +27,7 @@ export const PERMISSION_MODULE_KEYS = [
   "suppliers",
   "manufacturers",
   "purchaseOrders",
+  "complaints",
   "settings",
 ] as const;
 

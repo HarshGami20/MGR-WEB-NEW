@@ -276,21 +276,28 @@ export default function Invoices() {
                   <TableRow>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">
+                      {selectedInvoice.isGst ? "Rate (excl. GST)" : "Rate"}
+                    </TableHead>
                     {selectedInvoice.isGst && <TableHead className="text-right">GST %</TableHead>}
                     <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {selectedInvoice.order?.items?.map((item: any) => (
+                  {selectedInvoice.order?.items?.map((item: any) => {
+                    const label = item.isCustom
+                      ? item.customName ?? "Custom item"
+                      : item.product?.name ?? `Product #${item.productId}`;
+                    return (
                     <TableRow key={item.id}>
-                      <TableCell>{item.product?.name}</TableCell>
+                      <TableCell>{label}</TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-right">₹{item.unitPrice.toLocaleString()}</TableCell>
                       {selectedInvoice.isGst && <TableCell className="text-right">{item.gstPercent}%</TableCell>}
                       <TableCell className="text-right font-medium">₹{item.totalPrice.toLocaleString()}</TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
 
@@ -298,7 +305,9 @@ export default function Invoices() {
               <div className="flex justify-end">
                 <div className="w-64 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal:</span>
+                    <span className="text-muted-foreground">
+                      {selectedInvoice.isGst ? "Taxable amount:" : "Subtotal:"}
+                    </span>
                     <span>₹{selectedInvoice.order?.subtotal?.toLocaleString()}</span>
                   </div>
                   

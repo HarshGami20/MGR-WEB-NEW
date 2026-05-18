@@ -33,29 +33,34 @@ import {
 } from "@/components/category-picker-with-manage";
 import {
   attrsToJson,
+  jsonToAttrs,
   variantDraftWithPersistedIdSchema,
   emptyVariantDraft,
   AttributesEditorBlock,
   productVariantToDraftRow,
+  variantImagesToApi,
   productEditSchema,
   MAX_PRODUCT_PRICE,
   type ProductEditFormValues,
 } from "@/pages/products-shared";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { ProductImageField } from "@/components/product-image-field";
+import { ProductImagesField } from "@/components/product-images-field";
+import { productImageList, variantImageList } from "@/lib/image-urls";
 
 type ProductFormValues = ProductEditFormValues;
 
 function variantToUpdateBody(v: z.infer<typeof variantDraftWithPersistedIdSchema>): UpdateProductVariantBody {
+  const imgs = variantImagesToApi(v);
   return {
     name: v.name,
     sku: v.sku,
-    imageUrl: (v.imageUrl && v.imageUrl.trim()) || null,
+    imageUrl: imgs.imageUrl,
+    imageUrls: imgs.imageUrls,
     price: v.price == null ? null : Number(v.price),
     lowStockThreshold: v.lowStockThreshold,
     attributes: attrsToJson(v.attributes),
-  };
+  } as UpdateProductVariantBody;
 }
 
 export default function ProductEdit() {
@@ -110,7 +115,8 @@ export default function ProductEdit() {
       gstPercent: 18,
       lowStockThreshold: 10,
       inventoryMode: "simple",
-      imageUrl: "",
+      imageUrls: [],
+      attributes: [],
       variants: [],
     },
   });
@@ -138,14 +144,15 @@ export default function ProductEdit() {
       .sort((a, b) => a - b)
       .join(",");
     const variantMediaSig = variantList
-      .map((v) => `${v.id}:${v.imageUrl ?? ""}`)
+      .map((v) => `${v.id}:${variantImageList(v as { imageUrls?: string | string[] | null; imageUrl?: string | null }).join("|")}`)
       .sort()
       .join(";");
 
     const hydrateKey = [
       product.id,
       product.categoryId ?? "",
-      String(product.imageUrl ?? ""),
+      productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null }).join("|"),
+      String((product as { attributes?: string | null }).attributes ?? ""),
       categoryRoots.length,
       variantIdsSig,
       variantMediaSig,
@@ -171,7 +178,8 @@ export default function ProductEdit() {
       gstPercent: product.gstPercent,
       lowStockThreshold: product.lowStockThreshold,
       inventoryMode: mode,
-      imageUrl: hadServerVariants ? "" : product.imageUrl || "",
+      imageUrls: productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null }),
+      attributes: hadServerVariants ? [] : jsonToAttrs((product as { attributes?: string | null }).attributes),
       variants: hadServerVariants ? variantRows : [],
     });
   }, [product, variantsFetched, categoriesFetched, variantsLoading, categoryRoots, variantList, form]);
@@ -202,7 +210,7 @@ export default function ProductEdit() {
       return;
     }
 
-    const payload: UpdateProductBody = {
+    const payload = {
       name: data.name,
       sku: data.sku,
       categoryId: leafId,
@@ -210,9 +218,10 @@ export default function ProductEdit() {
       gstPercent: data.gstPercent,
       lowStockThreshold: data.lowStockThreshold,
       description: (data.description && data.description.trim()) || null,
-      imageUrl:
-        data.inventoryMode === "simple" ? ((data.imageUrl && data.imageUrl.trim()) || null) : null,
-    };
+      imageUrls: data.imageUrls,
+      imageUrl: data.imageUrls[0] ?? null,
+      attributes: data.inventoryMode === "simple" ? attrsToJson(data.attributes) : null,
+    } as UpdateProductBody;
 
     setIsSaving(true);
     try {
@@ -249,11 +258,11 @@ export default function ProductEdit() {
               data: {
                 name: v.name,
                 sku: v.sku,
-                imageUrl: (v.imageUrl && v.imageUrl.trim()) || null,
+                ...variantImagesToApi(v),
                 price: v.price == null ? null : Number(v.price),
                 lowStockThreshold: v.lowStockThreshold,
                 attributes: attrsToJson(v.attributes),
-              },
+              } as any,
             });
           }
         }
@@ -420,12 +429,19 @@ export default function ProductEdit() {
                           field.onChange(v);
                           if (v === "simple") {
                             form.setValue("variants", []);
-                            if (product?.imageUrl) {
-                              form.setValue("imageUrl", product.imageUrl);
+                            if (product) {
+                              form.setValue(
+                                "imageUrls",
+                                productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null }),
+                              );
+                              form.setValue(
+                                "attributes",
+                                jsonToAttrs((product as { attributes?: string | null }).attributes),
+                              );
                             }
                             form.setValue("price", Number(product?.price ?? 0));
                           } else {
-                            form.setValue("imageUrl", "");
+                            form.setValue("attributes", []);
                             form.setValue("price", 0);
                           }
                         }}
@@ -467,21 +483,32 @@ export default function ProductEdit() {
               />
             </div>
 
+            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-2">
+              <p className="text-sm font-semibold text-foreground">Product photos</p>
+              <p className="text-xs text-muted-foreground">Add one or more images. The first photo is the main thumbnail.</p>
+              <FormField
+                control={form.control}
+                name="imageUrls"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <ProductImagesField value={field.value ?? []} onChange={field.onChange} label="Catalog photos" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             {inventoryMode === "simple" && (
-              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-2">
-                <p className="text-sm font-semibold text-foreground">Product image</p>
-                <FormField
-                  control={form.control}
-                  name="imageUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <ProductImageField value={field.value ?? ""} onChange={field.onChange} label="Catalog photo" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Product variables</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Size, colour, fabric, and other specs for this single SKU (optional).
+                  </p>
+                </div>
+                <AttributesEditorBlock control={form.control} namePrefix="attributes" />
               </div>
             )}
 
@@ -666,11 +693,15 @@ export default function ProductEdit() {
                         </div>
                         <FormField
                           control={form.control}
-                          name={`variants.${vidx}.imageUrl`}
+                          name={`variants.${vidx}.imageUrls`}
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <ProductImageField value={field.value ?? ""} onChange={field.onChange} label="Variant image" />
+                                <ProductImagesField
+                                  value={Array.isArray(field.value) ? field.value : []}
+                                  onChange={(urls) => field.onChange(urls)}
+                                  label="Variant photos"
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>

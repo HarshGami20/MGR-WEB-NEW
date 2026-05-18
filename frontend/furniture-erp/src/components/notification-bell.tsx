@@ -25,6 +25,8 @@ import { useAuth } from "@/lib/auth";
 import { isPartnerPortalUser } from "@/lib/partner";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { WebPushLogPanel } from "@/components/web-push-log-panel";
+import { pushLog } from "@/lib/push-notification-log";
 
 function NotificationLine({
   row,
@@ -87,6 +89,7 @@ export function NotificationBell() {
     mutationFn: sendTestWebPush,
     onSuccess: (r) => {
       if (r.ok) {
+        pushLog("info", "test_push_ui", "Test push succeeded from bell", r);
         toast({
           title: "Test push sent",
           description:
@@ -96,6 +99,7 @@ export function NotificationBell() {
         });
         return;
       }
+      pushLog("warn", "test_push_ui", r.error ?? "Test push failed", r);
       toast({
         title: "Test push did not send",
         description: r.error ?? "Unknown error",
@@ -104,6 +108,7 @@ export function NotificationBell() {
     },
     onError: (e: unknown) => {
       const msg = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e);
+      pushLog("error", "test_push_ui", msg, e);
       toast({ title: "Test push failed", description: msg, variant: "destructive" });
     },
   });
@@ -177,8 +182,9 @@ export function NotificationBell() {
             Test Chrome web push
           </Button>
           <p className="text-[10px] text-muted-foreground mt-1.5 px-0.5 leading-snug">
-            Sends a real FCM notification to this browser. Put the tab in the background to see the OS banner.
+            Push is working if the log shows success. With this tab focused you get an in-app toast; minimize the tab or check the top-right of macOS for the banner. Allow notifications in Chrome site settings if you see nothing.
           </p>
+          <WebPushLogPanel compact />
         </div>
         <DropdownMenuItem asChild className="rounded-none cursor-pointer">
           <Link href="/notifications" className="justify-center text-primary font-medium py-3">

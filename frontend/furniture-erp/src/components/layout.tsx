@@ -16,6 +16,7 @@ import {
   Building2,
   Factory,
   GitBranch,
+  Truck,
   ShieldCheck,
   ChevronDown,
   Menu,
@@ -28,6 +29,7 @@ import {
   Calculator,
   CalendarClock,
   ClipboardList,
+  Headphones,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -75,6 +77,7 @@ const staffNavSections: StaffSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
+      { label: "Complaints", href: "/complaints", icon: Headphones },
       { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
       { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
       { label: "Products", href: "/products", icon: Package },
@@ -112,19 +115,28 @@ const staffNavSections: StaffSection[] = [
   },
 ];
 
-const partnerNavItems = [
-  { label: "Purchase orders", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
-];
+function partnerNavItemsForUser(user: { supplierId?: number | null; manufacturerId?: number | null }) {
+  const panelLabel = user.supplierId ? "Supplier panel" : "Manufacturer panel";
+  const PanelIcon = user.supplierId ? Truck : Factory;
+  return [
+    { label: panelLabel, href: "/dashboard", icon: PanelIcon },
+    { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
+  ];
+}
 
-function getPageTitle(location: string, partnerUser: boolean): string {
-  if (partnerUser && location === "/dashboard") return "Your purchase orders";
+function getPageTitle(location: string, partnerUser: boolean, user?: { supplierId?: number | null } | null): string {
+  if (partnerUser && location === "/dashboard") {
+    return user?.supplierId ? "Supplier panel" : "Manufacturer panel";
+  }
   if (partnerUser && location === "/settings") return "Settings";
-  const found = partnerNavItems.find((item) => item.href === location);
-  if (partnerUser) return found?.label ?? "MGR Casa";
+  if (partnerUser && user) {
+    const found = partnerNavItemsForUser(user).find((item) => item.href === location);
+    return found?.label ?? "MGR Casa";
+  }
   const flat = staffNavSections.flatMap((s) => s.items);
   const hit = flat.find((item) => item.href === location);
   if (hit) return hit.label;
+  if (location.startsWith("/complaints/")) return "Complaint";
   if (location.startsWith("/products/")) {
     if (location === "/products/new") return "Add Product";
     if (location.endsWith("/edit")) return "Edit Product";
@@ -166,6 +178,7 @@ export default function Layout({ children }: LayoutProps) {
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
   const partnerUser = isPartnerPortalUser(user);
+  const partnerNav = user ? partnerNavItemsForUser(user) : [];
   const assignedBranchIds = assignedUserBranchIds(user);
   const branchLocked = !partnerUser && assignedBranchIds.length === 1;
   const homeBranchId = branchLocked ? assignedBranchIds[0]! : null;
@@ -426,11 +439,11 @@ export default function Layout({ children }: LayoutProps) {
                   Menu
                 </p>
                 <div className="space-y-1">
-                  {partnerNavItems.map((item) => {
+                  {partnerNav.map((item) => {
                     const isActive = location === item.href;
                     const Icon = item.icon;
                     return (
-                      <Link key={item.href} href={item.href} className="block" onClick={() => setMobileSidebarOpen(false)}>
+                      <Link key={item.label} href={item.href} className="block" onClick={() => setMobileSidebarOpen(false)}>
                         <span
                           className={cn(
                             "group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors relative",
@@ -615,7 +628,7 @@ export default function Layout({ children }: LayoutProps) {
             </>
           ) : (
             <div className="flex-1 min-w-0">
-              <h2 className="text-base font-semibold truncate">{getPageTitle(location, true)}</h2>
+              <h2 className="text-base font-semibold truncate">{getPageTitle(location, true, user)}</h2>
             </div>
           )}
 

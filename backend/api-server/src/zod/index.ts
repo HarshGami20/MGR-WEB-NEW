@@ -35,6 +35,7 @@ const InitialVariantInput = z.object({
   name: z.string().min(1, "Variant name is required"),
   sku: z.string().min(1, "Variant SKU is required"),
   imageUrl: OptionalImageUrl,
+  imageUrls: z.array(z.string()).optional(),
   price: z.union([z.coerce.number().min(0), z.null()]).optional(),
   stockQty: z.coerce.number().int().min(0).optional().default(0),
   lowStockThreshold: z.coerce.number().int().min(0).optional().default(10),
@@ -50,6 +51,7 @@ export const CreateProductBody = z
     sku: z.string().min(1, "SKU is required"),
     categoryId: z.union([z.number().int().positive(), z.null()]).optional(),
     imageUrl: OptionalImageUrl,
+    imageUrls: z.array(z.string()).optional(),
     price: z.coerce.number().min(0, "Price must be ≥ 0"),
     gstPercent: z.coerce.number().min(0).max(100),
     lowStockThreshold: z.coerce.number().int().min(0),
@@ -57,6 +59,7 @@ export const CreateProductBody = z
     inventoryMode: z.enum(["simple", "variants"]).optional().default("simple"),
     stockQty: z.coerce.number().int().min(0).optional(),
     initialVariants: z.array(InitialVariantInput).optional(),
+    attributes: z.union([z.string(), z.null()]).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.inventoryMode === "simple" && data.initialVariants && data.initialVariants.length > 0) {
@@ -73,12 +76,14 @@ export const UpdateProductBody = z.object({
   sku: z.string().min(1, "SKU is required"),
   categoryId: z.union([z.number().int().positive(), z.null()]).optional(),
   imageUrl: OptionalImageUrl,
+  imageUrls: z.array(z.string()).optional(),
   price: z.coerce.number().min(0, "Price must be ≥ 0"),
   gstPercent: z.coerce.number().min(0).max(100),
   lowStockThreshold: z.coerce.number().int().min(0),
   description: z.union([z.string(), z.null()]).optional(),
   /** When the product has no variants, updates on-hand quantity. */
   stockQty: z.coerce.number().int().min(0).optional(),
+  attributes: z.union([z.string(), z.null()]).optional(),
 });
 
 export const GetProductParams = z.object({
@@ -92,6 +97,7 @@ export const CreateProductVariantBody = z.object({
   name: z.string().min(1, "Variant name is required"),
   sku: z.string().min(1, "SKU is required"),
   imageUrl: OptionalImageUrl,
+  imageUrls: z.array(z.string()).optional(),
   price: z.union([z.coerce.number().min(0), z.null()]).optional(),
   stockQty: z.coerce.number().int().min(0).optional().default(0),
   lowStockThreshold: z.coerce.number().int().min(0).optional().default(10),
@@ -104,6 +110,7 @@ export const UpdateProductVariantBody = z.object({
   name: z.string().min(1).optional(),
   sku: z.string().min(1).optional(),
   imageUrl: OptionalImageUrl,
+  imageUrls: z.array(z.string()).optional(),
   price: z.union([z.coerce.number().min(0), z.null()]).optional(),
   stockQty: z.coerce.number().int().min(0).optional(),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),

@@ -5,9 +5,11 @@ import {
   useGetOrder,
   useListAssignableOrderUsers,
   useListProducts,
+  useGetSettings,
   useUpdateOrder,
   getGetOrderQueryKey,
   getListOrdersQueryKey,
+  getListProductsQueryKey,
 } from "@/api-client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ImageIcon, Plus, Trash2, Upload, X } from "lucide-react";
@@ -26,18 +28,14 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
-import ProductVariantSelect from "@/components/product-variant-select";
+import { LineItemRow } from "@/components/line-item-row";
+import { lineItemFormSchema, lineItemToApiPayload, apiItemToFormValues } from "@/lib/line-item-form-schema";
+import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
+import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
-
-const orderItemSchema = z.object({
-  productId: z.coerce.number().min(1, "Product is required"),
-  variantId: z.coerce.number().optional().nullable(),
-  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive").default(0),
-});
 
 const orderSchema = z.object({
   customerName: z.string().trim().min(1, "Customer name is required"),
@@ -68,7 +66,7 @@ const orderSchema = z.object({
     .refine((value) => value === "" || /^[0-9A-Z]{15}$/.test(value), "GST number must be 15 characters")
     .optional()
     .nullable(),
-  items: z.array(orderItemSchema).min(1, "At least one item is required"),
+  items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
   advanceAmount: z.coerce.number().min(0).default(0),
@@ -87,6 +85,7 @@ const orderSchema = z.object({
     comment: z.string().optional().default(""),
   })).default([]),
   staffCommentsText: z.string().optional().default(""),
+  deliveryCommentsText: z.string().optional().default(""),
 }).superRefine((data, ctx) => {
   if (data.isGst && !data.customerGstNumber?.trim()) {
     ctx.addIssue({
@@ -95,11 +94,19 @@ const orderSchema = z.object({
       message: "GST number is required when GST invoice is enabled",
     });
   }
-  if (Number(data.advanceAmount || 0) > data.items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0)) {
+  const totals = computeOrderTotalsFromLines(
+    data.items.map((item) => ({
+      unitPrice: Number(item.unitPrice || 0),
+      quantity: Number(item.quantity || 0),
+      gstPercent: Number(item.gstPercent || 0),
+    })),
+    data.isGst,
+  );
+  if (Number(data.advanceAmount || 0) > totals.total) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["advanceAmount"],
-      message: "Advance amount cannot exceed subtotal",
+      message: `Advance amount cannot exceed order total (₹${totals.total.toLocaleString()})`,
     });
   }
 });
@@ -179,6 +186,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         : selectedBranchId;
 
   const { data: productsData } = useListProducts({ limit: 1000 });
+  const { data: settingsData } = useGetSettings();
+  const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
   const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
     writeBranchId != null ? { branchId: writeBranchId, limit: 1000 } : undefined,
     { query: { enabled: writeBranchId != null } },
@@ -238,7 +247,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       addressLng: null as number | null,
       isGst: false,
       customerGstNumber: "",
-      items: [{ productId: 0, variantId: null, quantity: 1, unitPrice: 0 }],
+      items: [{ ...defaultCatalogLineItem }],
       status: "order_received",
       paymentStatus: "due",
       advanceAmount: 0,
@@ -248,6 +257,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       challanImages: [{ imageUrl: "" }],
       photoComments: [{ imageUrl: "", comment: "" }],
       staffCommentsText: "",
+      deliveryCommentsText: "",
     },
   });
 
@@ -307,6 +317,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     hydratedOrderIdRef.current = order.id;
     const orderAny = order as any;
     const existingStaffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
+    const existingDeliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
     reset({
       customerName: order.customerName ?? "",
       customerMobile: order.customerMobile ?? "",
@@ -319,13 +330,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       isGst: !!order.isGst,
       customerGstNumber: order.customerGstNumber ?? "",
       items: order.items?.length
-        ? order.items.map((item: any) => ({
-            productId: item.productId ?? item.product?.id ?? 0,
-            variantId: item.variantId ?? null,
-            quantity: item.quantity ?? 1,
-            unitPrice: item.unitPrice ?? item.product?.price ?? 0,
-          }))
-        : [{ productId: 0, variantId: null, quantity: 1, unitPrice: 0 }],
+        ? order.items.map((item: any) => apiItemToFormValues(item, { priceIncludesGst: !!order.isGst }))
+        : [{ ...defaultCatalogLineItem }],
       status: orderAny.status === "delivered" ? "complete" : (orderAny.status ?? "order_received"),
       paymentStatus: orderAny.paymentStatus ?? "due",
       advanceAmount: orderAny.advanceAmount ?? orderAny.paidAmount ?? 0,
@@ -346,6 +352,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         .map((entry: any) => entry?.comment)
         .filter(Boolean)
         .join("\n"),
+      deliveryCommentsText: existingDeliveryComments
+        .map((entry: any) => entry?.comment)
+        .filter(Boolean)
+        .join("\n"),
     });
   }, [isEdit, order, reset]);
 
@@ -355,14 +365,22 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
+  const isGstInvoice = !!useWatch({ control: form.control, name: "isGst" });
   const orderSummary = useMemo(() => {
-    const subtotal = watchedItems.reduce(
-      (acc, item) => acc + Number(item?.quantity || 0) * Number(item?.unitPrice || 0),
-      0,
+    const totals = computeOrderTotalsFromLines(
+      watchedItems.map((item) => ({
+        unitPrice: Number(item?.unitPrice || 0),
+        quantity: Number(item?.quantity || 0),
+        gstPercent: Number(item?.gstPercent || 0),
+      })),
+      isGstInvoice,
     );
     const advance = Number(watchedAdvance ?? 0);
-    return { subtotal, remaining: Math.max(0, subtotal - advance) };
-  }, [watchedItems, watchedAdvance]);
+    return {
+      ...totals,
+      remaining: Math.max(0, totals.total - advance),
+    };
+  }, [watchedItems, watchedAdvance, isGstInvoice]);
 
   const handleUploadToFieldArray = async (
     file: File | undefined,
@@ -393,6 +411,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
     for (let i = 0; i < data.items.length; i += 1) {
       const item = data.items[i];
+      if (item.isCustom) continue;
       const product = productsData?.data?.find((p) => p.id === Number(item.productId));
       if (product?.variantCount && product.variantCount > 0 && !item.variantId) {
         form.setError(`items.${i}.productId`, { message: "Please select a variant for this product" });
@@ -411,11 +430,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       addressLng: data.addressLng ?? null,
       isGst: !!data.isGst,
       customerGstNumber: data.customerGstNumber || null,
-      items: data.items.map((item) => ({
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-      })),
+      items: data.items.map((item) => lineItemToApiPayload(item)),
       status: data.status,
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
@@ -428,6 +443,13 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         .map((entry) => ({ imageUrl: entry.imageUrl || "", comment: entry.comment || "" })),
       staffComments: data.staffCommentsText
         ? data.staffCommentsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((comment) => ({ comment, createdAt: new Date().toISOString() }))
+        : [],
+      deliveryComments: data.deliveryCommentsText
+        ? data.deliveryCommentsText
             .split("\n")
             .map((line) => line.trim())
             .filter(Boolean)
@@ -544,7 +566,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
                 <FormField control={form.control} name="isGst" render={({ field }) => (
                   <FormItem className="flex items-center justify-between gap-3 space-y-0 rounded-xl border border-border/50 bg-muted/10 px-3 py-2.5 sm:py-3">
-                    <FormLabel className="!mt-0 font-normal">GST Invoice</FormLabel>
+                    <div>
+                      <FormLabel className="!mt-0 font-normal">GST Invoice</FormLabel>
+                      <p className="text-xs text-muted-foreground">Unit prices include GST</p>
+                    </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
@@ -598,47 +623,21 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   <h2 className="text-base font-semibold tracking-tight">Line items</h2>
                   <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => append({ productId: 0, variantId: null, quantity: 1, unitPrice: 0 })}>
-                  <Plus className="h-4 w-4 mr-2" /> Add Item
+                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => append({ ...defaultCatalogLineItem })}>
+                  <Plus className="h-4 w-4 mr-2" /> Add item
                 </Button>
               </div>
               {fields.map((field, index) => (
                 <div key={field.id} className="flex gap-3 rounded-xl border border-border/60 bg-muted/10 p-4 shadow-sm">
-                  <div className="flex-1 space-y-4">
-                    <ProductVariantSelect
+                  <div className="flex-1">
+                    <LineItemRow
+                      index={index}
+                      form={form}
                       products={productsData?.data ?? []}
-                      productId={Number(form.watch(`items.${index}.productId`) ?? 0)}
-                      variantId={form.watch(`items.${index}.variantId`) ?? null}
-                      onProductChange={(productId) => {
-                        form.setValue(`items.${index}.productId`, productId, { shouldDirty: true, shouldValidate: true });
-                        form.setValue(`items.${index}.variantId`, null, { shouldDirty: true, shouldValidate: true });
-                      }}
-                      onVariantChange={(variantId) =>
-                        form.setValue(`items.${index}.variantId`, variantId, { shouldDirty: true, shouldValidate: true })
-                      }
-                      onPriceChange={(price) =>
-                        form.setValue(`items.${index}.unitPrice`, Number(price || 0), { shouldDirty: true, shouldValidate: true })
-                      }
+                      onlyForLabel="order"
+                      isGstInvoice={isGstInvoice}
+                      defaultGstPercent={defaultGstPercent}
                     />
-                    {(form.formState.errors.items?.[index]?.productId?.message ||
-                      form.formState.errors.items?.[index]?.variantId?.message) && (
-                      <p className="text-sm font-medium text-destructive">
-                        {form.formState.errors.items?.[index]?.productId?.message ||
-                          form.formState.errors.items?.[index]?.variantId?.message}
-                      </p>
-                    )}
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name={`items.${index}.quantity`} render={({ field: qtyField }) => (
-                        <FormItem><FormLabel className="text-xs">Quantity</FormLabel><FormControl><Input type="number" min="1" {...qtyField} /></FormControl><FormMessage /></FormItem>
-                      )} />
-                      <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field: priceField }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs">Price (auto)</FormLabel>
-                          <FormControl><Input type="number" min="0" step="0.01" {...priceField} disabled /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
                   </div>
                   <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-1" disabled={fields.length === 1}>
                     <Trash2 className="h-4 w-4 text-destructive" />
@@ -724,6 +723,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
               </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -757,9 +757,28 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </FormItem>
                   )}
                 />
-                <div className="space-y-2">
-                  <label className="text-sm font-medium leading-none">Computed Subtotal</label>
-                  <Input value={orderSummary.subtotal.toFixed(2)} disabled />
+                <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
+                  {isGstInvoice ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Taxable value</span>
+                        <span>₹{orderSummary.taxableSubtotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">GST</span>
+                        <span>₹{orderSummary.taxAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold border-t pt-2">
+                        <span>Total (incl. GST)</span>
+                        <span>₹{orderSummary.total.toLocaleString()}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between font-semibold">
+                      <span>Order total</span>
+                      <span>₹{orderSummary.total.toLocaleString()}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -987,6 +1006,33 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   )}
                 />
               </div>
+
+              <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+                <div className="mb-3">
+                  <h2 className="text-base font-semibold tracking-tight">Delivery comments / notes</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Instructions for drivers and delivery team (one note per line).
+                  </p>
+                </div>
+                <FormField
+                  control={form.control}
+                  name="deliveryCommentsText"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Textarea
+                          rows={4}
+                          className="min-h-[5rem] resize-y"
+                          placeholder="e.g. Call before arrival, lift not working, leave at security…"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </aside>
 
           </div>
@@ -1011,6 +1057,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
           </div>
         </form>
       </Form>
+
     </div>
   );
 }

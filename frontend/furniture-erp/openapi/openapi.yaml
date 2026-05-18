@@ -2185,6 +2185,11 @@ components:
         imageUrl:
           type: string
           nullable: true
+        imageUrls:
+          type: array
+          items:
+            type: string
+          description: Gallery URLs; first is also stored in imageUrl
         price:
           type: number
           nullable: true
@@ -2213,6 +2218,10 @@ components:
         imageUrl:
           type: string
           nullable: true
+        imageUrls:
+          type: array
+          items:
+            type: string
         price:
           type: number
           nullable: true
@@ -2237,6 +2246,10 @@ components:
         imageUrl:
           type: string
           nullable: true
+        imageUrls:
+          type: array
+          items:
+            type: string
         price:
           type: number
           nullable: true

@@ -19,6 +19,15 @@ import { emitSafe } from "../lib/app-events";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
+import {
+  isCustomLineItem,
+  buildCustomAttributesJson,
+  resolveCustomLineImages,
+  normalizeLineDescription,
+  type IncomingLineItem,
+} from "../lib/custom-line-item";
+import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
+import { parseImageUrlsJson } from "../lib/image-urls";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -184,12 +193,92 @@ async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
   return true;
 }
 
+type ResolvedOrderLine = {
+  isCustom: boolean;
+  productId: number | null;
+  customName: string | null;
+  customImageUrl: string | null;
+  customImageUrls: string | null;
+  customAttributes: string | null;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  gstPercent: number;
+  totalPrice: number;
+};
+
+async function resolveOrderLineItems(
+  items: IncomingLineItem[],
+  isGst: boolean,
+  db: Pick<typeof prisma, "product" | "setting"> = prisma,
+): Promise<ResolvedOrderLine[]> {
+  const settings = await db.setting.findFirst();
+  const defaultGst = settings ? toNumber(settings.defaultGstPercent) : 18;
+  const resolved: ResolvedOrderLine[] = [];
+
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    const enteredUnitPrice = Number(item.unitPrice);
+    if (isCustomLineItem(item)) {
+      const name = item.customName?.trim();
+      if (!name) throw new Error("Custom line item name is required");
+      const gstPercent = isGst ? defaultGst : 0;
+      const breakdown = isGst
+        ? breakdownGstInclusiveLine(enteredUnitPrice, qty, gstPercent)
+        : breakdownGstExclusiveLine(enteredUnitPrice, qty, gstPercent);
+      const imgs = resolveCustomLineImages(item);
+      resolved.push({
+        isCustom: true,
+        productId: null,
+        customName: name,
+        customImageUrl: imgs.customImageUrl,
+        customImageUrls: imgs.customImageUrls,
+        customAttributes: buildCustomAttributesJson(item),
+        description: normalizeLineDescription(item.description),
+        quantity: qty,
+        unitPrice: breakdown.exclusiveUnitPrice,
+        gstPercent,
+        totalPrice: breakdown.lineTotal,
+      });
+      continue;
+    }
+    const productId = Number(item.productId);
+    const product = await db.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error(`Product ${productId} not found`);
+    const gstPercent = isGst ? toNumber(product.gstPercent) : 0;
+    const breakdown = isGst
+      ? breakdownGstInclusiveLine(enteredUnitPrice, qty, gstPercent)
+      : breakdownGstExclusiveLine(enteredUnitPrice, qty, gstPercent);
+    resolved.push({
+      isCustom: false,
+      productId,
+      customName: null,
+      customImageUrl: null,
+      customImageUrls: null,
+      customAttributes: null,
+      description: normalizeLineDescription(item.description),
+      quantity: qty,
+      unitPrice: breakdown.exclusiveUnitPrice,
+      gstPercent,
+      totalPrice: breakdown.lineTotal,
+    });
+  }
+  return resolved;
+}
+
 async function enrichOrder(order: any) {
   const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
   const enrichedItems = await Promise.all(items.map(async (item) => {
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
+    const product =
+      item.productId != null ? await prisma.product.findUnique({ where: { id: item.productId } }) : null;
+    const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
     return {
       ...item,
+      isCustom: item.isCustom,
+      customName: item.customName,
+      customImageUrl: customImageUrls[0] ?? null,
+      customImageUrls,
+      customAttributes: item.customAttributes,
       unitPrice: toNumber(item.unitPrice),
       gstPercent: toNumber(item.gstPercent),
       totalPrice: toNumber(item.totalPrice),
@@ -258,6 +347,10 @@ async function enrichOrder(order: any) {
     challanImages: safeJsonParse<string[]>(order.challanImages, []),
     photoComments: safeJsonParse<Array<{ imageUrl: string; comment?: string }>>(order.photoComments, []),
     staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(order.staffComments, []),
+    deliveryComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(
+      (order as { deliveryComments?: string | null }).deliveryComments,
+      [],
+    ),
     items: enrichedItems,
     branch,
     assignedTo,
@@ -434,19 +527,20 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     assignedToId: clientAssignedToId,
     ...orderData
   } = parsed.data as any;
+  let resolvedItems: ResolvedOrderLine[];
+  try {
+    resolvedItems = await resolveOrderLineItems(items as IncomingLineItem[], !!orderData.isGst);
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
+  }
   let subtotal = 0;
   let taxAmount = 0;
-
-  const resolvedItems: any[] = [];
-  for (const item of items) {
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
-    if (!product) { res.status(400).json({ error: `Product ${item.productId} not found` }); return; }
-      const gstPercent = orderData.isGst ? toNumber(product.gstPercent) : 0;
+  for (const item of resolvedItems) {
     const itemSubtotal = item.unitPrice * item.quantity;
-    const itemTax = (itemSubtotal * gstPercent) / 100;
+    const itemTax = (itemSubtotal * item.gstPercent) / 100;
     subtotal += itemSubtotal;
     taxAmount += itemTax;
-    resolvedItems.push({ ...item, gstPercent, totalPrice: itemSubtotal + itemTax });
   }
 
   const totalAmount = subtotal + taxAmount;
@@ -521,6 +615,9 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           challanImages: JSON.stringify(Array.isArray(orderData.challanImages) ? orderData.challanImages : []),
           photoComments: JSON.stringify(Array.isArray(orderData.photoComments) ? orderData.photoComments : []),
           staffComments: JSON.stringify(Array.isArray(orderData.staffComments) ? orderData.staffComments : []),
+          deliveryComments: JSON.stringify(
+            Array.isArray(orderData.deliveryComments) ? orderData.deliveryComments : [],
+          ),
           assignedToId: assigneeIdsFromBody[0] ?? null,
           createdById: actorId,
           deliveryDate: orderData.deliveryDate ? new Date(orderData.deliveryDate) : null,
@@ -545,23 +642,31 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
         await tx.orderItem.create({
           data: {
             orderId: order.id,
+            isCustom: item.isCustom,
             productId: item.productId,
+            customName: item.customName,
+            customImageUrl: item.customImageUrl,
+            customImageUrls: item.customImageUrls,
+            customAttributes: item.customAttributes,
+            description: item.description,
             quantity: item.quantity,
             unitPrice: String(item.unitPrice),
             gstPercent: String(item.gstPercent),
             totalPrice: String(item.totalPrice),
           },
         });
-        await decrementProductStock(item.productId, item.quantity, tx);
-        await tx.inventoryLog.create({
-          data: {
-            productId: item.productId,
-            type: "out",
-            quantity: item.quantity,
-            notes: `Order ${orderNumber}`,
-            branchId,
-          },
-        });
+        if (!item.isCustom && item.productId != null) {
+          await decrementProductStock(item.productId, item.quantity, tx);
+          await tx.inventoryLog.create({
+            data: {
+              productId: item.productId,
+              type: "out",
+              quantity: item.quantity,
+              notes: `Order ${orderNumber}`,
+              branchId,
+            },
+          });
+        }
       }
 
       const settings = await tx.setting.findFirst();
@@ -582,11 +687,18 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
         },
       });
       if (safeAdvanceAmount > 0) {
+        const advanceMode = orderData.paymentMode ?? "cash";
+        const advanceCheque =
+          typeof orderData.chequeNumber === "string" ? orderData.chequeNumber.trim() : "";
+        if (advanceMode === "cheque" && !advanceCheque) {
+          throw new Error("Cheque number is required for cheque advance payment");
+        }
         await tx.payment.create({
           data: {
             orderId: order.id,
             amount: String(safeAdvanceAmount),
-            mode: orderData.paymentMode ?? "cash",
+            mode: advanceMode,
+            chequeNumber: advanceMode === "cheque" ? advanceCheque : null,
             notes: "Advance payment at order creation",
           },
         });
@@ -675,36 +787,31 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   const nextItems = Array.isArray(payload.items)
     ? payload.items
     : existingItems.map((item) => ({
+        isCustom: item.isCustom,
         productId: item.productId,
+        customName: item.customName,
+        customImageUrl: item.customImageUrl,
+        customImageUrls: parseImageUrlsJson(item.customImageUrls, item.customImageUrl),
+        customAttributes: item.customAttributes,
         quantity: item.quantity,
         unitPrice: toNumber(item.unitPrice),
       }));
 
+  let resolvedItems: ResolvedOrderLine[];
+  try {
+    resolvedItems = await resolveOrderLineItems(nextItems as IncomingLineItem[], !!nextIsGst);
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
+  }
+
   let subtotal = 0;
   let taxAmount = 0;
-  const resolvedItems: Array<{
-    productId: number;
-    quantity: number;
-    unitPrice: number;
-    gstPercent: number;
-    totalPrice: number;
-  }> = [];
-
-  for (const item of nextItems) {
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
-    if (!product) { res.status(400).json({ error: `Product ${item.productId} not found` }); return; }
-    const gstPercent = nextIsGst ? toNumber(product.gstPercent) : 0;
+  for (const item of resolvedItems) {
     const itemSubtotal = item.unitPrice * item.quantity;
-    const itemTax = (itemSubtotal * gstPercent) / 100;
+    const itemTax = (itemSubtotal * item.gstPercent) / 100;
     subtotal += itemSubtotal;
     taxAmount += itemTax;
-    resolvedItems.push({
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      gstPercent,
-      totalPrice: itemSubtotal + itemTax,
-    });
   }
 
   const totalAmount = subtotal + taxAmount;
@@ -713,10 +820,12 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
 
   const previousQtyByProduct = new Map<number, number>();
   for (const item of existingItems) {
+    if (item.productId == null) continue;
     previousQtyByProduct.set(item.productId, (previousQtyByProduct.get(item.productId) ?? 0) + item.quantity);
   }
   const nextQtyByProduct = new Map<number, number>();
   for (const item of resolvedItems) {
+    if (item.productId == null) continue;
     nextQtyByProduct.set(item.productId, (nextQtyByProduct.get(item.productId) ?? 0) + item.quantity);
   }
   const productIds = new Set<number>([...previousQtyByProduct.keys(), ...nextQtyByProduct.keys()]);
@@ -763,7 +872,13 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       await tx.orderItem.createMany({
         data: resolvedItems.map((item) => ({
           orderId: id,
+          isCustom: item.isCustom,
           productId: item.productId,
+          customName: item.customName,
+          customImageUrl: item.customImageUrl,
+          customImageUrls: item.customImageUrls,
+          customAttributes: item.customAttributes,
+          description: item.description,
           quantity: item.quantity,
           unitPrice: String(item.unitPrice),
           gstPercent: String(item.gstPercent),
@@ -907,6 +1022,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       const normalizedChallanImages = Array.isArray(orderFields.challanImages) ? orderFields.challanImages : safeJsonParse<string[]>(existingOrder.challanImages, []);
       const normalizedPhotoComments = Array.isArray(orderFields.photoComments) ? orderFields.photoComments : safeJsonParse<any[]>(existingOrder.photoComments, []);
       const normalizedStaffComments = Array.isArray(orderFields.staffComments) ? orderFields.staffComments : safeJsonParse<any[]>(existingOrder.staffComments, []);
+      const normalizedDeliveryComments = Array.isArray(orderFields.deliveryComments)
+        ? orderFields.deliveryComments
+        : safeJsonParse<any[]>((existingOrder as { deliveryComments?: string | null }).deliveryComments, []);
       await tx.order.update({
         where: { id },
         data: {
@@ -920,6 +1038,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           challanImages: JSON.stringify(normalizedChallanImages),
           photoComments: JSON.stringify(normalizedPhotoComments),
           staffComments: JSON.stringify(normalizedStaffComments),
+          deliveryComments: JSON.stringify(normalizedDeliveryComments),
           deliveryDate: nextDeliveryDate,
           deliverySlotId: nextSlotId,
           deliveryStatus: nextDelStatus,
@@ -965,11 +1084,37 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === "Insufficient stock across variants") {
       res.status(400).json({ error: "Insufficient stock for one or more products" });
-      return;
+      return; 
     }
     res.status(400).json({ error: msg || "Failed to update order" });
     return;
   }
+
+  const actorId = (req as { user?: { id: number } }).user?.id;
+  const prevStatus = normalizeMainOrderStatus(String(existingOrder.status));
+  const nextStatus = normalizeMainOrderStatus(String(order.status));
+  if (prevStatus !== nextStatus) {
+    emitSafe("ORDER_STATUS_CHANGED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      previousStatus: prevStatus,
+      nextStatus,
+      changedById: actorId,
+    });
+  }
+  const prevDel = normalizeDeliveryStatus((existingOrder as { deliveryStatus?: string }).deliveryStatus);
+  const nextDel = normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus);
+  if (prevDel !== nextDel) {
+    emitSafe("ORDER_DELIVERY_UPDATED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      previousDeliveryStatus: prevDel,
+      nextDeliveryStatus: nextDel,
+      changedById: actorId,
+    });
+  } 
 
   res.json(await enrichOrder(order));
 });
@@ -1018,7 +1163,7 @@ router.patch(
       res.status(404).json({ error: "Order not found" });
       return;
     }
-    const branchId = existing.branchId;
+    const branchId = existing.branchId; 
     if (branchId == null) {
       res.status(400).json({ error: "Order has no branch" });
       return;
@@ -1067,6 +1212,21 @@ router.patch(
           },
         });
       });
+      const actorId = (req as { user?: { id: number } }).user?.id;
+      if (parsed.data.deliveryStatus !== undefined) {
+        const prevDel = normalizeDeliveryStatus(eo.deliveryStatus);
+        const nextDel = normalizeDeliveryStatus(updated.deliveryStatus);
+        if (prevDel !== nextDel) {
+          emitSafe("ORDER_DELIVERY_UPDATED", {
+            orderId: id,
+            orderNumber: updated.orderNumber,
+            branchId: updated.branchId,
+            previousDeliveryStatus: prevDel,
+            nextDeliveryStatus: nextDel,
+            changedById: actorId,
+          });
+        }
+      }
       res.json(await enrichOrder(updated));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1096,6 +1256,18 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
   }
   const order = await prisma.order.update({ where: { id }, data: { status: nextStatus } }).catch(() => null);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  const prevStatus = normalizeMainOrderStatus(String(existing.status));
+  if (prevStatus !== nextStatus) {
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    emitSafe("ORDER_STATUS_CHANGED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      previousStatus: prevStatus,
+      nextStatus,
+      changedById: actorId,
+    });
+  }
   res.json(await enrichOrder(order));
 });
 

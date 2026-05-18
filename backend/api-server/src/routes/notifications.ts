@@ -89,6 +89,27 @@ router.get("/notifications", requireAuth, notificationRestLimiter, async (req, r
   });
 });
 
+router.get("/notifications/push-logs", requireAuth, notificationRestLimiter, async (req, res): Promise<void> => {
+  const userId = (req as { user?: { id: number; role?: { name?: string | null } | null } }).user!.id;
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+  const rows = await prisma.notificationLog.findMany({
+    where: { channel: "push", userId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  res.json({
+    data: rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      notificationId: r.notificationId,
+      channel: r.channel,
+      status: r.status,
+      detail: r.detail,
+      createdAt: r.createdAt.toISOString(),
+    })),
+  });
+});
+
 router.get("/notifications/unread-count", requireAuth, notificationRestLimiter, async (req, res): Promise<void> => {
   const userId = (req as { user?: { id: number } }).user!.id;
   const count = await prisma.notificationRecipient.count({

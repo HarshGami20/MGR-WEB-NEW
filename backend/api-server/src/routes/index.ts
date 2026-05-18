@@ -9,6 +9,7 @@ import inventoryRouter from "./inventory";
 import ordersRouter from "./orders";
 import invoicesRouter from "./invoices";
 import paymentsRouter from "./payments";
+import paymentFollowUpsRouter from "./paymentFollowUps";
 import suppliersRouter from "./suppliers";
 import manufacturersRouter from "./manufacturers";
 import purchaseOrdersRouter from "./purchaseOrders";
@@ -20,6 +21,7 @@ import attributeCatalogRouter from "./attributeCatalog";
 import reportsRouter from "./reports";
 import notificationsRouter from "./notifications";
 import deliverySlotsRouter from "./deliverySlots";
+import complaintsRouter from "./complaints";
 
 const router: IRouter = Router();
 
@@ -34,6 +36,7 @@ router.use(ordersRouter);
 router.use(deliverySlotsRouter);
 router.use(invoicesRouter);
 router.use(paymentsRouter);
+router.use(paymentFollowUpsRouter);
 router.use(suppliersRouter);
 router.use(manufacturersRouter);
 router.use(purchaseOrdersRouter);
@@ -44,5 +47,6 @@ router.use(productVariantsRouter);
 router.use(attributeCatalogRouter);
 router.use(reportsRouter);
 router.use(notificationsRouter);
+router.use(complaintsRouter);
 
 export default router;

@@ -83,10 +83,23 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     return;
   }
 
-  const payment = await prisma.payment.create({ data: {
-    ...parsed.data,
-    amount: String(appliedAmount),
-  }});
+  const mode = parsed.data.mode ?? "cash";
+  const rawCheque = typeof parsed.data.chequeNumber === "string" ? parsed.data.chequeNumber.trim() : "";
+  const chequeNumber = mode === "cheque" ? rawCheque || null : null;
+  if (mode === "cheque" && !chequeNumber) {
+    res.status(400).json({ error: "Cheque number is required when payment mode is cheque" });
+    return;
+  }
+
+  const payment = await prisma.payment.create({
+    data: {
+      orderId: parsed.data.orderId,
+      amount: String(appliedAmount),
+      mode,
+      chequeNumber,
+      notes: parsed.data.notes ?? null,
+    },
+  });
 
   await prisma.order.update({
     where: { id: parsed.data.orderId },

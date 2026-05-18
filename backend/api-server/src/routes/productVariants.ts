@@ -6,13 +6,28 @@ import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 
 const router: IRouter = Router();
 
+function resolveVariantImagesInput(body: {
+  imageUrls?: string[] | null;
+  imageUrl?: string | null;
+}): { imageUrls: string | null; imageUrl: string | null } {
+  if (body.imageUrls !== undefined) {
+    return serializeImageUrls(body.imageUrls);
+  }
+  const single = body.imageUrl?.trim() || null;
+  return serializeImageUrls(single ? [single] : []);
+}
+
 function serializeVariant(v: any) {
   const { ...rest } = v;
+  const imageUrls = parseImageUrlsJson(rest.imageUrls, rest.imageUrl);
   return {
     ...rest,
+    imageUrls,
+    imageUrl: imageUrls[0] ?? null,
     price: v.price != null ? toNumber(v.price) : null,
   };
 }
@@ -59,12 +74,17 @@ router.post("/products/:productId/variants", requireAuth, requirePermission("pro
   const writeBranchId = await requireWriteBranchId(req, res, user);
   if (writeBranchId == null) return;
   try {
+    const images = resolveVariantImagesInput({
+      imageUrls: parsed.data.imageUrls,
+      imageUrl: parsed.data.imageUrl,
+    });
     const variant = await prisma.productVariant.create({
       data: {
         productId,
         name: parsed.data.name,
         sku: parsed.data.sku,
-        imageUrl: parsed.data.imageUrl ?? null,
+        imageUrl: images.imageUrl,
+        imageUrls: images.imageUrls,
         price: parsed.data.price != null ? String(parsed.data.price) : null,
         stockQty: parsed.data.stockQty ?? 0,
         lowStockThreshold: parsed.data.lowStockThreshold ?? 10,
@@ -128,8 +148,13 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
   if (d.price !== undefined) {
     data.price = d.price === null ? null : String(d.price);
   }
-  if (d.imageUrl !== undefined) {
-    data.imageUrl = d.imageUrl ?? null;
+  if (d.imageUrls !== undefined || d.imageUrl !== undefined) {
+    const images = resolveVariantImagesInput({
+      imageUrls: d.imageUrls,
+      imageUrl: d.imageUrl,
+    });
+    data.imageUrl = images.imageUrl;
+    data.imageUrls = images.imageUrls;
   }
 
   if (Object.keys(data).length === 0) {

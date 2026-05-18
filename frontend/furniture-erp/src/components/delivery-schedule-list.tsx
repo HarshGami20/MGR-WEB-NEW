@@ -17,12 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-const DELIVERY_STATUS_LABEL: Record<DeliveryStatusValue, string> = {
-  pending: "Pending",
-  out_for_delivery: "Out for delivery",
-  delivered: "Delivered",
-};
+import { DELIVERY_STATUS_LABEL } from "@/lib/delivery-status-ui";
 
 function deliveryStatusTriggerClass(s: DeliveryStatusValue) {
   switch (s) {
@@ -153,7 +148,7 @@ export function DeliveryScheduleList({
                         ) : null}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         {canUpdateStatus ? (
                           <Select
                             value={del}

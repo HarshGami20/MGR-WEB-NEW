@@ -1,10 +1,12 @@
-/** Set `VITE_DEBUG_NOTIFICATIONS=true` in `.env` for verbose logs in production builds; in dev, logs when `import.meta.env.DEV` is true. */
+import { pushLog } from "@/lib/push-notification-log";
+
+/** @deprecated Prefer pushLog — kept for existing call sites. */
 export function notifyDebug(...args: unknown[]): void {
-  const forced = import.meta.env.VITE_DEBUG_NOTIFICATIONS === "true";
-  if (!forced && !import.meta.env.DEV) return;
-  console.log("[Notifications]", ...args);
+  const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+  pushLog("debug", "legacy", msg, args.length > 1 ? args.slice(1) : undefined);
 }
 
 export function notifyWarn(...args: unknown[]): void {
-  console.warn("[Notifications]", ...args);
+  const msg = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+  pushLog("warn", "legacy", msg, args.length > 1 ? args.slice(1) : undefined);
 }

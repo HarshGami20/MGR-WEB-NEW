@@ -22,6 +22,7 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: "suppliers", label: "Suppliers" },
   { key: "manufacturers", label: "Manufacturers" },
   { key: "purchaseOrders", label: "Purchase orders" },
+  { key: "complaints", label: "Complaints & support" },
   { key: "settings", label: "Settings" },
 ];
 
@@ -110,6 +111,7 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/payments": "payments",
   "/reports": "reports",
   "/purchase-orders": "purchaseOrders",
+  "/complaints": "complaints",
   "/suppliers": "suppliers",
   "/manufacturers": "manufacturers",
   "/branches": "branches",
@@ -124,6 +126,7 @@ const STAFF_NAV_FALLBACK_ORDER = [
   "/dashboard",
   "/products",
   "/orders",
+  "/complaints",
   "/deliveries",
   "/purchase-orders",
   "/inventory",

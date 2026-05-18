@@ -9,7 +9,7 @@ import {
   useListSuppliers,
   useListManufacturers,
   useListProducts,
-  getListPurchaseOrdersQueryKey
+  getListPurchaseOrdersQueryKey,
 } from "@/api-client";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
@@ -19,6 +19,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Eye, Trash2 } from "lucide-react";
+import { LineItemRow } from "@/components/line-item-row";
+import { lineItemFormSchema, lineItemToApiPayload } from "@/lib/line-item-form-schema";
+import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { z } from "zod";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,17 +30,11 @@ import { Badge } from "@/components/ui/badge";
 import { usePermissions } from "@/lib/permissions";
 import { Input } from "@/components/ui/input";
 
-const poItemSchema = z.object({
-  productId: z.coerce.number().min(1, "Product is required"),
-  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
-  unitPrice: z.coerce.number().min(0, "Price must be positive"),
-});
-
 const poSchema = z.object({
   type: z.enum(["supplier", "manufacturer"]),
   supplierId: z.coerce.number().optional().nullable(),
   manufacturerId: z.coerce.number().optional().nullable(),
-  items: z.array(poItemSchema).min(1, "At least one item is required"),
+  items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
   expectedDelivery: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
@@ -50,7 +47,6 @@ export default function PurchaseOrders() {
   const [status, setStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { selectedBranchId } = useBranch();
@@ -117,7 +113,7 @@ export default function PurchaseOrders() {
       type: "supplier",
       supplierId: undefined,
       manufacturerId: undefined,
-      items: [{ productId: 0, quantity: 1, unitPrice: 0 }],
+      items: [{ ...defaultCatalogLineItem }],
       expectedDelivery: "",
       notes: "",
     },
@@ -133,7 +129,7 @@ export default function PurchaseOrders() {
       type: "supplier",
       supplierId: undefined,
       manufacturerId: undefined,
-      items: [{ productId: 0, quantity: 1, unitPrice: 0 }],
+      items: [{ ...defaultCatalogLineItem }],
       expectedDelivery: "",
       notes: "",
     });
@@ -149,6 +145,16 @@ export default function PurchaseOrders() {
       form.setError("manufacturerId", { message: "Manufacturer is required" });
       return;
     }
+
+    for (let i = 0; i < data.items.length; i += 1) {
+      const item = data.items[i];
+      if (item.isCustom) continue;
+      const product = productsData?.data?.find((p) => p.id === Number(item.productId));
+      if (product?.variantCount && product.variantCount > 0 && !item.variantId) {
+        form.setError(`items.${i}.productId`, { message: "Please select a variant for this product" });
+        return;
+      }
+    }
     
     // Clean up IDs based on type
     if (data.type === "supplier") data.manufacturerId = undefined;
@@ -163,7 +169,13 @@ export default function PurchaseOrders() {
       return;
     }
 
-    createPO.mutate({ data: { ...data, branchId: writeBranchId } });
+    createPO.mutate({
+      data: {
+        ...data,
+        branchId: writeBranchId,
+        items: data.items.map((item) => lineItemToApiPayload(item)) as any,
+      },
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -428,69 +440,22 @@ export default function PurchaseOrders() {
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-medium">Items</h4>
-                  <Button type="button" variant="outline" size="sm" onClick={() => append({ productId: 0, quantity: 1, unitPrice: 0 })}>
-                    <Plus className="h-4 w-4 mr-2" /> Add Item
+                  <Button type="button" variant="outline" size="sm" onClick={() => append({ ...defaultCatalogLineItem })}>
+                    <Plus className="h-4 w-4 mr-2" /> Add item
                   </Button>
                 </div>
                 
                 {fields.map((field, index) => (
                   <div key={field.id} className="flex gap-2 items-start border p-3 rounded-md">
-                    <div className="flex-1 space-y-4">
-                      <FormField
-                        control={form.control}
-                        name={`items.${index}.productId`}
-                        render={({ field: productField }) => (
-                          <FormItem>
-                            <FormLabel className="sr-only">Product</FormLabel>
-                            <Select
-                              value={productField.value ? productField.value.toString() : ""}
-                              onValueChange={(val) => productField.onChange(parseInt(val))}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select Product" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {productsData?.data?.map(p => (
-                                  <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
+                    <div className="flex-1">
+                      <LineItemRow
+                        index={index}
+                        form={form}
+                        products={productsData?.data ?? []}
+                        onlyForLabel="PO"
                       />
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.quantity`}
-                          render={({ field: qtyField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Quantity</FormLabel>
-                              <FormControl>
-                                <Input type="number" min="1" {...qtyField} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.unitPrice`}
-                          render={({ field: priceField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Cost Price (₹)</FormLabel>
-                              <FormControl>
-                                <Input type="number" min="0" step="0.01" {...priceField} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
                     </div>
                     <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-1" disabled={fields.length === 1}>
                       <Trash2 className="h-4 w-4 text-destructive" />

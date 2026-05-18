@@ -6,6 +6,7 @@ import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -87,8 +88,11 @@ async function enrichProduct(p: any, extras?: { isLowStock?: boolean }) {
     variantCount = await prisma.productVariant.count({ where: { productId: rest.id } });
   }
 
+  const imageUrls = parseImageUrlsJson(rest.imageUrls, rest.imageUrl);
   return {
     ...rest,
+    imageUrls,
+    imageUrl: imageUrls[0] ?? null,
     price: toNumber(rest.price),
     gstPercent: toNumber(rest.gstPercent),
     category,
@@ -96,6 +100,16 @@ async function enrichProduct(p: any, extras?: { isLowStock?: boolean }) {
     variantCount,
     isLowStock: extras?.isLowStock,
   };
+}
+
+function resolveProductImagesInput(
+  body: { imageUrls?: string[] | null; imageUrl?: string | null },
+): { imageUrls: string | null; imageUrl: string | null } {
+  if (body.imageUrls !== undefined) {
+    return serializeImageUrls(body.imageUrls);
+  }
+  const single = body.imageUrl?.trim() || null;
+  return serializeImageUrls(single ? [single] : []);
 }
 
 function productMatchesCategoryFilter(
@@ -194,20 +208,30 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
   if (writeBranchId == null) return;
 
   try {
+    const images = resolveProductImagesInput({
+      imageUrls: d.imageUrls as string[] | undefined,
+      imageUrl: d.imageUrl,
+    });
+
     const product = await prisma.$transaction(async (tx) => {
       const p = await tx.product.create({
         data: {
           name: d.name,
           sku: d.sku,
           categoryId: d.categoryId ?? null,
-          imageUrl: mode === "simple" ? (d.imageUrl ?? null) : null,
+          imageUrl: images.imageUrl,
+          imageUrls: images.imageUrls,
           price: String(d.price),
           gstPercent: String(d.gstPercent),
           stockQty,
           lowStockThreshold: d.lowStockThreshold,
           description: d.description ?? null,
+          attributes: mode === "simple" ? (d.attributes ?? null) : null,
         },
       });
+      if (mode === "simple" && d.attributes) {
+        await syncAttributeCatalogFromJson(d.attributes, tx);
+      }
       if (stockQty > 0) {
         await tx.inventoryLog.create({
           data: {
@@ -221,12 +245,17 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
       }
       if (mode === "variants" && d.initialVariants?.length) {
         for (const v of d.initialVariants) {
+          const vImages = resolveProductImagesInput({
+            imageUrls: (v as { imageUrls?: string[] }).imageUrls,
+            imageUrl: v.imageUrl,
+          });
           const createdVariant = await tx.productVariant.create({
             data: {
               productId: p.id,
               name: v.name,
               sku: v.sku,
-              imageUrl: v.imageUrl ?? null,
+              imageUrl: vImages.imageUrl,
+              imageUrls: vImages.imageUrls,
               price: v.price != null ? String(v.price) : null,
               stockQty: v.stockQty ?? 0,
               lowStockThreshold: v.lowStockThreshold ?? 10,
@@ -332,16 +361,29 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
       writeBranchId = wid;
     }
 
+    const images =
+      d.imageUrls !== undefined || d.imageUrl !== undefined
+        ? resolveProductImagesInput({
+            imageUrls: d.imageUrls as string[] | undefined,
+            imageUrl: d.imageUrl,
+          })
+        : null;
+
     const updateData: Record<string, unknown> = {
       name: d.name,
       sku: d.sku,
       categoryId: d.categoryId ?? null,
-      imageUrl: variantCount > 0 ? null : (d.imageUrl ?? null),
+      ...(images != null ? { imageUrl: images.imageUrl, imageUrls: images.imageUrls } : {}),
       price: String(d.price),
       gstPercent: String(d.gstPercent),
       lowStockThreshold: d.lowStockThreshold,
       description: d.description ?? null,
     };
+    if (d.attributes !== undefined && variantCount === 0) {
+      updateData.attributes = d.attributes;
+    } else if (variantCount > 0) {
+      updateData.attributes = null;
+    }
     if (d.stockQty !== undefined && variantCount === 0) {
       updateData.stockQty = d.stockQty;
     }
@@ -362,6 +404,9 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
             branchId: writeBranchId as number,
           },
         });
+      }
+      if (d.attributes !== undefined && variantCount === 0) {
+        await syncAttributeCatalogFromJson(d.attributes ?? null, tx);
       }
       return updated;
     });

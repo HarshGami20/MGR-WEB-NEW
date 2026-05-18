@@ -3,8 +3,8 @@ import { io, type Socket } from "socket.io-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { isWebPushConfigured, onForegroundMessage, registerWebPush } from "@/lib/fcm-web";
-import { notifyDebug, notifyWarn } from "@/lib/notification-debug";
+import { isWebPushConfigured, onForegroundMessage, registerWebPush, showSystemNotification } from "@/lib/fcm-web";
+import { attachServiceWorkerPushLogListener, pushLog } from "@/lib/push-notification-log";
 
 function socketOrigin(): string {
   const api = import.meta.env.VITE_API_URL?.trim();
@@ -50,13 +50,13 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
     setSocket(s);
 
     s.on("connect", () => {
-      notifyDebug("socket.io connected", { id: s.id, origin: socketOrigin() });
+      pushLog("info", "socket_connect", "Socket connected", { id: s.id, origin: socketOrigin() });
     });
     s.on("disconnect", (reason) => {
-      notifyDebug("socket.io disconnected", { reason });
+      pushLog("debug", "socket_disconnect", "Socket disconnected", { reason });
     });
     s.on("connect_error", (err) => {
-      notifyWarn("socket.io connect_error", err?.message ?? err);
+      pushLog("warn", "socket_error", err?.message ?? "connect_error", err);
     });
 
     const onNew = () => {
@@ -64,7 +64,7 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
     };
 
     s.on("notification:new", (payload: { title?: string; message?: string }) => {
-      notifyDebug("notification:new (socket)", { title: payload.title });
+      pushLog("info", "socket_notification", "In-app notification (socket)", { title: payload.title });
       onNew();
       toast({
         title: payload.title ?? "Notification",
@@ -84,19 +84,29 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
 
     let unsub: (() => void) | null = null;
 
+    const detachSwLog = attachServiceWorkerPushLogListener();
+
     const run = async () => {
       if (isWebPushConfigured() && Notification.permission === "default") {
         const p = await Notification.requestPermission();
+        pushLog("info", "permission_prompt", `User responded: ${p}`);
         if (p === "granted") await registerWebPush().catch(() => undefined);
       } else if (isWebPushConfigured() && Notification.permission === "granted") {
         await registerWebPush().catch(() => undefined);
+      } else if (isWebPushConfigured()) {
+        pushLog("warn", "permission_denied", "Notifications blocked in browser settings");
       }
 
       unsub = onForegroundMessage((payload) => {
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
-        toast({
-          title: payload.notification?.title ?? "Notification",
-          description: payload.notification?.body,
+        const title = payload.notification?.title ?? "Notification";
+        const body = payload.notification?.body;
+        toast({ title, description: body });
+        void showSystemNotification(payload);
+        pushLog("info", "realtime_notification", "Handled FCM for app notification", {
+          title,
+          type: payload.data?.type,
+          notificationId: payload.data?.notificationId,
         });
       });
     };
@@ -104,6 +114,7 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
     void run();
 
     return () => {
+      detachSwLog();
       unsub?.();
     };
   }, [user?.id, queryClient, toast]);

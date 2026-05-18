@@ -258,6 +258,7 @@ export interface ProductVariant {
   name: string;
   sku: string;
   imageUrl?: string | null;
+  imageUrls?: string[];
   price?: number | null;
   stockQty: number;
   lowStockThreshold: number;
@@ -271,6 +272,7 @@ export interface CreateProductVariantBody {
   name: string;
   sku: string;
   imageUrl?: string | null;
+  imageUrls?: string[];
   price?: number | null;
   stockQty?: number;
   lowStockThreshold?: number;
@@ -282,6 +284,7 @@ export interface UpdateProductVariantBody {
   name?: string;
   sku?: string;
   imageUrl?: string | null;
+  imageUrls?: string[];
   price?: number | null;
   stockQty?: number;
   lowStockThreshold?: number;

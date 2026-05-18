@@ -79,6 +79,7 @@ const ALL_MODULES = [
   "suppliers",
   "manufacturers",
   "purchaseOrders",
+  "complaints",
   "settings",
 ] as const;
 
@@ -105,6 +106,7 @@ async function main() {
         categories: { view: true, add: true, edit: true },
         inventory: { view: true, add: true, edit: true },
         orders: { view: true, add: true, edit: true, delete: true },
+        complaints: { view: true, add: true, edit: true, delete: true },
         deliveries: { view: true, add: true, edit: true, delete: true },
         invoices: { view: true, add: true, edit: true },
         payments: { view: true, add: true, edit: true },
@@ -125,6 +127,7 @@ async function main() {
         products: { view: true },
         categories: { view: true },
         orders: { view: true, add: true, edit: true },
+        complaints: { view: true, add: true, edit: true },
         deliveries: { view: true, edit: true },
         invoices: { view: true, add: true },
         payments: { view: true, add: true },
@@ -139,6 +142,7 @@ async function main() {
       permissions: perm({
         dashboard: { view: true },
         orders: { view: true, edit: true },
+        complaints: { view: true, add: true, edit: true },
         deliveries: { view: true, add: true, edit: true },
         products: { view: true },
       }),

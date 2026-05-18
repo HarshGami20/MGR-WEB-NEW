@@ -25,13 +25,22 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PaymentFollowUpsCalendar } from "@/components/payment-follow-up-panel";
+import { isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
 
-const paymentSchema = z.object({
-  orderId: z.coerce.number().min(1, "Order is required"),
-  amount: z.coerce.number().min(1, "Amount must be positive"),
-  mode: z.enum(["cash", "bank_transfer", "upi"]),
-  notes: z.string().optional().nullable(),
-});
+const paymentSchema = z
+  .object({
+    orderId: z.coerce.number().min(1, "Order is required"),
+    amount: z.coerce.number().min(1, "Amount must be positive"),
+    mode: z.enum(["cash", "bank_transfer", "upi", "cheque"]),
+    chequeNumber: z.string().optional(),
+    notes: z.string().optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === "cheque" && !data.chequeNumber?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Cheque number is required", path: ["chequeNumber"] });
+    }
+  });
 
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -40,7 +49,7 @@ export default function Payments() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<any>(null);
   const [orderPickerOpen, setOrderPickerOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"due" | "payments">("due");
+  const [activeTab, setActiveTab] = useState<"due" | "payments" | "followups">("due");
   const [paymentsOrderFilter, setPaymentsOrderFilter] = useState("all");
 
   const queryClient = useQueryClient();
@@ -67,6 +76,7 @@ export default function Payments() {
   const payableOrders = useMemo(
     () =>
       (ordersData?.data ?? []).filter((order: any) => {
+        if (!isPendingPaymentStatus(order.paymentStatus)) return false;
         const remaining = Number(order.totalAmount || 0) - Number(order.paidAmount || 0);
         return remaining > 0;
       }),
@@ -91,15 +101,19 @@ export default function Payments() {
       orderId: 0,
       amount: 0,
       mode: "cash",
+      chequeNumber: "",
       notes: "",
     },
   });
+
+  const watchedMode = form.watch("mode");
 
   const openCreateDialog = () => {
     form.reset({
       orderId: 0,
       amount: 0,
       mode: "cash",
+      chequeNumber: "",
       notes: "",
     });
     setSelectedOrderDetails(null);
@@ -117,7 +131,14 @@ export default function Payments() {
       });
       return;
     }
-    createPayment.mutate({ data });
+    const payload: Record<string, unknown> = {
+      orderId: data.orderId,
+      amount: data.amount,
+      mode: data.mode,
+      notes: data.notes ?? null,
+    };
+    if (data.mode === "cheque") payload.chequeNumber = data.chequeNumber?.trim();
+    createPayment.mutate({ data: payload as any });
   };
 
   const handleOrderSelect = (orderIdStr: string) => {
@@ -139,6 +160,7 @@ export default function Payments() {
       case "cash": return <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">Cash</Badge>;
       case "bank_transfer": return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Bank Transfer</Badge>;
       case "upi": return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">UPI</Badge>;
+      case "cheque": return <Badge variant="outline" className="bg-orange-50 text-orange-800 border-orange-200">Cheque</Badge>;
       default: return <Badge variant="outline">{mode}</Badge>;
     }
   }, []);
@@ -189,7 +211,14 @@ export default function Payments() {
       {
         accessorKey: "mode",
         header: "Payment Mode",
-        cell: ({ row }) => getModeBadge(row.original.mode),
+        cell: ({ row }) => (
+          <div className="space-y-0.5">
+            {getModeBadge(row.original.mode)}
+            {row.original.mode === "cheque" && row.original.chequeNumber ? (
+              <p className="text-xs text-muted-foreground font-mono">#{row.original.chequeNumber}</p>
+            ) : null}
+          </div>
+        ),
       },
       {
         accessorKey: "amount",
@@ -238,13 +267,14 @@ export default function Payments() {
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
-          setActiveTab(value as "due" | "payments");
+          setActiveTab(value as "due" | "payments" | "followups");
           setPage(1);
         }}
         className="space-y-4"
       >
         <TabsList>
           <TabsTrigger value="due">Due Payments</TabsTrigger>
+          <TabsTrigger value="followups">Follow-ups</TabsTrigger>
           <TabsTrigger value="payments">All Payments</TabsTrigger>
         </TabsList>
 
@@ -296,6 +326,10 @@ export default function Payments() {
               </table>
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="followups" className="space-y-4">
+          <PaymentFollowUpsCalendar branchId={selectedBranchId} />
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">
@@ -491,6 +525,7 @@ export default function Payments() {
                           <SelectItem value="cash">Cash</SelectItem>
                           <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
                           <SelectItem value="upi">UPI</SelectItem>
+                          <SelectItem value="cheque">Cheque</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -498,6 +533,22 @@ export default function Payments() {
                   )}
                 />
               </div>
+
+              {watchedMode === "cheque" && (
+                <FormField
+                  control={form.control}
+                  name="chequeNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cheque number</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? ""} placeholder="Cheque / instrument number" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

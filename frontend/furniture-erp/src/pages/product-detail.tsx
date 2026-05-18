@@ -23,9 +23,11 @@
   import { Badge } from "@/components/ui/badge";
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
   import { usePermissions } from "@/lib/permissions";
-  import { VariantFormDialog, attributesPlainLine } from "@/pages/products-shared";
+  import { VariantFormDialog, attributesPlainLine, AttrTags, jsonToAttrs } from "@/pages/products-shared";
   import { cn } from "@/lib/utils";
   import { resolvedProductImageUrl } from "@/lib/product-image-url";
+import { productImageList, variantImageList } from "@/lib/image-urls";
+import { ProductImageGallery } from "@/components/product-image-gallery";
 
   function formatVariantPrice(v: { price?: number | null }, basePrice: number): string {
     if (v.price != null) return `₹${Number(v.price).toFixed(2)}`;
@@ -117,7 +119,7 @@
     const canEdit = can("products", "edit");
     const canDelete = can("products", "delete");
     const categoryLine = product.categoryPath || product.category?.name || "";
-    const productImageSrc = resolvedProductImageUrl(product.imageUrl);
+    const productImages = productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null });
 
     return (
       <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
@@ -243,30 +245,31 @@
             <p className="mt-5 text-sm text-muted-foreground/70 italic">No description yet. Add one when editing the product.</p>
           )}
 
-          {/* Single SKU: hero photo in place of variations */}
+          <ProductImageGallery
+            urls={productImages}
+            editHref={`/products/${productId}/edit`}
+            canEdit={canEdit}
+            title={isSingleSku ? "Photos" : "Product photos"}
+          />
+
           {isSingleSku ? (
-            <section className="mt-8" aria-label="Product image">
-              <h2 className="text-lg font-semibold text-foreground mb-3">Photo</h2>
-              <div className="overflow-hidden w-fit border border-border/60 bg-white shadow-sm">
-                {productImageSrc ? (
-                  <img
-                    src={productImageSrc}
-                    alt=""
-                    className="max-h-[min(420px,55vh)] w-auto object-contain bg-muted/20"
-                    loading="lazy"
-                  />
+            <section className="mt-8" aria-label="Product variables">
+              <h2 className="text-lg font-semibold text-foreground mb-3">Variables</h2>
+              <div className="rounded-xl border border-border/60 bg-white p-4 shadow-sm">
+                {jsonToAttrs((product as { attributes?: string | null }).attributes).length > 0 ? (
+                  <AttrTags json={(product as { attributes?: string | null }).attributes} />
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-2 py-16 px-6 bg-muted/15 text-muted-foreground">
-                    <ImageIcon className="h-10 w-10 opacity-40" aria-hidden />
-                    <p className="text-sm text-center">No product photo yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No variables yet.
                     {canEdit ? (
-                      <Link href={`/products/${productId}/edit`}>
-                        <Button type="button" variant="outline" size="sm" className="rounded-lg mt-1">
-                          Add photo when editing
-                        </Button>
-                      </Link>
+                      <>
+                        {" "}
+                        <Link href={`/products/${productId}/edit`} className="text-primary underline-offset-2 hover:underline">
+                          Add size, colour, fabric…
+                        </Link>
+                      </>
                     ) : null}
-                  </div>
+                  </p>
                 )}
               </div>
             </section>
@@ -346,19 +349,49 @@
                           key={v.id}
                           className={cn("border-border/60", inactive && "opacity-55")}
                         >
-                          <TableCell className="px-2 py-2 align-middle w-14">
-                            <div className="h-12 w-12 overflow-hidden rounded-lg border border-border/60 bg-muted/30">
-                              {resolvedProductImageUrl(v.imageUrl) ? (
-                                <img
-                                  src={resolvedProductImageUrl(v.imageUrl)!}
-                                  alt=""
-                                  className="h-full w-full object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="h-full w-full" />
-                              )}
-                            </div>
+                          <TableCell className="px-2 py-2 align-middle w-[72px]">
+                            {(() => {
+                              const vPhotos = variantImageList(
+                                v as { imageUrls?: string | string[] | null; imageUrl?: string | null },
+                              );
+                              if (vPhotos.length === 0) {
+                                return <div className="h-12 w-12 rounded-lg border border-border/60 bg-muted/30" />;
+                              }
+                              if (vPhotos.length === 1) {
+                                return (
+                                  <div className="h-12 w-12 overflow-hidden rounded-lg border border-border/60 bg-muted/30">
+                                    <img
+                                      src={resolvedProductImageUrl(vPhotos[0])!}
+                                      alt=""
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="flex gap-1 items-center">
+                                  {vPhotos.slice(0, 3).map((url) => (
+                                    <div
+                                      key={url}
+                                      className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border/60 bg-muted/30"
+                                    >
+                                      <img
+                                        src={resolvedProductImageUrl(url)!}
+                                        alt=""
+                                        className="h-full w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ))}
+                                  {vPhotos.length > 3 ? (
+                                    <span className="text-[10px] text-muted-foreground font-medium">
+                                      +{vPhotos.length - 3}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell className="px-4 py-3 align-top max-w-[min(280px,40vw)]">
                             <span className="font-semibold text-foreground">{v.name}</span>
