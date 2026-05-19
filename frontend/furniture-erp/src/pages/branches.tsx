@@ -287,7 +287,7 @@ export default function Branches() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
-                    <FormControl><ValidatedInput field={field} rule="address" placeholder="Street address" /></FormControl>
+                    <FormControl><ValidatedInput field={field} rule="address" placeholder="Street, city, state, pincode" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -300,7 +300,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>City</FormLabel>
-                      <FormControl><ValidatedInput field={field} rule="city" /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="city" placeholder="e.g. Mumbai" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -311,7 +311,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>State</FormLabel>
-                      <FormControl><ValidatedInput field={field} rule="state" /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="state" placeholder="e.g. Maharashtra" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -325,7 +325,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Phone</FormLabel>
-                      <FormControl><ValidatedInput field={field} rule="mobile" /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="mobile" placeholder="10-digit mobile" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -336,7 +336,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Email</FormLabel>
-                      <FormControl><Input type="email" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><Input type="email" {...field} value={field.value || ""} placeholder="name@company.com" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
