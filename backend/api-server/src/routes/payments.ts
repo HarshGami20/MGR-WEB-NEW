@@ -49,12 +49,17 @@ router.get("/payments", requireAuth, requirePermission("payments", "read"), asyn
             branch: { select: { id: true, name: true, code: true } },
           },
         },
+        createdBy: { select: { id: true, name: true } },
       },
     }),
     prisma.payment.count({ where: whereClause }),
   ]);
 
-  const data = payments.map(p => ({ ...p, amount: toNumber(p.amount) }));
+  const data = payments.map((p) => ({
+    ...p,
+    amount: toNumber(p.amount),
+    recordedBy: p.createdBy?.name ?? null,
+  }));
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
 
@@ -91,6 +96,7 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     return;
   }
 
+  const actor = (req as { user?: { id: number } }).user;
   const payment = await prisma.payment.create({
     data: {
       orderId: parsed.data.orderId,
@@ -98,7 +104,9 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
       mode,
       chequeNumber,
       notes: parsed.data.notes ?? null,
+      createdById: actor?.id ?? null,
     },
+    include: { createdBy: { select: { id: true, name: true } } },
   });
 
   await prisma.order.update({
@@ -116,7 +124,11 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     amount: payment.amount,
   });
 
-  res.status(201).json({ ...payment, amount: toNumber(payment.amount) });
+  res.status(201).json({
+    ...payment,
+    amount: toNumber(payment.amount),
+    recordedBy: payment.createdBy?.name ?? null,
+  });
 });
 
 export default router;

@@ -86,14 +86,16 @@ export function OrderPaymentFollowUpPanel({ orderId }: { orderId: number }) {
   const rows = data?.data ?? [];
 
   return (
-    <div className="rounded-xl border border-border/60 p-4 space-y-4">
-      <h3 className="text-xl font-semibold flex items-center gap-2">
-        <CalendarClock className="h-5 w-5" />
-        Payment follow-up
-      </h3>
-      <p className="text-sm text-muted-foreground">
-        Schedule reminders and notes while payment is due or partially paid.
-      </p>
+    <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
+
+      <div className="space-y-0.5">
+        <h3 className="text-base font-semibold">
+          Payment Follow-ups
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Schedule reminders and notes while payment is due or partially paid.
+        </p>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-sm font-medium">Follow-up date</label>

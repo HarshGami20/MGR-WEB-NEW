@@ -106,6 +106,7 @@ model User {
   createdComplaints     Complaint[]         @relation("ComplaintCreatedBy")
   complaintComments     ComplaintComment[]
   paymentFollowUps      PaymentFollowUp[]   @relation("PaymentFollowUpCreatedBy")
+  paymentsRecorded      Payment[]           @relation("PaymentCreatedBy")
 
   notificationsSent       Notification[]           @relation("NotificationSender")
   notificationRecipients  NotificationRecipient[]
@@ -467,9 +468,11 @@ model Payment {
   mode         String   @default("cash")
   chequeNumber String?  @map("cheque_number")
   notes        String?
+  createdById  Int?     @map("created_by_id")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  order Order @relation(fields: [orderId], references: [id])
+  order     Order @relation(fields: [orderId], references: [id])
+  createdBy User? @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@map("payments")
 }

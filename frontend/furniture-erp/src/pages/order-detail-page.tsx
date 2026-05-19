@@ -1,7 +1,15 @@
 import { Link, Redirect, useRoute } from "wouter";
-import { getGetOrderQueryKey, useCreatePayment, useGetOrder, useListPayments, useUpdateOrder } from "@/api-client";
+import {
+  getGetOrderQueryKey,
+  getListPaymentsQueryKey,
+  useCreatePayment,
+  useGetOrder,
+  useListPayments,
+  useUpdateOrder,
+} from "@/api-client";
 import {
   ArrowLeft,
+  Calendar,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -20,7 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -202,10 +210,25 @@ export default function OrderDetailPage() {
     });
   };
 
+  const refreshOrderDetail = useCallback(
+    async (id: number) => {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: getGetOrderQueryKey(id) }),
+        queryClient.refetchQueries({
+          queryKey: getListPaymentsQueryKey({ orderId: id, limit: 100 }),
+        }),
+      ]);
+    },
+    [queryClient],
+  );
+
   const updateOrder = useUpdateOrder({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      onSuccess: (updated, { id }) => {
+        if (updated) {
+          queryClient.setQueryData(getGetOrderQueryKey(id), updated);
+        }
+        void refreshOrderDetail(id);
         toast({ title: "Order updated" });
       },
       onError: (error: any) => toast({ title: "Update failed", description: error?.response?.data?.error ?? error?.message, variant: "destructive" }),
@@ -213,9 +236,9 @@ export default function OrderDetailPage() {
   });
   const createPayment = useCreatePayment({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-        queryClient.invalidateQueries({ queryKey: ["listPayments"] });
+      onSuccess: (_payment, { data }) => {
+        const id = data.orderId;
+        void refreshOrderDetail(id);
         setPaymentAmount("");
         setPaymentNote("");
         setPaymentChequeNumber("");
@@ -232,7 +255,7 @@ export default function OrderDetailPage() {
       return patchOrderDelivery(orderId, headerBranchId, { deliveryStatus: next });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      void refreshOrderDetail(orderId);
       toast({ title: "Delivery status updated" });
     },
     onError: (error: Error) =>
@@ -350,7 +373,7 @@ export default function OrderDetailPage() {
                 )}
               </div>
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5">
-                <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
                  {formatCommentDateTime(order.createdAt)}
               </p>
             </div>
@@ -700,6 +723,12 @@ export default function OrderDetailPage() {
               ) : null}
             </DetailSection>
 
+            {showPaymentFollowUp ? 
+            <div className="">
+            <OrderPaymentFollowUpPanel orderId={order.id} /> 
+            </div>
+            : null}
+
             {assigneeLabel || orderAny.createdBy?.name ? (
               <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-dashed border-border/50 bg-muted/5 px-3 py-2 text-xs text-muted-foreground">
                 {assigneeLabel ? (
@@ -834,23 +863,32 @@ export default function OrderDetailPage() {
                         amount: number;
                         chequeNumber?: string | null;
                         notes?: string | null;
+                        recordedBy?: string | null;
+                        createdBy?: { name?: string } | null;
                         createdAt: string;
-                      }) => (
-                        <div key={payment.id} className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
-                          <p>
-                            <span className="capitalize">{payment.mode}</span>
-                            {payment.mode === "cheque" && payment.chequeNumber ? ` #${payment.chequeNumber}` : ""}
-                            {" — "}
-                            <span className="font-medium">₹{payment.amount.toLocaleString()}</span>
-                            {payment.notes ? (
-                              <span className="text-muted-foreground"> · {payment.notes}</span>
-                            ) : null}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(payment.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                      ),
+                      }) => {
+                        const recordedBy =
+                          payment.recordedBy ?? payment.createdBy?.name ?? null;
+                        return (
+                          <div key={payment.id} className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
+                            <p>
+                              <span className="capitalize">{payment.mode}</span>
+                              {payment.mode === "cheque" && payment.chequeNumber
+                                ? ` #${payment.chequeNumber}`
+                                : ""}
+                              {" — "}
+                              <span className="font-medium">₹{payment.amount.toLocaleString()}</span>
+                              {payment.notes ? (
+                                <span className="text-muted-foreground"> · {payment.notes}</span>
+                              ) : null}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {recordedBy ? `${recordedBy} · ` : ""}
+                              {formatCommentDateTime(payment.createdAt)}
+                            </p>
+                          </div>
+                        );
+                      },
                     )}
                   </div>
                 )}
@@ -950,10 +988,6 @@ export default function OrderDetailPage() {
                 </Button>
               </div>
             </DetailSection>
-
-
-
-            {showPaymentFollowUp ? <OrderPaymentFollowUpPanel orderId={order.id} /> : null}
           </aside>
         </div>
       </div>
