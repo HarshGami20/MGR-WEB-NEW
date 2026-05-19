@@ -254,7 +254,7 @@ export default function ComplaintDetailPage() {
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="rounded-full"
+                className="rounded-xl"
                 disabled={uploading}
                 onClick={() => document.getElementById("complaint-detail-photo-input")?.click()}
               >

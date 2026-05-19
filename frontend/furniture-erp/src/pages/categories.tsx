@@ -13,13 +13,10 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { categoryFormSchema, type CategoryFormValues } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
-const categorySchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  parentId: z.number().nullable().optional(),
-});
-
-type CategoryFormValues = z.infer<typeof categorySchema>;
+const categorySchema = categoryFormSchema;
 
 export default function Categories() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -176,7 +173,7 @@ export default function Categories() {
                   <FormItem>
                     <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <ValidatedInput field={field} rule="categoryName" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

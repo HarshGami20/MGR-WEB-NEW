@@ -29,24 +29,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { coerceRoleList, usePermissions } from "@/lib/permissions";
+import { userFormSchema, type UserFormValues } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
-const userSchema = z
-  .object({
-    name: z.string().min(1, "Name is required"),
-    mobile: z.string().min(1, "Mobile is required"),
-    email: z.string().email().optional().nullable().or(z.literal("")),
-    password: z.string().min(6, "Password must be at least 6 characters").optional(),
-    roleId: z.coerce.number().min(1, "Role is required"),
-    branchIds: z.array(z.coerce.number()).default([]),
-    supplierId: z.number().nullable().optional(),
-    manufacturerId: z.number().nullable().optional(),
-  })
-  .refine((d) => !(d.supplierId != null && d.manufacturerId != null), {
-    message: "Link a supplier or a manufacturer, not both.",
-    path: ["manufacturerId"],
-  });
-
-type UserFormValues = z.infer<typeof userSchema>;
+const userSchema = userFormSchema;
 
 const emptyForm: UserFormValues = {
   name: "",
@@ -398,7 +384,7 @@ export default function Users() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Full Name</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
+                    <FormControl><ValidatedInput field={field} rule="personName" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -411,7 +397,7 @@ export default function Users() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Mobile Number</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="mobile" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

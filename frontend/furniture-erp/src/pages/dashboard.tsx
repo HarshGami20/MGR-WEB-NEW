@@ -160,7 +160,7 @@ function StaffDashboard() {
     if (summary && summary.pendingPayments > 0) {
       return {
         title: "Pending payments",
-        meta: `${summary.pendingPayments} invoice(s) need attention`,
+        meta: `${summary.pendingPayments.toFixed(2)} invoice(s) need attention`,
       };
     }
     if (summary && summary.lowStockCount > 0) {
@@ -276,13 +276,13 @@ function StaffDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 shrink-0">
-          <Button asChild size="lg" className="rounded-full px-5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
+          <Button asChild size="lg" className="rounded-xl px-5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
             <Link href="/orders">
               <Plus className="h-4 w-4 mr-1" aria-hidden />
               New order
             </Link>
           </Button>
-          <Button asChild variant="outline" size="lg" className="rounded-full  px-5 border-primary/25 bg-background">
+          <Button asChild variant="outline" size="lg" className="rounded-xl  px-5 border-primary/25 bg-background">
             <Link href="/products">
               <Box className="h-4 w-4 mr-1" aria-hidden />
               Product
@@ -350,7 +350,7 @@ function StaffDashboard() {
               <select
                 value={analyticsRange}
                 onChange={(e) => setAnalyticsRange(e.target.value as "week" | "month" | "year")}
-                className="appearance-none rounded-full border border-border bg-background pl-3 pr-8 py-1 text-xs text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                className="appearance-none rounded-xl border border-border bg-background pl-3 pr-8 py-1 text-xs text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                 aria-label="Order analytics range"
               >
                 <option value="week">Week</option>
@@ -440,13 +440,13 @@ function StaffDashboard() {
                 <h2 className="text-lg font-semibold tracking-tight">Reminder</h2>
                 <p className="text-muted-foreground text-sm mt-3 leading-snug">{reminder.title}</p>
               </div>
-              <Badge variant="secondary" className="rounded-full shrink-0 capitalize">
+              <Badge variant="secondary" className="rounded-xl shrink-0 capitalize">
                 <CalendarClock className="h-3.5 w-3.5 mr-1 opacity-70" aria-hidden />
                 Today
               </Badge>
             </div>
             <p className="text-sm mt-4 text-muted-foreground">{reminder.meta}</p>
-            <Button className="mt-6 w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" asChild>
+            <Button className="mt-6 w-full rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" asChild>
               <Link href="/orders">
                 <Video className="h-4 w-4 mr-2" aria-hidden />
                 Open orders
@@ -475,7 +475,7 @@ function StaffDashboard() {
         <div className="lg:col-span-3 xl:col-span-3 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col min-h-[420px]">
           <div className="flex items-center justify-between gap-2 mb-4">
             <h2 className="text-lg font-semibold tracking-tight">Recent orders</h2>
-            <Button variant="outline" size="sm" className="rounded-full h-9 text-xs border-primary/20" asChild>
+            <Button variant="outline" size="sm" className="rounded-xl h-5 text-xs border-primary/20" asChild>
               <Link href="/orders">+ New</Link>
             </Button>
           </div>
@@ -522,7 +522,7 @@ function StaffDashboard() {
         <div className="lg:col-span-8 xl:col-span-8 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold tracking-tight">Team access</h2>
-            <Button variant="outline" size="sm" className="rounded-full h-9 text-xs border-primary/20" asChild>
+            <Button variant="outline" size="sm" className="rounded-xl h-9 text-xs border-primary/20" asChild>
               <Link href="/users">+ Add member</Link>
             </Button>
           </div>
@@ -579,7 +579,7 @@ function StaffDashboard() {
                 <select
                   value={revenueYear}
                   onChange={(e) => setRevenueYear(Number(e.target.value))}
-                  className="appearance-none rounded-full border border-border bg-background pl-3 pr-8 py-1 text-xs text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                  className="appearance-none rounded-xl border border-border bg-background pl-3 pr-8 py-1 text-xs text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                   aria-label="Filter annual revenue by year"
                 >
                   {yearOptions.map((year) => (

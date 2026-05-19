@@ -12,6 +12,7 @@ import {
   listPaymentFollowUpsByDate,
   listPaymentFollowUpReminders,
   type PaymentFollowUpRow,
+  formatPaymentStatusLabel,
 } from "@/lib/payment-follow-up-api";
 import { CalendarClock, Bell } from "lucide-react";
 
@@ -30,9 +31,7 @@ function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrd
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{row.followUpDate}</span>
         {order ? (
-          <Badge variant="outline" className="capitalize">
-            {order.paymentStatus.replace("_", " ")}
-          </Badge>
+          <Badge variant="outline">{formatPaymentStatusLabel(order.paymentStatus)}</Badge>
         ) : null}
       </div>
       {showOrderLink && order ? (

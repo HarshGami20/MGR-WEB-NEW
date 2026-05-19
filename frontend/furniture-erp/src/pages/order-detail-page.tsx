@@ -1,6 +1,6 @@
 import { Link, Redirect, useRoute } from "wouter";
 import { getGetOrderQueryKey, useCreatePayment, useGetOrder, useListPayments, useUpdateOrder } from "@/api-client";
-import { ArrowLeft, ImageIcon, Package, PencilLine, Truck, UserRound } from "lucide-react";
+import { ArrowLeft, ImageIcon, Package, PencilLine, Plus, Truck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +15,7 @@ import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
-import { isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
+import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
@@ -104,7 +104,9 @@ export default function OrderDetailPage() {
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentChequeNumber, setPaymentChequeNumber] = useState("");
   const [newStaffComment, setNewStaffComment] = useState("");
+  const [showStaffCommentForm, setShowStaffCommentForm] = useState(false);
   const [newDeliveryComment, setNewDeliveryComment] = useState("");
+  const [showDeliveryCommentForm, setShowDeliveryCommentForm] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const updateOrder = useUpdateOrder({
@@ -187,6 +189,7 @@ export default function OrderDetailPage() {
       data: { staffComments: next } as any,
     });
     setNewStaffComment("");
+    setShowStaffCommentForm(false);
   };
 
   const addDeliveryComment = () => {
@@ -205,6 +208,7 @@ export default function OrderDetailPage() {
       data: { deliveryComments: next } as any,
     });
     setNewDeliveryComment("");
+    setShowDeliveryCommentForm(false);
   };
 
   return (
@@ -267,18 +271,20 @@ export default function OrderDetailPage() {
               </p>
               <p className="text-sm text-green-600">Paid: ₹{order.paidAmount.toLocaleString()}</p>
               <p className="text-sm font-medium mt-1">Balance: ₹{balance.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">Payment status: {orderAny.paymentStatus ?? "due"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Payment status: {formatPaymentStatusLabel(orderAny.paymentStatus)}
+              </p>
             </div>
           </div>
 
           <div className="rounded-xl border border-border/60 p-4 space-y-3">
-            <h3 className="text-lg font-semibold">Delivery (logistics)</h3>
-            <p className="text-xs text-muted-foreground">
+            <h3 className="text-lg font-semibold">Delivery</h3>
+            {/* <p className="text-xs text-muted-foreground">
               Separate from main order status. New orders start as <strong>Pending</strong>.{" "}
               <strong>Out for delivery</strong> is allowed only when main status is <strong>Ready to ship</strong> (set Order
               Status below). <strong>Delivered</strong> is allowed only after you have saved{" "}
               <strong>Out for delivery</strong>.
-            </p>
+            </p> */}
             <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(deliveryStatus)}</div>
             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
               <div className="space-y-2 flex-1">
@@ -328,10 +334,19 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <Truck className="h-4 w-4" />
                 Delivery comments / notes
               </h4>
+              {!showDeliveryCommentForm && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowDeliveryCommentForm(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                )}
+              </div>
               {deliveryComments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No delivery notes yet.</p>
               ) : (
@@ -347,16 +362,40 @@ export default function OrderDetailPage() {
                   ))}
                 </div>
               )}
-              <Textarea
-                value={newDeliveryComment}
-                onChange={(e) => setNewDeliveryComment(e.target.value)}
-                placeholder="Gate code, driver instructions, reschedule notes, etc."
-                rows={3}
-              />
-              <Button type="button" variant="outline" size="sm" onClick={addDeliveryComment} disabled={!newDeliveryComment.trim()}>
-                <PencilLine className="h-4 w-4 mr-2" />
-                Add delivery note
-              </Button>
+              {showDeliveryCommentForm && (
+                <div className="space-y-2">
+                  <Textarea
+                    value={newDeliveryComment}
+                    onChange={(e) => setNewDeliveryComment(e.target.value)}
+                    placeholder="Gate code, driver instructions, reschedule notes, etc."
+                    rows={3}
+                    autoFocus
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addDeliveryComment}
+                      disabled={!newDeliveryComment.trim() || updateOrder.isPending}
+                    >
+                      <PencilLine className="h-4 w-4 mr-2" />
+                      Add delivery note
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setNewDeliveryComment("");
+                        setShowDeliveryCommentForm(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) }
             </div>
           </div>
 
@@ -475,7 +514,18 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="rounded-xl border border-border/60 p-4 space-y-4">
-            <h3 className="text-xl font-semibold flex items-center gap-2"><UserRound className="h-5 w-5" /> Staff Comments</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xl font-semibold flex items-center gap-2">
+                <UserRound className="h-5 w-5" />
+                Staff Comments
+              </h3>
+              {!showStaffCommentForm && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowStaffCommentForm(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add
+                </Button>
+              )}
+            </div>
             {staffComments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No staff comments yet.</p>
             ) : (
@@ -488,12 +538,40 @@ export default function OrderDetailPage() {
                 ))}
               </div>
             )}
-            <div className="space-y-2">
-              <Textarea value={newStaffComment} onChange={(e) => setNewStaffComment(e.target.value)} placeholder="Enter staff comment" rows={3} />
-              <Button type="button" variant="outline" onClick={addStaffComment}>
-                <PencilLine className="h-4 w-4 mr-2" /> Add Comment
-              </Button>
-            </div>
+            {showStaffCommentForm && (
+              <div className="space-y-2">
+                <Textarea
+                  value={newStaffComment}
+                  onChange={(e) => setNewStaffComment(e.target.value)}
+                  placeholder="Enter staff comment"
+                  rows={3}
+                  autoFocus
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addStaffComment}
+                    disabled={!newStaffComment.trim() || updateOrder.isPending}
+                  >
+                    <PencilLine className="h-4 w-4 mr-2" />
+                    Add comment
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setNewStaffComment("");
+                      setShowStaffCommentForm(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-border/60 p-4 space-y-4">

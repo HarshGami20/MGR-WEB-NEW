@@ -129,7 +129,7 @@ export function DashboardUpcomingDeliveries({
             type="button"
             onClick={() => setRange(key)}
             className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors tabular-nums",
+              "rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors tabular-nums",
               range === key
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/60",
@@ -202,7 +202,7 @@ export function DashboardUpcomingDeliveries({
         ) : null}
       </div>
 
-      <Button className="rounded-full mt-5 w-full" size="lg" asChild>
+      <Button className="rounded-xl mt-5 w-full" size="lg" asChild>
         <Link href={deliveriesHref}>
           <Truck className="h-4 w-4 mr-2" aria-hidden />
           View on deliveries

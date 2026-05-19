@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { BadgeCheck, Building2, LockKeyhole, Phone } from "lucide-react";
+import { sanitizeDigitsOnly, FIELD_LIMITS } from "@/lib/form-validation";
 
 export default function Login() {
   const [mobile, setMobile] = useState(""); 
@@ -34,7 +35,7 @@ export default function Login() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const digitsOnly = mobile.replace(/\D/g, "");
+    const digitsOnly = sanitizeDigitsOnly(mobile, FIELD_LIMITS.mobile);
     if (digitsOnly.length !== 10) {
       toast({
         title: "Invalid mobile number",
@@ -47,8 +48,7 @@ export default function Login() {
   };
 
   const handleMobileChange = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 10);
-    setMobile(digits);
+    setMobile(sanitizeDigitsOnly(value, FIELD_LIMITS.mobile));
   };
 
   return (

@@ -53,7 +53,7 @@ export function LineItemRow({
           type="button"
           size="sm"
           variant={isCustom ? "outline" : "secondary"}
-          className="rounded-full h-8"
+          className="rounded-xl h-8"
           onClick={switchToCatalog}
         >
           <Package className="h-3.5 w-3.5 mr-1.5" />
@@ -63,7 +63,7 @@ export function LineItemRow({
           type="button"
           size="sm"
           variant={isCustom ? "secondary" : "outline"}
-          className="rounded-full h-8"
+          className="rounded-xl h-8"
           onClick={switchToCustom}
         >
           <PackagePlus className="h-3.5 w-3.5 mr-1.5" />

@@ -140,7 +140,7 @@ export default function NotificationsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Web push debug</CardTitle>
           <CardDescription>
@@ -152,7 +152,7 @@ export default function NotificationsPage() {
           <WebPushLogPanel />
           <ServerPushLogPanel />
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   );
 }

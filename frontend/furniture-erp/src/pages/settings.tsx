@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api-client/custom-fetch";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -19,40 +18,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { Building, FileText, Settings2, UserCircle2, Upload, ChevronDown } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { useAuth } from "@/lib/auth";
+import { profileFormSchema, settingsFormSchema, type ProfileFormValues, type SettingsFormValues } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
-const settingsSchema = z.object({
-  companyName: z.string().min(1, "Company Name is required"),
-  gstNumber: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
-  defaultGstPercent: z.coerce.number().min(0).max(100),
-  invoicePrefix: z.string().min(1, "Prefix is required"),
-});
-
-type SettingsFormValues = z.infer<typeof settingsSchema>;
-const profileSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  mobile: z.string().min(1, "Mobile is required"),
-  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
-  avatarUrl: z
-    .string()
-    .optional()
-    .nullable()
-    .or(z.literal(""))
-    .refine((value) => {
-      if (!value) return true;
-      if (value.startsWith("/uploads/")) return true;
-      try {
-        // eslint-disable-next-line no-new
-        new URL(value);
-        return true;
-      } catch {
-        return false;
-      }
-    }, "Avatar URL must be valid"),
-});
-type ProfileFormValues = z.infer<typeof profileSchema>;
+const settingsSchema = settingsFormSchema;
+const profileSchema = profileFormSchema;
 
 export default function Settings() {
   const queryClient = useQueryClient();
@@ -233,7 +203,7 @@ export default function Settings() {
                     />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" className=" rounded-full">
+                        <Button type="button" variant="outline" className=" rounded-xl">
                           {isAvatarUploading ? "Uploading..." : "Select Avatar"}
                           <ChevronDown className="h-4 w-4 ml-2" />
                         </Button>
@@ -278,7 +248,7 @@ export default function Settings() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Name</FormLabel>
-                          <FormControl><Input {...field} /></FormControl>
+                          <FormControl><ValidatedInput field={field} rule="personName" /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -289,7 +259,7 @@ export default function Settings() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Mobile</FormLabel>
-                          <FormControl><Input {...field} /></FormControl>
+                          <FormControl><ValidatedInput field={field} rule="mobile" /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -335,7 +305,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Company Name</FormLabel>
                       <FormControl>
-                        <Input {...field} disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="companyName" disabled={!canEdit} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -348,7 +318,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>GSTIN</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="gstNumber" disabled={!canEdit} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -377,7 +347,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Contact Phone</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="mobile" disabled={!canEdit} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -392,7 +362,7 @@ export default function Settings() {
                   <FormItem>
                     <FormLabel>Registered Address</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value || ""} disabled={!canEdit} />
+                      <ValidatedInput field={field} rule="address" disabled={!canEdit} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -420,7 +390,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Invoice Prefix</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="e.g. INV-2024-" disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="invoicePrefix" placeholder="e.g. INV-2024-" disabled={!canEdit} />
                       </FormControl>
                       <p className="text-xs text-muted-foreground mt-1">
                         Resulting invoice: {field.value}0001

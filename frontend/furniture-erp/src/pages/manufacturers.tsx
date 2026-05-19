@@ -13,17 +13,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
+import { manufacturerFormSchema, type ManufacturerFormValues } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
-const manufacturerSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  contactPerson: z.string().optional().nullable(),
-  mobile: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable().or(z.literal("")),
-  address: z.string().optional().nullable(),
-  specialization: z.string().optional().nullable(),
-});
-
-type ManufacturerFormValues = z.infer<typeof manufacturerSchema>;
+const manufacturerSchema = manufacturerFormSchema;
 
 export default function Manufacturers() {
   const [search, setSearch] = useState("");
@@ -223,7 +216,7 @@ export default function Manufacturers() {
                   <FormItem>
                     <FormLabel>Company Name</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <ValidatedInput field={field} rule="companyName" placeholder="e.g. Premium Wood Works" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -238,7 +231,7 @@ export default function Manufacturers() {
                     <FormItem>
                       <FormLabel>Contact Person</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} />
+                        <ValidatedInput field={field} rule="personName" placeholder="e.g. Rahul Sharma" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -251,7 +244,7 @@ export default function Manufacturers() {
                     <FormItem>
                       <FormLabel>Mobile Number</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} />
+                        <ValidatedInput field={field} rule="mobile" placeholder="10-digit mobile" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -267,7 +260,7 @@ export default function Manufacturers() {
                     <FormItem>
                       <FormLabel>Email</FormLabel>
                       <FormControl>
-                        <Input type="email" {...field} value={field.value || ""} />
+                        <Input type="email" {...field} value={field.value || ""} placeholder="name@company.com" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -278,9 +271,9 @@ export default function Manufacturers() {
                   name="specialization"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Specialization (e.g. Wood, Metal)</FormLabel>
+                      <FormLabel>Specialization</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} />
+                        <ValidatedInput field={field} rule="plainText" placeholder="e.g. Wood, Metal, Upholstery" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -295,7 +288,7 @@ export default function Manufacturers() {
                   <FormItem>
                     <FormLabel>Address</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value || ""} />
+                      <ValidatedInput field={field} rule="address" placeholder="Street, city, state, pincode" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

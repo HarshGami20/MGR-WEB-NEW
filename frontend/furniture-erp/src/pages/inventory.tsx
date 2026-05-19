@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
-import { 
-  useListInventoryLogs, 
-  useAdjustInventory, 
-  useGetLowStockProducts, 
+import {
+  useListInventoryLogs,
+  useAdjustInventory,
+  useGetLowStockProducts,
   useListProducts,
   useListProductVariants,
   getListInventoryLogsQueryKey,
   getListProductsQueryKey,
-  getGetLowStockProductsQueryKey
+  getGetLowStockProductsQueryKey,
+  type Product,
 } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,6 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
@@ -47,6 +47,7 @@ export default function Inventory() {
   const [filterType, setFilterType] = useState<"all" | "in" | "out" | "adjustment">("all");
   const [filterSource, setFilterSource] = useState<"all" | "manual" | "order" | "product" | "variant" | "other">("all");
   const [logDateRange, setLogDateRange] = useState<DateRangeValue>({});
+  const [showLowStock, setShowLowStock] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -68,7 +69,8 @@ export default function Inventory() {
     listLogsParams as Parameters<typeof useListInventoryLogs>[0],
   );
 
-  const { data: lowStockData } = useGetLowStockProducts();
+  const { data: lowStockData, isLoading: lowStockLoading } = useGetLowStockProducts();
+  const lowStockItems = lowStockData ?? [];
   const { data: productsData } = useListProducts({ page: 1, limit: 500 });
   const productOptions = productsData?.data ?? [];
 
@@ -242,6 +244,57 @@ export default function Inventory() {
     [getTypeIcon, getTypeBadge],
   );
 
+  const lowStockColumns = useMemo<ColumnDef<Product>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Product",
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "sku",
+        header: "SKU",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm text-muted-foreground">{row.original.sku}</span>
+        ),
+      },
+      {
+        accessorKey: "stockQty",
+        header: () => <span className="text-right block w-full">Current stock</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <Badge variant="destructive" className="tabular-nums">
+            {row.original.stockQty}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "lowStockThreshold",
+        header: () => <span className="text-right block w-full">Threshold</span>,
+        meta: { headerClassName: "text-right", cellClassName: "text-right text-muted-foreground" },
+        cell: ({ row }) => row.original.lowStockThreshold,
+      },
+      {
+        id: "actions",
+        header: () => (
+          <div className="flex justify-end">
+            <Button type="button" size="sm" variant="outline" onClick={() => openAdjustDialog()}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Adjust Stock
+            </Button>
+          </div>
+        ),
+        meta: { headerClassName: "text-right w-[140px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <Button type="button" size="sm" variant="secondary" onClick={() => openAdjustDialog(row.original.id)}>
+            Restock
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -254,33 +307,6 @@ export default function Inventory() {
           Adjust Stock
         </Button>
       </div>
-
-      {lowStockData && lowStockData.length > 0 && (
-        <Card className="border-red-200 bg-red-50/50">
-          <CardHeader className="pb-2 flex flex-row items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            <CardTitle className="text-red-700 text-lg">Low Stock Alerts ({lowStockData.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-              {lowStockData.map((item) => (
-                <div key={item.id} className="flex items-center justify-between bg-white p-3 rounded-md border border-red-100 shadow-sm">
-                  <div className="flex flex-col">
-                    <span className="font-medium text-sm">{item.name}</span>
-                    <span className="text-xs text-muted-foreground">SKU: {item.sku}</span>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant="destructive">Stock: {item.stockQty}</Badge>
-                    <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => openAdjustDialog(item.id)}>
-                      Restock
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
         <div className="flex flex-1 flex-wrap gap-4 items-center">
@@ -326,18 +352,66 @@ export default function Inventory() {
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            type="button"
+            variant={showLowStock ? "default" : "outline"}
+            className={cn(
+              "h-9 shrink-0",
+              !showLowStock && lowStockItems.length > 0 && "border-red-300 text-red-700 hover:bg-red-50",
+            )}
+            onClick={() => setShowLowStock((prev) => !prev)}
+          >
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            Low Stock
+            {lowStockItems.length > 0 ? (
+              <Badge
+                variant={showLowStock ? "secondary" : "destructive"}
+                className="ml-2 h-5 min-w-5 px-1.5 tabular-nums"
+              >
+                {lowStockItems.length}
+              </Badge>
+            ) : null}
+          </Button>
         </div>
       </div>
 
-      <div className="bg-card rounded-lg border shadow-sm">
-        <DataTable
-          columns={columns}
-          data={filteredLogs}
-          isLoading={isLoading}
-          emptyMessage="No inventory history found for selected filters."
-          footer={<DataTablePaginationFooter page={page} total={logsData?.total ?? 0} limit={logsData?.limit ?? 10} onPageChange={setPage} itemLabel="logs" />}
-        />
-      </div>
+      {showLowStock ? (
+        <div className="rounded-lg border border-red-200 bg-red-50/30 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-red-200/80 bg-red-50/60 px-4 py-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
+            <h3 className="text-base font-semibold text-red-800">
+              Low Stock Alerts
+              {lowStockItems.length > 0 ? ` (${lowStockItems.length})` : ""}
+            </h3>
+          </div>
+          <DataTable
+            columns={lowStockColumns}
+            data={lowStockItems}
+            isLoading={lowStockLoading}
+            emptyMessage="No low stock products."
+            className="border-0 shadow-none rounded-none"
+            tableClassName="bg-card"
+          />
+        </div>
+      ) : (
+        <div className="bg-card rounded-lg border shadow-sm">
+          <DataTable
+            columns={columns}
+            data={filteredLogs}
+            isLoading={isLoading}
+            emptyMessage="No inventory history found for selected filters."
+            footer={
+              <DataTablePaginationFooter
+                page={page}
+                total={logsData?.total ?? 0}
+                limit={logsData?.limit ?? 10}
+                onPageChange={setPage}
+                itemLabel="logs"
+              />
+            }
+          />
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">

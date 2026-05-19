@@ -452,7 +452,7 @@ export default function ComplaintsPage() {
                         type="button"
                         variant="secondary"
                         size="icon"
-                        className="absolute right-1 top-1 h-7 w-7 rounded-full"
+                        className="absolute right-1 top-1 h-7 w-7 rounded-xl"
                         onClick={() => setFormImages((prev) => prev.filter((u) => u !== url))}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -489,7 +489,7 @@ export default function ComplaintsPage() {
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="rounded-full"
+                className="rounded-xl"
                 disabled={uploading}
                 onClick={() => document.getElementById("complaint-create-photo-input")?.click()}
               >

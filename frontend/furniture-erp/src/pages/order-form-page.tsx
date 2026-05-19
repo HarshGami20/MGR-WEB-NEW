@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,24 +33,16 @@ import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
+import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
 
 const orderSchema = z.object({
-  customerName: z.string().trim().min(1, "Customer name is required"),
-  customerMobile: z
-    .string()
-    .trim()
-    .refine((value) => value === "" || /^[0-9]{10}$/.test(value), "Mobile must be a 10-digit number")
-    .optional()
-    .nullable(),
-  customerAddress: z.string().trim().min(1, "Address is required"),
-  customerPincode: z
-    .string()
-    .trim()
-    .refine((v) => v === "" || /^[0-9]{6}$/.test(v), "Pincode must be 6 digits")
-    .optional()
-    .nullable(),
+  customerName: zodFields.customerName(),
+  customerMobile: zodFields.mobileRequired(),
+  customerAddress: zodFields.addressRequired(),
+  customerPincode: zodFields.pincodeOptional(),
   deliverySlotId: z
     .union([z.number().int().positive(), z.null()])
     .optional()
@@ -60,12 +51,7 @@ const orderSchema = z.object({
   addressLat: z.coerce.number().nullable().optional(),
   addressLng: z.coerce.number().nullable().optional(),
   isGst: z.boolean(),
-  customerGstNumber: z
-    .string()
-    .trim()
-    .refine((value) => value === "" || /^[0-9A-Z]{15}$/.test(value), "GST number must be 15 characters")
-    .optional()
-    .nullable(),
+  customerGstNumber: zodFields.gstNumberOptional(),
   items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
@@ -138,6 +124,10 @@ const PAYMENT_MODE_OPTIONS = [
   { value: "bank_transfer", label: "Bank Transfer" },
   { value: "cheque", label: "Cheque" },
 ];
+const GST_INVOICE_OPTIONS = [
+  { value: "gst", label: "GST include" },
+  { value: "non_gst", label: "Non-GST" },
+] as const;
 
 async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {
   const token = localStorage.getItem("erp_token");
@@ -319,7 +309,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     const existingStaffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
     const existingDeliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
     reset({
-      customerName: order.customerName ?? "",
+      customerName: sanitizeLettersOnly(order.customerName ?? "", FIELD_LIMITS.customerName),
       customerMobile: order.customerMobile ?? "",
       customerAddress: order.customerAddress ?? "",
       customerPincode: orderAny.customerPincode ?? "",
@@ -529,11 +519,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Link href="/orders">
-                <Button type="button" variant="outline" className="rounded-full px-5">
+                <Button type="button" variant="outline" className="rounded-xl px-5">
                   Cancel
                 </Button>
               </Link>
-              <Button type="submit" className="rounded-full px-6 shadow-sm" disabled={pending || uploading}>
+              <Button type="submit" className="rounded-xl px-6 shadow-sm" disabled={pending || uploading}>
                 {uploading ? (
                   <>
                     <Upload className="mr-2 h-4 w-4 animate-pulse" /> Uploading…
@@ -556,28 +546,78 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name*</FormLabel><FormControl><Input {...field} placeholder="Enter customer name" /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>Customer Name*</FormLabel>
+                    <FormControl>
+                      <ValidatedInput field={field} rule="customerName" placeholder="Enter customer name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
-                <FormField control={form.control} name="customerMobile"  render={({ field }) => (
-                  <FormItem><FormLabel>Mobile*</FormLabel><FormControl><Input {...field} value={field.value || ""} type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} placeholder="+91 98765 43210" onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ""))} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="customerMobile" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mobile*</FormLabel>
+                    <FormControl>
+                      <ValidatedInput field={field} rule="mobile" placeholder="10-digit mobile" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
-                <FormField control={form.control} name="isGst" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between gap-3 space-y-0 rounded-xl border border-border/50 bg-muted/10 px-3 py-2.5 sm:py-3">
-                    <div>
-                      <FormLabel className="!mt-0 font-normal">GST Invoice</FormLabel>
-                      <p className="text-xs text-muted-foreground">Unit prices include GST</p>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )} />
-                <FormField control={form.control}  name="customerGstNumber" render={({ field }) => (
-                  <FormItem className="flex-1"><FormLabel>GST Number</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter GST number" disabled={!form.watch("isGst")} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <FormField
+                  control={form.control}
+                  name="isGst"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>GST Invoice</FormLabel>
+                      <Select
+                        value={field.value ? "gst" : "non_gst"}
+                        onValueChange={(v) => {
+                          const isGst = v === "gst";
+                          field.onChange(isGst);
+                          if (!isGst) form.setValue("customerGstNumber", "");
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="mb-0">
+                            <SelectValue  placeholder="Select GST type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {GST_INVOICE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {/* <p className="text-xs text-muted-foreground">
+                        {field.value ? "Unit prices include GST" : "No GST invoice — prices without GST billing"}
+                      </p> */}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerGstNumber"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>GST Number{isGstInvoice ? "*" : ""}</FormLabel>
+                      <FormControl>
+                        <ValidatedInput
+                          field={field}
+                          rule="gstNumber"
+                          placeholder="Enter GST number"
+                          disabled={!isGstInvoice}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                   
               </div>
 
@@ -601,14 +641,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   <FormItem>
                     <FormLabel>Pincode</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value || ""}
-                        placeholder="6-digit pincode"
-                        maxLength={6}
-                        inputMode="numeric"
-                        onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      />
+                      <ValidatedInput field={field} rule="pincode" placeholder="6-digit pincode" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -623,8 +656,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   <h2 className="text-base font-semibold tracking-tight">Line items</h2>
                   <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => append({ ...defaultCatalogLineItem })}>
-                  <Plus className="h-4 w-4 mr-2" /> Add item
+                <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => append({ ...defaultCatalogLineItem })}>
+                  <Plus className="h-4 w-4 mr-0.5" /> Add item
                 </Button>
               </div>
               {fields.map((field, index) => (
@@ -757,29 +790,20 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </FormItem>
                   )}
                 />
-                <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
-                  {isGstInvoice ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Taxable value</span>
-                        <span>₹{orderSummary.taxableSubtotal.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">GST</span>
-                        <span>₹{orderSummary.taxAmount.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between font-semibold border-t pt-2">
-                        <span>Total (incl. GST)</span>
+
+                  <div className="grid">
+
+                      <p className="text-sm font-medium text-foreground mb-0.5">
+                        {isGstInvoice ? "GST include" : "Non-GST"}
+                      </p>
+                    <div className="rounded-lg border bg-muted/20 px-3 py-2 h-10 w-full text-sm">
+                      <div className="flex w-full justify-between font-semibold">
+                        <span>Order total</span>
                         <span>₹{orderSummary.total.toLocaleString()}</span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex justify-between font-semibold">
-                      <span>Order total</span>
-                      <span>₹{orderSummary.total.toLocaleString()}</span>
                     </div>
-                  )}
                 </div>
+
               </div>
             </div>
 
@@ -846,7 +870,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                           type="button"
                           variant="secondary"
                           size="sm"
-                          className="rounded-full"
+                          className="rounded-xl"
                           disabled={uploading}
                           onClick={() => document.getElementById("challan-upload-input")?.click()}
                         >
@@ -882,7 +906,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="rounded-full"
+                      className="rounded-xl"
                       onClick={() => photoFields.append({ imageUrl: "", comment: "" })}
                     >
                       <Plus className="mr-1 h-4 w-4" /> Add
@@ -929,7 +953,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                               type="button"
                               variant="secondary"
                               size="icon"
-                              className="absolute right-1 top-1 h-7 w-7 rounded-full opacity-90 shadow-sm"
+                              className="absolute -right-0.5 top-0.5 h-7 w-7 rounded-sm opacity-90 shadow-sm"
                               onClick={() => photoFields.remove(index)}
                               disabled={photoFields.fields.length === 1}
                               aria-label="Remove photo"
@@ -1039,11 +1063,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
           <div className="flex justify-end gap-3">
             <Link href="/orders" className="w-fit">
-              <Button type="button" variant="outline" className="w-fit rounded-full px-6 sm:w-auto">
+              <Button type="button" variant="outline" className="w-fit rounded-xl px-6 sm:w-auto">
                 Cancel
               </Button>
             </Link>
-            <Button type="submit" className="w-full rounded-full px-8 shadow-sm sm:w-auto" disabled={pending || uploading}>
+            <Button type="submit" className="w-full rounded-xl px-8 shadow-sm sm:w-auto" disabled={pending || uploading}>
               {uploading ? (
                 <>
                   <Upload className="mr-2 h-4 w-4 animate-pulse" /> Uploading…

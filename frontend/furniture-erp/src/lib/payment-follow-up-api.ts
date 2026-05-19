@@ -70,3 +70,15 @@ export const PENDING_PAYMENT_STATUSES = ["due", "partially_paid"] as const;
 export function isPendingPaymentStatus(status: string | null | undefined): boolean {
   return status === "due" || status === "partially_paid";
 }
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  due: "Due",
+  partially_paid: "Partially Paid",
+  paid: "Paid",
+};
+
+/** Human-readable payment status for UI (e.g. `partially_paid` → "Partially Paid"). */
+export function formatPaymentStatusLabel(status: string | null | undefined): string {
+  if (!status) return PAYMENT_STATUS_LABELS.due;
+  return PAYMENT_STATUS_LABELS[status] ?? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}

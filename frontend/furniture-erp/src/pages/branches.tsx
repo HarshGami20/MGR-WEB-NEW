@@ -20,18 +20,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
+import { branchFormSchema, type BranchFormValues } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
-const branchSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  code: z.string().min(1, "Branch code is required"),
-  address: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  state: z.string().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  email: z.string().email("Invalid email").optional().nullable().or(z.literal("")),
-});
-
-type BranchFormValues = z.infer<typeof branchSchema>;
+const branchSchema = branchFormSchema;
 
 const emptyForm: BranchFormValues = {
   name: "",
@@ -271,7 +263,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Branch Name *</FormLabel>
-                      <FormControl><Input placeholder="e.g. Head Office" {...field} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="branchName" placeholder="e.g. Head Office" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -282,7 +274,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Branch Code *</FormLabel>
-                      <FormControl><Input placeholder="e.g. HO-001" {...field} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="branchCode" placeholder="e.g. HO-001" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -295,7 +287,7 @@ export default function Branches() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
-                    <FormControl><Input placeholder="Street address" {...field} value={field.value || ""} /></FormControl>
+                    <FormControl><ValidatedInput field={field} rule="address" placeholder="Street address" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -308,7 +300,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>City</FormLabel>
-                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="city" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -319,7 +311,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>State</FormLabel>
-                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="state" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -333,7 +325,7 @@ export default function Branches() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Phone</FormLabel>
-                      <FormControl><Input type="tel" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><ValidatedInput field={field} rule="mobile" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

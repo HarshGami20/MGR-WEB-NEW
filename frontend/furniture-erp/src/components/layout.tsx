@@ -267,7 +267,7 @@ export default function Layout({ children }: LayoutProps) {
   }, [partnerUser]);
 
   const sidebarAppPromoEl = showSidebarAppPromo ? (
-    <div className="relative overflow-hidden rounded-[1.65rem] mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
+    <div className="relative overflow-hidden rounded-2xl mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
       <div className="absolute right-2 top-2 z-[2]">
         <Button
           type="button"
@@ -527,7 +527,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className={cn("flex h-screen bg-background overflow-hidden")}>
       {!partnerUser ? (
-        <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">{renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]", staff: true })}</div>
+        <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">{renderSidebar({ rootClassName: " w-full rounded-2xl h-[calc(100vh-32px)]", staff: true })}</div>
       ) : (
         <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">
           {renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]" })}
@@ -590,7 +590,7 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 md:pr-4 md:py-4">
         
-        <header className="h-[4.25rem] justify-between border border-border/80 bg-card shrink-0 flex items-center gap-2 sm:gap-3 md:gap-4 px-3 md:px-6 rounded-none md:rounded-[1.35rem] shadow-sm">
+        <header className="h-[4.25rem] justify-between border border-border/80 bg-card shrink-0 flex items-center gap-2 sm:gap-3 md:gap-4 px-3 md:px-6 rounded-none md:rounded-2xl shadow-sm">
           <Button
             type="button"
             variant="ghost"
@@ -614,7 +614,7 @@ export default function Layout({ children }: LayoutProps) {
                     placeholder="Search orders…"
                     value={headerSearch}
                     onChange={(e) => setHeaderSearch(e.target.value)}
-                    className="h-11 rounded-full bg-muted/40 border-0 pl-10 pr-[5.75rem] text-sm placeholder:text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-primary/30"
+                    className="h-11 rounded-xl bg-muted/40 border-0 pl-10 pr-[5.75rem] text-sm placeholder:text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-primary/30"
                   />
                   <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
                     <KbdGroup>

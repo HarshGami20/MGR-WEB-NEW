@@ -27,13 +27,15 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PaymentFollowUpsCalendar } from "@/components/payment-follow-up-panel";
 import { isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
+import { zodFields } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 
 const paymentSchema = z
   .object({
     orderId: z.coerce.number().min(1, "Order is required"),
     amount: z.coerce.number().min(1, "Amount must be positive"),
     mode: z.enum(["cash", "bank_transfer", "upi", "cheque"]),
-    chequeNumber: z.string().optional(),
+    chequeNumber: zodFields.chequeNumberOptional(),
     notes: z.string().optional().nullable(),
   })
   .superRefine((data, ctx) => {
@@ -542,7 +544,7 @@ export default function Payments() {
                     <FormItem>
                       <FormLabel>Cheque number</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value ?? ""} placeholder="Cheque / instrument number" />
+                        <ValidatedInput field={field} rule="chequeNumber" placeholder="Cheque / instrument number" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
