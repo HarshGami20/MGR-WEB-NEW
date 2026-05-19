@@ -2762,6 +2762,20 @@ components:
         notes:
           type: string
           nullable: true
+        staffComments:
+          type: array
+          items:
+            type: object
+            properties:
+              comment:
+                type: string
+              authorName:
+                type: string
+                nullable: true
+              createdAt:
+                type: string
+                format: date-time
+            required: [comment, createdAt]
         branchId:
           type: integer
           nullable: true
@@ -2822,6 +2836,20 @@ components:
         notes:
           type: string
           nullable: true
+        staffComments:
+          type: array
+          items:
+            type: object
+            properties:
+              comment:
+                type: string
+              authorName:
+                type: string
+                nullable: true
+              createdAt:
+                type: string
+                format: date-time
+            required: [comment, createdAt]
 
     UpdatePurchaseOrderStatusBody:
       type: object

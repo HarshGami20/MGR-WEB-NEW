@@ -18,6 +18,15 @@ import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (value == null || value === "") return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 class PurchaseOrderDeleteBlockedError extends Error {
   constructor(message: string) {
     super(message);
@@ -114,7 +123,18 @@ async function enrichPO(po: any) {
     const b = await prisma.branch.findUnique({ where: { id: po.branchId } });
     if (b) branch = b;
   }
-  return { ...po, totalAmount: toNumber(po.totalAmount), items: enrichedItems, supplier, manufacturer, branch };
+  return {
+    ...po,
+    totalAmount: toNumber(po.totalAmount),
+    items: enrichedItems,
+    supplier,
+    manufacturer,
+    branch,
+    staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(
+      po.staffComments,
+      [],
+    ),
+  };
 }
 
 router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
@@ -267,6 +287,10 @@ router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
   const updateData: any = {};
   if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
   if (parsed.data.expectedDelivery !== undefined) updateData.expectedDelivery = parsed.data.expectedDelivery ? new Date(parsed.data.expectedDelivery) : null;
+  if (parsed.data.staffComments !== undefined) {
+    const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
+    updateData.staffComments = JSON.stringify(normalized);
+  }
   const po = await prisma.purchaseOrder.update({ where: { id }, data: updateData }).catch(() => null);
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   res.json(await enrichPO(po));

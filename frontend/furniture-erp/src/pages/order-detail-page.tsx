@@ -3,6 +3,8 @@ import { getGetOrderQueryKey, useCreatePayment, useGetOrder, useListPayments, us
 import {
   ArrowLeft,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   IndianRupee,
   MapPin,
   Package,
@@ -189,7 +191,16 @@ export default function OrderDetailPage() {
   const [showStaffCommentForm, setShowStaffCommentForm] = useState(false);
   const [newDeliveryComment, setNewDeliveryComment] = useState("");
   const [showDeliveryCommentForm, setShowDeliveryCommentForm] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [imageGallery, setImageGallery] = useState<{ images: string[]; index: number } | null>(null);
+
+  const openImageGallery = (images: string[], startIndex = 0) => {
+    const valid = images.filter((u): u is string => Boolean(u));
+    if (!valid.length) return;
+    setImageGallery({
+      images: valid,
+      index: Math.min(Math.max(0, startIndex), valid.length - 1),
+    });
+  };
 
   const updateOrder = useUpdateOrder({
     mutation: {
@@ -340,7 +351,7 @@ export default function OrderDetailPage() {
               </div>
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5">
                 <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                Created {new Date(order.createdAt).toLocaleString()}
+                 {formatCommentDateTime(order.createdAt)}
               </p>
             </div>
           </div>
@@ -357,9 +368,53 @@ export default function OrderDetailPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-6 lg:col-span-8">
             <DetailSection
-              title="Line items"
+              title="Order Details"
               description={`${itemCount} item${itemCount === 1 ? "" : "s"} on this order`}
             >
+              <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50 space-y-2">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  {order.customerName ? (
+                    <span className="inline-flex items-center gap-1.5 font-medium">
+                      <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {order.customerName}
+                    </span>
+                  ) : null}
+                  {order.customerMobile ? (
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-mono text-foreground">{order.customerMobile}</span>
+                    </span>
+                  ) : null}
+                  {orderAny.customerPincode ? (
+                    <span className="text-muted-foreground">
+                      Pincode :{" "}
+                      <span className="font-mono text-foreground">{orderAny.customerPincode}</span>
+                    </span>
+                  ) : null}
+                </div>
+                {order.customerAddress ? (
+                  <p className="text-sm text-muted-foreground flex items-start gap-1.5 leading-snug">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{order.customerAddress}</span>
+                  </p>
+                ) : null}
+                {(orderAny.deliverySlot || (order.isGst && order.customerGstNumber)) ? (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {orderAny.deliverySlot ? (
+                      <span>
+                        Slot: {orderAny.deliverySlot.label} ({orderAny.deliverySlot.startTime}–
+                        {orderAny.deliverySlot.endTime})
+                      </span>
+                    ) : null}
+                    {order.isGst && order.customerGstNumber ? (
+                      <span>
+                        GST: <span className="font-mono text-foreground">{order.customerGstNumber}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               {!order.items?.length ? (
                 <p className="text-sm text-muted-foreground py-8 text-center border border-dashed rounded-xl">
                   No line items on this order.
@@ -390,17 +445,27 @@ export default function OrderDetailPage() {
                               <TableCell>
                                 <div className="flex items-start gap-3 min-w-[200px]">
                                   {lineImages.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5 shrink-0 max-w-[140px]">
-                                      {lineImages.map((url, imgIndex) => (
-                                        <img
-                                          key={`${url}-${imgIndex}`}
-                                          src={url}
-                                          alt={label}
-                                          className="h-12 w-12 rounded-md object-cover border bg-muted cursor-zoom-in hover:opacity-90 transition-opacity"
-                                          onClick={() => setPreviewImage(url)}
-                                        />
-                                      ))}
-                                    </div>
+                                    <button
+                                      type="button"
+                                      className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      onClick={() => openImageGallery(lineImages, 0)}
+                                      aria-label={
+                                        lineImages.length > 1
+                                          ? `View ${lineImages.length} product images`
+                                          : "View product image"
+                                      }
+                                    >
+                                      <img
+                                        src={lineImages[0]}
+                                        alt={label}
+                                        className="h-full w-full object-cover"
+                                      />
+                                      {lineImages.length > 1 ? (
+                                        <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[10px] font-medium text-white text-center leading-tight py-0.5">
+                                          +{lineImages.length - 1}
+                                        </span>
+                                      ) : null}
+                                    </button>
                                   ) : (
                                     <div className="h-12 w-12 rounded-md border bg-muted shrink-0 flex items-center justify-center">
                                       <Package className="h-4 w-4 text-muted-foreground" />
@@ -480,7 +545,7 @@ export default function OrderDetailPage() {
                       src={url}
                       alt={`Challan ${index + 1}`}
                       className="h-24 w-24 rounded-md object-cover border cursor-zoom-in hover:opacity-90 transition-opacity"
-                      onClick={() => setPreviewImage(url)}
+                      onClick={() => openImageGallery(challanImages, index)}
                     />
                   ))}
                 </div>
@@ -495,7 +560,7 @@ export default function OrderDetailPage() {
                           src={entry.imageUrl}
                           alt={`Photo ${index + 1}`}
                           className="h-24 w-24 rounded-md object-cover border cursor-zoom-in hover:opacity-90 transition-opacity"
-                          onClick={() => setPreviewImage(entry.imageUrl!)}
+                          onClick={() => openImageGallery([entry.imageUrl!], 0)}
                         />
                       ) : null}
                       <p className="text-sm">{entry.comment || "No comment"}</p>
@@ -592,7 +657,7 @@ export default function OrderDetailPage() {
                         <p className="whitespace-pre-wrap">{entry.comment || "—"}</p>
                         <p className="text-xs text-muted-foreground">
                           {entry.authorName ? `${entry.authorName} · ` : ""}
-                          {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ""}
+                          {entry.createdAt ? formatCommentDateTime(entry.createdAt) : ""}
                         </p>
                       </div>
                     ),
@@ -634,31 +699,24 @@ export default function OrderDetailPage() {
                 </div>
               ) : null}
             </DetailSection>
+
+            {assigneeLabel || orderAny.createdBy?.name ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg border border-dashed border-border/50 bg-muted/5 px-3 py-2 text-xs text-muted-foreground">
+                {assigneeLabel ? (
+                  <span>
+                    Assigned to: <span className="font-medium text-foreground">{assigneeLabel}</span>
+                  </span>
+                ) : null}
+                {orderAny.createdBy?.name ? (
+                  <span>
+                    Created by: <span className="font-medium text-foreground">{orderAny.createdBy.name}</span>
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
-            <DetailSection title="Customer" description="Contact and delivery details">
-              <div className="rounded-xl border bg-muted/10 px-3 py-1">
-                <InfoRow label="Name" value={order.customerName} icon={<UserRound className="h-4 w-4" />} />
-                <InfoRow label="Mobile" value={order.customerMobile} icon={<Phone className="h-4 w-4" />} mono />
-                <InfoRow label="Address" value={order.customerAddress} icon={<MapPin className="h-4 w-4" />} />
-                <InfoRow label="Pincode" value={orderAny.customerPincode} mono />
-                {orderAny.deliverySlot ? (
-                  <InfoRow
-                    label="Delivery slot"
-                    value={`${orderAny.deliverySlot.label} (${orderAny.deliverySlot.startTime}–${orderAny.deliverySlot.endTime})`}
-                  />
-                ) : null}
-                {order.isGst ? (
-                  <InfoRow label="GST number" value={order.customerGstNumber || "—"} mono />
-                ) : null}
-                {assigneeLabel ? <InfoRow label="Assigned to" value={assigneeLabel} /> : null}
-                {orderAny.createdBy?.name ? (
-                  <InfoRow label="Created by" value={orderAny.createdBy.name} />
-                ) : null}
-              </div>
-            </DetailSection>
-
             <DetailSection title="Payment summary" description="Totals and balance">
               <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
                 {order.isGst ? (
@@ -694,97 +752,6 @@ export default function OrderDetailPage() {
                   <span className="text-muted-foreground">Payment status</span>
                   <span className="font-medium">{formatPaymentStatusLabel(orderAny.paymentStatus)}</span>
                 </div>
-              </div>
-            </DetailSection>
-
-            <DetailSection title="Delivery status" description="Separate from main order status">
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
-                <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem
-                      value="out_for_delivery"
-                      disabled={status !== "ready_to_ship"}
-                      title={
-                        status !== "ready_to_ship"
-                          ? "Set main order status to Ready to ship first"
-                          : undefined
-                      }
-                    >
-                      Out for delivery
-                    </SelectItem>
-                    <SelectItem
-                      value="delivered"
-                      disabled={serverDeliveryStatus !== "out_for_delivery"}
-                      title={
-                        serverDeliveryStatus !== "out_for_delivery"
-                          ? "Save Out for delivery first, then you can mark Delivered"
-                          : undefined
-                      }
-                    >
-                      Delivered
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full rounded-xl"
-                  disabled={
-                    patchDelivery.isPending ||
-                    deliveryStatus === serverDeliveryStatus ||
-                    (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
-                    (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
-                  }
-                  onClick={() => patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")}
-                >
-                  Save delivery status
-                </Button>
-              </div>
-            </DetailSection>
-
-            <DetailSection title="Order status" description="Manufacturing progress and payment status">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Order status</p>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="order_received">Order Received</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                      <SelectItem value="complete">Complete</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Payment status</p>
-                  <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="due">Due</SelectItem>
-                      <SelectItem value="partially_paid">Partially Paid</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  type="button"
-                  className="w-full rounded-xl"
-                  onClick={applyStatusUpdate}
-                  disabled={updateOrder.isPending}
-                >
-                  Update status
-                </Button>
               </div>
             </DetailSection>
 
@@ -893,19 +860,151 @@ export default function OrderDetailPage() {
               </div>
             </DetailSection>
 
+            <DetailSection title="Delivery status" description="Separate from main order status">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
+                <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem
+                      value="out_for_delivery"
+                      disabled={status !== "ready_to_ship"}
+                      title={
+                        status !== "ready_to_ship"
+                          ? "Set main order status to Ready to ship first"
+                          : undefined
+                      }
+                    >
+                      Out for delivery
+                    </SelectItem>
+                    <SelectItem
+                      value="delivered"
+                      disabled={serverDeliveryStatus !== "out_for_delivery"}
+                      title={
+                        serverDeliveryStatus !== "out_for_delivery"
+                          ? "Save Out for delivery first, then you can mark Delivered"
+                          : undefined
+                      }
+                    >
+                      Delivered
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full rounded-xl"
+                  disabled={
+                    patchDelivery.isPending ||
+                    deliveryStatus === serverDeliveryStatus ||
+                    (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
+                    (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
+                  }
+                  onClick={() => patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")}
+                >
+                  Save delivery status
+                </Button>
+              </div>
+            </DetailSection>
+
+            <DetailSection title="Order status" description="Manufacturing progress and payment status">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Order status</p>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="order_received">Order Received</SelectItem>
+                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                      <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
+                      <SelectItem value="complete">Complete</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Payment status</p>
+                  <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="due">Due</SelectItem>
+                      <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  className="w-full rounded-xl"
+                  onClick={applyStatusUpdate}
+                  disabled={updateOrder.isPending}
+                >
+                  Update status
+                </Button>
+              </div>
+            </DetailSection>
+
+
+
             {showPaymentFollowUp ? <OrderPaymentFollowUpPanel orderId={order.id} /> : null}
           </aside>
         </div>
       </div>
 
-      <Dialog open={!!previewImage} onOpenChange={(open) => { if (!open) setPreviewImage(null); }}>
-        <DialogContent className="max-w-4xl p-2 bg-transparent border-none shadow-none">
-          {previewImage ? (
-            <img
-              src={previewImage}
-              alt="Full preview"
-              className="max-h-[85vh] w-full rounded-md object-contain bg-black/70"
-            />
+      <Dialog open={!!imageGallery} onOpenChange={(open) => { if (!open) setImageGallery(null); }}>
+        <DialogContent className="max-w-4xl border-none bg-black/90 p-0 shadow-none sm:max-w-4xl">
+          {imageGallery ? (
+            <div className="relative flex min-h-[50vh] items-center justify-center px-12 py-8">
+              {imageGallery.images.length > 1 ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white disabled:opacity-30"
+                    disabled={imageGallery.index <= 0}
+                    onClick={() =>
+                      setImageGallery((g) =>
+                        g && g.index > 0 ? { ...g, index: g.index - 1 } : g,
+                      )
+                    }
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white disabled:opacity-30"
+                    disabled={imageGallery.index >= imageGallery.images.length - 1}
+                    onClick={() =>
+                      setImageGallery((g) =>
+                        g && g.index < g.images.length - 1 ? { ...g, index: g.index + 1 } : g,
+                      )
+                    }
+                    aria-label="Next image"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </Button>
+                  <p className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
+                    {imageGallery.index + 1} / {imageGallery.images.length}
+                  </p>
+                </>
+              ) : null}
+              <img
+                src={imageGallery.images[imageGallery.index]}
+                alt={`Image ${imageGallery.index + 1} of ${imageGallery.images.length}`}
+                className="max-h-[80vh] w-full rounded-md object-contain"
+              />
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>

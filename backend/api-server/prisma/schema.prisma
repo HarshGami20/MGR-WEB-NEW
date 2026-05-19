@@ -534,6 +534,8 @@ model PurchaseOrder {
   totalAmount      Decimal  @default(0) @map("total_amount") @db.Decimal(12, 2)
   expectedDelivery DateTime? @map("expected_delivery") @db.Timestamptz(6)
   notes            String?
+  /** JSON array: { comment, authorName?, createdAt } */
+  staffComments    String?  @map("staff_comments")
   branchId         Int?     @map("branch_id")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

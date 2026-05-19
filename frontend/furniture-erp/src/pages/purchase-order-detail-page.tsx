@@ -11,6 +11,7 @@ import {
 } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
 import { partnerLineSpecFromAttributes, poStatusLabel } from "@/lib/partner-po-attributes";
 import { parseImageUrlsList, productImageList, variantImageList } from "@/lib/image-urls";
@@ -32,7 +33,9 @@ import {
   IndianRupee,
   MapPin,
   Package,
+  PencilLine,
   Phone,
+  Plus,
   Trash2,
   Truck,
 } from "lucide-react";
@@ -75,16 +78,33 @@ type PoLineItem = {
   } | null;
 };
 
+function formatCommentDateTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 function DetailSection({
   title,
   description,
   children,
   className,
+  action,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   className?: string;
+  action?: ReactNode;
 }) {
   return (
     <section
@@ -93,9 +113,12 @@ function DetailSection({
         className,
       )}
     >
-      <div>
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-        {description ? <p className="text-xs text-muted-foreground mt-0.5">{description}</p> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+          {description ? <p className="text-xs text-muted-foreground mt-0.5">{description}</p> : null}
+        </div>
+        {action}
       </div>
       {children}
     </section>
@@ -196,12 +219,15 @@ export default function PurchaseOrderDetailPage() {
   const poId = params?.id ? parseInt(params.id, 10) : NaN;
   const [, setLocation] = useLocation();
   const { can } = usePermissions();
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [expectedDeliveryDraft, setExpectedDeliveryDraft] = useState("");
+  const [newStaffComment, setNewStaffComment] = useState("");
+  const [showStaffCommentForm, setShowStaffCommentForm] = useState(false);
 
   const { data: po, isLoading, isError } = useGetPurchaseOrder(poId, {
     query: { enabled: Number.isFinite(poId) && poId > 0 },
@@ -275,8 +301,32 @@ export default function PurchaseOrderDetailPage() {
     return <div className="text-muted-foreground">Purchase order not found.</div>;
   }
 
+  const staffComments = Array.isArray((po as { staffComments?: unknown }).staffComments)
+    ? ((po as { staffComments: Array<{ comment?: string; authorName?: string; createdAt?: string }> }).staffComments)
+    : [];
+
+  const addStaffComment = () => {
+    const text = newStaffComment.trim();
+    if (!text) return;
+    const next = [
+      ...staffComments,
+      {
+        comment: text,
+        authorName: user?.name ?? undefined,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    updatePo.mutate({
+      id: po.id,
+      data: { staffComments: next } as any,
+    });
+    setNewStaffComment("");
+    setShowStaffCommentForm(false);
+  };
+
   const poAny = po as {
     type: string;
+    staffComments?: Array<{ comment?: string; authorName?: string; createdAt?: string }>;
     supplier?: {
       name: string;
       contactPerson?: string | null;
@@ -523,6 +573,73 @@ export default function PurchaseOrderDetailPage() {
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">{po.notes}</p>
               </DetailSection>
             ) : null}
+
+            <DetailSection
+              title="Staff comments"
+              description="Internal notes visible to staff"
+              action={
+                can("purchaseOrders", "edit") && !showStaffCommentForm ? (
+                  <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setShowStaffCommentForm(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add
+                  </Button>
+                ) : undefined
+              }
+            >
+              {staffComments.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center border border-dashed rounded-xl">
+                  No staff comments yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {staffComments.map((comment, index) => (
+                    <div key={index} className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
+                      <p className="whitespace-pre-wrap">{comment.comment || "—"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {comment.authorName ? `${comment.authorName} · ` : ""}
+                        {comment.createdAt ? formatCommentDateTime(comment.createdAt) : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {can("purchaseOrders", "edit") && showStaffCommentForm ? (
+                <div className="space-y-2 pt-2 border-t border-border/50">
+                  <Textarea
+                    value={newStaffComment}
+                    onChange={(e) => setNewStaffComment(e.target.value)}
+                    placeholder="Enter staff comment…"
+                    rows={3}
+                    className="rounded-xl resize-none"
+                    autoFocus
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={addStaffComment}
+                      disabled={!newStaffComment.trim() || updatePo.isPending}
+                    >
+                      <PencilLine className="h-4 w-4 mr-2" />
+                      Save comment
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setNewStaffComment("");
+                        setShowStaffCommentForm(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </DetailSection>
           </div>
 
           {/* Sidebar — summary, status, vendor, schedule */}

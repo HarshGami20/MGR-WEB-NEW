@@ -21,7 +21,12 @@ export const GetRoleParams = permissiveObject;
 export const CreatePurchaseOrderBody = permissiveObject;
 export const UpdatePurchaseOrderBody = permissiveObject;
 export const UpdatePurchaseOrderStatusBody = permissiveObject;
-export const GetPurchaseOrderParams = permissiveObject;
+export const GetPurchaseOrderParams = z.object({
+  id: z.preprocess(
+    (v) => (Array.isArray(v) ? v[0] : v),
+    z.coerce.number().int().positive(),
+  ),
+});
 const OptionalImageUrl = z
   .preprocess((v) => (v === "" ? null : v), z.union([z.string(), z.null()]).optional())
   .refine((v) => {
