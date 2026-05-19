@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
@@ -42,6 +43,7 @@ const poSchema = z.object({
 type POFormValues = z.infer<typeof poSchema>;
 
 export default function PurchaseOrders() {
+  const [, setLocation] = useLocation();
   const { can } = usePermissions();
   const [type, setType] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
@@ -200,7 +202,13 @@ export default function PurchaseOrders() {
         accessorKey: "poNumber",
         header: "PO #",
         cell: ({ row }) => (
-          <span className="font-mono text-sm font-medium">{row.original.poNumber}</span>
+          <button
+            type="button"
+            className="font-mono text-sm font-medium text-primary hover:underline text-left"
+            onClick={() => setLocation(`/purchase-orders/${row.original.id}`)}
+          >
+            {row.original.poNumber}
+          </button>
         ),
       },
       {
@@ -267,38 +275,50 @@ export default function PurchaseOrders() {
       {
         id: "actions",
         header: () => <span className="sr-only">Actions</span>,
-        meta: { headerClassName: "w-[60px]", cellClassName: "text-right" },
+        meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
         cell: ({ row }) => {
           const po = row.original;
-          if (!can("purchaseOrders", "delete")) return null;
           return (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-              aria-label={`Delete ${po.poNumber}`}
-              disabled={deletePO.isPending}
-              onClick={() => {
-                if (
-                  confirm(
-                    `Delete purchase order ${po.poNumber}?${
-                      po.status === "delivered"
-                        ? " Stock added on delivery will be reversed."
-                        : ""
-                    }`,
-                  )
-                ) {
-                  deletePO.mutate({ id: po.id });
-                }
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                aria-label={`View ${po.poNumber}`}
+                onClick={() => setLocation(`/purchase-orders/${po.id}`)}
+              >
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              </Button>
+              {can("purchaseOrders", "delete") ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  aria-label={`Delete ${po.poNumber}`}
+                  disabled={deletePO.isPending}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Delete purchase order ${po.poNumber}?${
+                          po.status === "delivered"
+                            ? " Stock added on delivery will be reversed."
+                            : ""
+                        }`,
+                      )
+                    ) {
+                      deletePO.mutate({ id: po.id });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
           );
         },
       },
     ],
-    [can, deletePO, getStatusBadge, updateStatus],
+    [can, deletePO, getStatusBadge, setLocation, updateStatus],
   );
 
   return (

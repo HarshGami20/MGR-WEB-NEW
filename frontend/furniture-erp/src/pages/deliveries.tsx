@@ -677,11 +677,11 @@ export default function DeliveriesPage() {
               <CardTitle>Booked deliveries</CardTitle>
               <CardDescription>
                 Orders grouped by delivery date and time slot. Update delivery status inline.
-                {bookedRange.fromYmd && bookedRange.toYmd ? (
+                {/* {bookedRange.fromYmd && bookedRange.toYmd ? (
                   <span className="block mt-1 text-foreground/90 tabular-nums">
                     Showing {bookedRange.fromYmd} → {bookedRange.toYmd}
                   </span>
-                ) : null}
+                ) : null} */}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -733,14 +733,15 @@ export default function DeliveriesPage() {
         <TabsContent value="slots">
           <Card>
             <CardHeader>
-              <CardTitle>Next 8 weeks</CardTitle>
+              <CardTitle>Delivery slots</CardTitle>
               <CardDescription>
-                {range.from} → {range.to} · Branch #{writeBranchId}
+                Manage time windows, capacity, and optional pincode rules for this branch.
+                {/* {range.from} → {range.to} · Branch #{writeBranchId}
                 {filtersActive && rows.length > 0 ? (
                   <span className="block mt-1 text-foreground/90">
                     Showing {filteredRows.length} of {rows.length} slot{rows.length === 1 ? "" : "s"}
                   </span>
-                ) : null}
+                ) : null} */}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
