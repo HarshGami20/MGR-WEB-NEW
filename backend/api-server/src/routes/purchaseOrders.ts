@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { Router, IRouter } from "express";
-import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody, GetPurchaseOrderParams } from "../zod";
+import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
@@ -262,9 +262,13 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
 });
 
 router.get("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
-  const params = GetPurchaseOrderParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const po = await prisma.purchaseOrder.findUnique({ where: { id: params.data.id } });
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(raw), 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid purchase order id" });
+    return;
+  }
+  const po = await prisma.purchaseOrder.findUnique({ where: { id } });
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   const scope = await getPartnerScope(req);
   if (!purchaseOrderMatchesScope(po, scope)) {
