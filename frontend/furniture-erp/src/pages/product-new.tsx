@@ -120,15 +120,25 @@ export default function ProductNew() {
   return (
     <div className="min-h-[calc(100vh-6rem)]  bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
       <div className=" max-w-3xl">
-        <Link href="/products">
-          <Button type="button" variant="ghost" className="mb-6 -ml-2 gap-2 text-foreground hover:bg-transparent hover:text-foreground/80">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-        </Link>
-
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Add product</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Create a catalog item on this page. Choose a simple SKU or variants with per-option stock.</p>
+        <div className="flex min-w-0 items-start gap-3 mb-8">
+          <Link href="/products">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mt-0.5 shrink-0 rounded-full"
+              aria-label="Back to products"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Add product</h1>
+            <p className="text-sm text-muted-foreground">
+              Create a catalog item on this page. Choose a simple SKU or variants with per-option stock.
+            </p>
+          </div>
+        </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-8">

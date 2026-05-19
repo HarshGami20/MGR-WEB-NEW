@@ -23,22 +23,29 @@ export function CategoryPickerWithManage({
   subCategoryId,
   onParentChange,
   onSubChange,
+  roots: rootsProp,
 }: {
   parentCategoryId: string;
   subCategoryId: string;
   onParentChange: (id: string) => void;
   onSubChange: (id: string) => void;
+  /** When provided (e.g. edit product page), avoids a second fetch and keeps options in sync with form hydrate. */
+  roots?: CategoryRoot[];
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { can } = usePermissions();
   const canManageCategories = can("categories", "add");
 
-  const { data: categoriesData } = useListCategories();
-  const roots = useMemo(
+  const { data: categoriesData } = useListCategories({
+    query: { enabled: rootsProp === undefined },
+  });
+  const fetchedRoots = useMemo(
     () => (Array.isArray(categoriesData) ? (categoriesData as CategoryRoot[]) : []) ?? [],
     [categoriesData],
   );
+  const roots = rootsProp ?? fetchedRoots;
+  const rootsKey = roots.map((r) => r.id).join(",");
 
   const createCategory = useCreateCategory({
     mutation: {
@@ -118,10 +125,14 @@ export function CategoryPickerWithManage({
 
   return (
     <>
-      <div className="space-y-4">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+        <div className="space-y-2 min-w-0">
           <Label className="font-semibold">Category *</Label>
-          <Select value={parentCategoryId || undefined} onValueChange={handleParentSelectChange}>
+          <Select
+            key={`parent-${parentCategoryId}-${rootsKey}`}
+            value={parentCategoryId || undefined}
+            onValueChange={handleParentSelectChange}
+          >
             <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
               <SelectValue placeholder="Select category" />
             </SelectTrigger>
@@ -146,10 +157,11 @@ export function CategoryPickerWithManage({
           </Select>
         </div>
 
-        {subcategories.length > 0 ? (
-          <div className="space-y-2 animate-in fade-in-50 slide-in-from-top-1 duration-200">
-            <Label className="font-semibold">Subcategory</Label>
+        <div className="space-y-2 min-w-0">
+          <Label className="font-semibold">Subcategory</Label>
+          {subcategories.length > 0 ? (
             <Select
+              key={`sub-${parentCategoryId}-${subCategoryId}-${rootsKey}`}
               value={subCategoryId ? subCategoryId : "__none__"}
               onValueChange={(v) => onSubChange(v === "__none__" ? "" : v)}
               disabled={!parentCategoryId}
@@ -166,8 +178,18 @@ export function CategoryPickerWithManage({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        ) : null}
+          ) : (
+            <Select disabled value={undefined}>
+              <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
+                <SelectValue
+                  placeholder={
+                    parentCategoryId ? "No subcategories for this category" : "Select a category first"
+                  }
+                />
+              </SelectTrigger>
+            </Select>
+          )}
+        </div>
       </div>
 
       {canManageCategories && (
@@ -249,6 +271,11 @@ export function splitCategoryForForm(
 
   const cid = product.categoryId;
   if (cid == null) {
+    return { parentCategoryId: "", subCategoryId: "" };
+  }
+
+  // Avoid mapping leaf id to parent before the category tree is loaded (edit form flash / empty select).
+  if (roots.length === 0) {
     return { parentCategoryId: "", subCategoryId: "" };
   }
 

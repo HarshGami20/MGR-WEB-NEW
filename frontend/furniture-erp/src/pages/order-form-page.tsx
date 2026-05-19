@@ -125,8 +125,8 @@ const PAYMENT_MODE_OPTIONS = [
   { value: "cheque", label: "Cheque" },
 ];
 const GST_INVOICE_OPTIONS = [
-  { value: "gst", label: "GST include" },
-  { value: "non_gst", label: "Non-GST" },
+  { value: "gst", label: "Yes" },
+  { value: "non_gst", label: "No" },
 ] as const;
 
 async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {

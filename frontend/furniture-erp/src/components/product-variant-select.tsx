@@ -77,8 +77,10 @@ export default function ProductVariantSelect({
                     {products.map((p) => (
                       <CommandItem key={p.id} value={`${p.name} ${p.sku}`} onSelect={() => applyProduct(p.id)}>
                         <Check className={cn("mr-2 h-4 w-4", Number(productId) === p.id ? "opacity-100" : "opacity-0")} />
-                        <span className="truncate">{p.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground font-mono">{p.sku}</span>
+                        <div >
+                        <div className="truncate">{p.name}</div>
+                        <div className="ml-0 text-xs text-muted-foreground font-mono">{p.sku}</div>
+                        </div>
                       </CommandItem>
                     ))}
                   </CommandGroup>

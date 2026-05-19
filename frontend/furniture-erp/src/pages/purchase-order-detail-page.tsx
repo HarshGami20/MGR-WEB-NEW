@@ -31,6 +31,7 @@ import {
   Factory,
   FileText,
   IndianRupee,
+  Mail,
   MapPin,
   Package,
   PencilLine,
@@ -38,6 +39,7 @@ import {
   Plus,
   Trash2,
   Truck,
+  UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -122,29 +124,6 @@ function DetailSection({
       </div>
       {children}
     </section>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  icon,
-  mono,
-}: {
-  label: string;
-  value: ReactNode;
-  icon?: ReactNode;
-  mono?: boolean;
-}) {
-  if (value == null || value === "" || value === "—") return null;
-  return (
-    <div className="flex gap-3 py-2.5 border-b border-border/50 last:border-0 last:pb-0">
-      {icon ? <span className="text-muted-foreground shrink-0 mt-0.5">{icon}</span> : null}
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={cn("text-sm text-foreground mt-0.5 break-words", mono && "font-mono")}>{value}</p>
-      </div>
-    </div>
   );
 }
 
@@ -445,9 +424,63 @@ export default function PurchaseOrderDetailPage() {
           {/* Main column — line items */}
           <div className="space-y-6 lg:col-span-8">
             <DetailSection
-              title="Line items"
+              title="Purchase order details"
               description={`${items.length} product${items.length === 1 ? "" : "s"} on this purchase order`}
             >
+              {vendor ? (
+                <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50 space-y-2">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    {vendor.name ? (
+                      <span className="inline-flex items-center gap-1.5 font-medium">
+                        <VendorIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {vendor.name}
+                        <span className="text-xs font-normal text-muted-foreground">({vendorLabel})</span>
+                      </span>
+                    ) : null}
+                    {vendor.contactPerson ? (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                        <UserRound className="h-3.5 w-3.5 shrink-0" />
+                        <span className="text-foreground">{vendor.contactPerson}</span>
+                      </span>
+                    ) : null}
+                    {vendor.mobile ? (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5 shrink-0" />
+                        <span className="font-mono text-foreground">{vendor.mobile}</span>
+                      </span>
+                    ) : null}
+                    {vendor.email ? (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground min-w-0">
+                        <Mail className="h-3.5 w-3.5 shrink-0" />
+                        <span className="text-foreground truncate">{vendor.email}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  {vendor.address ? (
+                    <p className="text-sm text-muted-foreground flex items-start gap-1.5 leading-snug">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>{vendor.address}</span>
+                    </p>
+                  ) : null}
+                  {("gstNumber" in vendor && vendor.gstNumber) ||
+                  ("specialization" in vendor && vendor.specialization) ? (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {"gstNumber" in vendor && vendor.gstNumber ? (
+                        <span>
+                          GST: <span className="font-mono text-foreground">{vendor.gstNumber}</span>
+                        </span>
+                      ) : null}
+                      {"specialization" in vendor && vendor.specialization ? (
+                        <span>
+                          Specialization:{" "}
+                          <span className="text-foreground">{vendor.specialization}</span>
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               {items.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center border border-dashed rounded-xl">
                   No line items on this purchase order.
@@ -706,29 +739,6 @@ export default function PurchaseOrderDetailPage() {
                 </div>
               </DetailSection>
             ) : null}
-
-            <DetailSection
-              title={vendorLabel}
-              description={poAny.type === "supplier" ? "Ready goods vendor" : "Custom manufacturing partner"}
-            >
-              {vendor ? (
-                <div className="rounded-xl border bg-muted/10 px-3 py-1">
-                  <InfoRow label="Company" value={vendor.name} icon={<VendorIcon className="h-4 w-4" />} />
-                  <InfoRow label="Contact" value={vendor.contactPerson} />
-                  <InfoRow label="Mobile" value={vendor.mobile} icon={<Phone className="h-4 w-4" />} />
-                  <InfoRow label="Email" value={vendor.email} />
-                  <InfoRow label="Address" value={vendor.address} icon={<MapPin className="h-4 w-4" />} />
-                  {"gstNumber" in vendor && vendor.gstNumber ? (
-                    <InfoRow label="GST" value={vendor.gstNumber} mono />
-                  ) : null}
-                  {"specialization" in vendor && vendor.specialization ? (
-                    <InfoRow label="Specialization" value={vendor.specialization} />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No vendor linked</p>
-              )}
-            </DetailSection>
 
             {can("purchaseOrders", "edit") ? (
               <DetailSection title="Schedule & notes" description="Expected delivery and internal notes">

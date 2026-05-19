@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type ChangeEvent } from "react";
-import { ImageIcon, Upload, X } from "lucide-react";
+import { ImageIcon, Trash2, Upload } from "lucide-react";
 import { useUploadProductImage } from "@/api-client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -69,7 +69,9 @@ export function ProductImagesField({
     }
   };
 
-  const removeAt = (url: string) => onChange(images.filter((u) => u !== url));
+  const removeAt = (index: number) => {
+    onChange(images.filter((_, i) => i !== index));
+  };
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -86,7 +88,7 @@ export function ProductImagesField({
         aria-hidden
       />
       {images.length > 0 ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {images.map((url, index) => (
             <div
               key={`${url}-${index}`}
@@ -94,21 +96,28 @@ export function ProductImagesField({
             >
               <img
                 src={resolvedProductImageUrl(url) ?? url}
-                alt=""
+                alt={`Photo ${index + 1}`}
                 className="h-full w-full object-cover"
                 loading="lazy"
               />
-              <Button
+              <button
                 type="button"
-                variant="secondary"
-                size="icon"
-                className="absolute right-1 top-1 h-7 w-7 rounded-full shadow-sm"
                 disabled={busy}
-                onClick={() => removeAt(url)}
-                aria-label="Remove image"
+                className={cn(
+                  "absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full",
+                  "bg-destructive text-destructive-foreground shadow-md",
+                  "hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  busy && "pointer-events-none opacity-50",
+                )}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  removeAt(index);
+                }}
+                aria-label={`Remove photo ${index + 1}`}
               >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
           <button

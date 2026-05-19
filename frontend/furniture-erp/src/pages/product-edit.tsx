@@ -72,12 +72,16 @@ export default function ProductEdit() {
   const { can } = usePermissions();
 
   const [isSaving, setIsSaving] = useState(false);
+  const [formHydrated, setFormHydrated] = useState(false);
   /** Lets us run hydrate again when category tree / variants arrive after the first pass (full page refresh). */
   const lastHydrateKeyRef = useRef<string>("");
   const initialServerVariantIdsRef = useRef<number[]>([]);
 
-  const { data: product, isLoading, isError } = useGetProduct(productId, {
-    query: { enabled: Number.isFinite(productId) && productId > 0 },
+  const { data: product, isLoading, isError, isFetching } = useGetProduct(productId, {
+    query: {
+      enabled: Number.isFinite(productId) && productId > 0,
+      refetchOnMount: "always",
+    },
   });
 
   const {
@@ -88,7 +92,10 @@ export default function ProductEdit() {
     query: { enabled: Number.isFinite(productId) && productId > 0 },
   });
 
-  const variantList = Array.isArray(variantsData) ? variantsData : [];
+  const variantList = useMemo(
+    () => (Array.isArray(variantsData) ? variantsData : []),
+    [variantsData],
+  );
 
   const { data: categoriesData, isFetched: categoriesFetched } = useListCategories();
   const categoryRoots = useMemo(
@@ -130,15 +137,25 @@ export default function ProductEdit() {
   useEffect(() => {
     lastHydrateKeyRef.current = "";
     initialServerVariantIdsRef.current = [];
+    setFormHydrated(false);
   }, [productId]);
 
+  const productCategory = product?.category;
+  const categoriesResolved =
+    product?.categoryId == null ||
+    productCategory != null ||
+    categoryRoots.length > 0;
+  const variantsReady =
+    variantsFetched &&
+    !((product?.variantCount ?? 0) > 0 && variantList.length === 0 && variantsLoading);
+
   useEffect(() => {
-    if (!product || !variantsFetched || !categoriesFetched) return;
+    if (!product || !variantsReady || !categoriesFetched || !categoriesResolved) return;
 
     const vc = product.variantCount ?? 0;
-    if (vc > 0 && variantList.length === 0 && variantsLoading) return;
 
     const split = splitCategoryForForm(product, categoryRoots);
+    if (product.categoryId != null && !split.parentCategoryId) return;
     const variantIdsSig = variantList
       .map((v) => v.id)
       .sort((a, b) => a - b)
@@ -160,7 +177,10 @@ export default function ProductEdit() {
       split.subCategoryId,
     ].join("|");
 
-    if (lastHydrateKeyRef.current === hydrateKey) return;
+    if (lastHydrateKeyRef.current === hydrateKey) {
+      if (!formHydrated) setFormHydrated(true);
+      return;
+    }
     lastHydrateKeyRef.current = hydrateKey;
 
     const hadServerVariants = vc > 0;
@@ -168,11 +188,15 @@ export default function ProductEdit() {
     const variantRows = variantList.map(productVariantToDraftRow);
     initialServerVariantIdsRef.current = variantRows.map((r) => r.variantId!).filter((id): id is number => id != null);
 
+    const current = form.getValues();
+    const { parentCategoryId: parentDirty, subCategoryId: subDirty } = form.formState.dirtyFields;
+    const preserveCategoryEdits = formHydrated && (parentDirty || subDirty);
+
     form.reset({
       name: product.name,
       sku: product.sku,
-      parentCategoryId: split.parentCategoryId,
-      subCategoryId: split.subCategoryId,
+      parentCategoryId: preserveCategoryEdits ? current.parentCategoryId : split.parentCategoryId,
+      subCategoryId: preserveCategoryEdits ? current.subCategoryId ?? "" : split.subCategoryId,
       description: product.description || "",
       price: hadServerVariants ? 0 : product.price,
       gstPercent: product.gstPercent,
@@ -182,7 +206,17 @@ export default function ProductEdit() {
       attributes: hadServerVariants ? [] : jsonToAttrs((product as { attributes?: string | null }).attributes),
       variants: hadServerVariants ? variantRows : [],
     });
-  }, [product, variantsFetched, categoriesFetched, variantsLoading, categoryRoots, variantList, form]);
+    setFormHydrated(true);
+  }, [
+    product,
+    variantsReady,
+    categoriesFetched,
+    categoriesResolved,
+    categoryRoots,
+    variantList,
+    form,
+    formHydrated,
+  ]);
 
   const invalidateProductQueries = () => {
     queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
@@ -290,7 +324,16 @@ export default function ProductEdit() {
     return <Redirect to={`/products/${productId}`} />;
   }
 
-  if (isLoading) {
+  const pageLoading =
+    isLoading ||
+    isFetching ||
+    !product ||
+    !categoriesFetched ||
+    !categoriesResolved ||
+    !variantsReady ||
+    !formHydrated;
+
+  if (pageLoading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading…</div>
     );
@@ -312,15 +355,23 @@ export default function ProductEdit() {
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
       <div className=" max-w-3xl">
-        <Link href={`/products/${productId}`}>
-          <Button type="button" variant="ghost" className="mb-6 -ml-2 gap-2 text-foreground hover:bg-transparent hover:text-foreground/80">
-            <ArrowLeft className="h-4 w-4" />
-            Back to product
-          </Button>
-        </Link>
-
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Edit product</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{product.name}</p>
+        <div className="flex min-w-0 items-start gap-3 mb-8">
+          <Link href={`/products/${productId}`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mt-0.5 shrink-0 rounded-full"
+              aria-label="Back to product"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Edit product</h1>
+            <p className="text-sm text-muted-foreground">{product.name}</p>
+          </div>
+        </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-8">
@@ -348,29 +399,33 @@ export default function ProductEdit() {
 
               <FormField
                 control={form.control}
+                name="subCategoryId"
+                render={({ field: subField }) => (
+                  <input type="hidden" {...subField} value={subField.value ?? ""} />
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="parentCategoryId"
-                render={({ field: parentField }) => (
-                  <FormField
-                    control={form.control}
-                    name="subCategoryId"
-                    render={({ field: subField }) => (
-                      <FormItem>
-                        <CategoryPickerWithManage
-                          parentCategoryId={parentField.value}
-                          subCategoryId={subField.value ?? ""}
-                          onParentChange={(v) => {
-                            parentField.onChange(v);
-                            subField.onChange("");
-                          }}
-                          onSubChange={subField.onChange}
-                        />
-                        {form.formState.errors.parentCategoryId?.message != null && (
-                          <p className="text-sm font-medium text-destructive">{form.formState.errors.parentCategoryId.message}</p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
+                render={() => (
+                  <FormItem>
+                    <CategoryPickerWithManage
+                      roots={categoryRoots}
+                      parentCategoryId={form.watch("parentCategoryId") ?? ""}
+                      subCategoryId={form.watch("subCategoryId") ?? ""}
+                      onParentChange={(v) => {
+                        form.setValue("parentCategoryId", v, { shouldDirty: true, shouldValidate: true });
+                        form.setValue("subCategoryId", "", { shouldDirty: true });
+                      }}
+                      onSubChange={(v) => {
+                        form.setValue("subCategoryId", v, { shouldDirty: true, shouldValidate: true });
+                      }}
+                    />
+                    {form.formState.errors.parentCategoryId?.message != null && (
+                      <p className="text-sm font-medium text-destructive">{form.formState.errors.parentCategoryId.message}</p>
                     )}
-                  />
+                    <FormMessage />
+                  </FormItem>
                 )}
               />
 
