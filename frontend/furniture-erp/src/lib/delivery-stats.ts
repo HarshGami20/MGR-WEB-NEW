@@ -178,23 +178,4 @@ export function buildDateSlotSchedule(
   });
 }
 
-export function normalizeYmdRange(fromYmd: string, toYmd: string): { fromYmd: string; toYmd: string } {
-  let from = fromYmd.trim();
-  let to = toYmd.trim();
-  if (from && to && from > to) {
-    const t = from;
-    from = to;
-    to = t;
-  }
-  return { fromYmd: from, toYmd: to };
-}
-
-export function addDaysYmd(ymd: string, days: number): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
+export { addDaysYmd, normalizeYmdRange } from "@/lib/date-range";

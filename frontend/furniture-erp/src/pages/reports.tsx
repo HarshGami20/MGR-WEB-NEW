@@ -232,7 +232,7 @@ export default function ReportsPage() {
           <CardContent className="pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="w-full space-y-1 sm:w-[200px]">
-                <span className="text-xs text-muted-foreground">Branch</span>
+                {/* <span className="text-xs text-muted-foreground">Branch</span> */}
                 <Select
                   value={selectedBranchId?.toString() ?? "all"}
                   onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v, 10))}

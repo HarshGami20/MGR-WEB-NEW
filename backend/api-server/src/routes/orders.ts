@@ -28,6 +28,7 @@ import {
 } from "../lib/custom-line-item";
 import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
 import { parseImageUrlsJson } from "../lib/image-urls";
+import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -385,7 +386,17 @@ router.post(
 );
 
 router.get("/orders", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
-  const { search, status, isGst, branchId, page = "1", limit = "20", assignmentScope } = req.query as Record<string, string>;
+  const {
+    search,
+    status,
+    isGst,
+    branchId,
+    page = "1",
+    limit = "20",
+    assignmentScope,
+    createdFrom,
+    createdTo,
+  } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -403,6 +414,19 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   }
   if (isGst !== undefined) where.isGst = isGst === "true";
   if (branchId) where.branchId = parseInt(branchId, 10);
+
+  const createdAtFilter: { gte?: Date; lte?: Date } = {};
+  if (typeof createdFrom === "string" && createdFrom.trim()) {
+    const start = ymdUtcDayStart(createdFrom.trim());
+    if (start) createdAtFilter.gte = start;
+  }
+  if (typeof createdTo === "string" && createdTo.trim()) {
+    const end = ymdUtcDayEnd(createdTo.trim());
+    if (end) createdAtFilter.lte = end;
+  }
+  if (createdAtFilter.gte != null || createdAtFilter.lte != null) {
+    where.createdAt = createdAtFilter;
+  }
 
   const clauses: any[] = [];
   if (search) {

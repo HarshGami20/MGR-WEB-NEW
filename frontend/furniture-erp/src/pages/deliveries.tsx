@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useListBranches, useListOrders, type Branch } from "@/api-client";
 import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
 import { DeliveryScheduleList } from "@/components/delivery-schedule-list";
+import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
 import {
   addDaysYmd,
   computeDeliveryDayStats,
@@ -211,20 +212,29 @@ export default function DeliveriesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const [filterLabel, setFilterLabel] = useState("");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterDateRange, setFilterDateRange] = useState<DateRangeValue>({});
   const [filterPincode, setFilterPincode] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
   const [location] = useLocation();
-  const [bookedDateFrom, setBookedDateFrom] = useState(() => localTodayYmd());
-  const [bookedDateTo, setBookedDateTo] = useState(() => addDaysYmd(localTodayYmd(), 28));
+  const defaultBookedRange = useMemo<DateRangeValue>(
+    () => ({
+      from: localTodayYmd(),
+      to: addDaysYmd(localTodayYmd(), 28),
+    }),
+    [],
+  );
+  const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>(defaultBookedRange);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const from = params.get("from")?.trim();
     const to = params.get("to")?.trim();
-    if (from) setBookedDateFrom(from);
-    if (to) setBookedDateTo(to);
+    if (from || to) {
+      setBookedDateRange({
+        from: from || undefined,
+        to: to || undefined,
+      });
+    }
   }, [location]);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -251,10 +261,11 @@ export default function DeliveriesPage() {
 
   const todayYmd = localTodayYmd();
   const bookedRange = useMemo(
-    () => normalizeYmdRange(bookedDateFrom, bookedDateTo),
-    [bookedDateFrom, bookedDateTo],
+    () => normalizeYmdRange(bookedDateRange.from ?? "", bookedDateRange.to ?? ""),
+    [bookedDateRange.from, bookedDateRange.to],
   );
-  const bookedRangeActive = bookedDateFrom !== todayYmd || bookedDateTo !== addDaysYmd(todayYmd, 28);
+  const bookedRangeActive =
+    bookedDateRange.from !== defaultBookedRange.from || bookedDateRange.to !== defaultBookedRange.to;
   const canViewOrders = can("orders", "view");
   const canUpdateDeliveryStatus = can("deliveries", "edit") || can("orders", "edit");
 
@@ -279,8 +290,8 @@ export default function DeliveriesPage() {
   const filteredRows = useMemo(() => {
     const labelQ = filterLabel.trim().toLowerCase();
     const pinQ = filterPincode.trim().toLowerCase();
-    let fromQ = filterDateFrom.trim();
-    let toQ = filterDateTo.trim();
+    let fromQ = filterDateRange.from?.trim() ?? "";
+    let toQ = filterDateRange.to?.trim() ?? "";
     if (fromQ && toQ && fromQ > toQ) {
       const t = fromQ;
       fromQ = toQ;
@@ -300,32 +311,30 @@ export default function DeliveriesPage() {
       }
       return true;
     });
-  }, [rows, filterLabel, filterDateFrom, filterDateTo, filterPincode, filterAvailability]);
+  }, [rows, filterLabel, filterDateRange, filterPincode, filterAvailability]);
 
   const filtersActive = useMemo(
     () =>
       Boolean(
         filterLabel.trim() ||
-          filterDateFrom.trim() ||
-          filterDateTo.trim() ||
+          filterDateRange.from?.trim() ||
+          filterDateRange.to?.trim() ||
           filterPincode.trim() ||
           filterAvailability !== "all",
       ),
-    [filterLabel, filterDateFrom, filterDateTo, filterPincode, filterAvailability],
+    [filterLabel, filterDateRange, filterPincode, filterAvailability],
   );
 
   const resetTableFilters = useCallback(() => {
     setFilterLabel("");
-    setFilterDateFrom("");
-    setFilterDateTo("");
+    setFilterDateRange({});
     setFilterPincode("");
     setFilterAvailability("all");
   }, []);
 
   const resetBookedDateRange = useCallback(() => {
-    setBookedDateFrom(todayYmd);
-    setBookedDateTo(addDaysYmd(todayYmd, 28));
-  }, [todayYmd]);
+    setBookedDateRange(defaultBookedRange);
+  }, [defaultBookedRange]);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["deliverySlots", writeBranchId, range.from, range.to] });
@@ -690,30 +699,12 @@ export default function DeliveriesPage() {
                     Reset range
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="booked-filter-from" className="text-xs">
-                      From date
-                    </Label>
-                    <Input
-                      id="booked-filter-from"
-                      type="date"
-                      value={bookedDateFrom}
-                      onChange={(e) => setBookedDateFrom(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="booked-filter-to" className="text-xs">
-                      To date
-                    </Label>
-                    <Input
-                      id="booked-filter-to"
-                      type="date"
-                      value={bookedDateTo}
-                      onChange={(e) => setBookedDateTo(e.target.value)}
-                    />
-                  </div>
-                </div>
+                <DateRangePicker
+                  className="max-w-md"
+                  value={bookedDateRange}
+                  onChange={setBookedDateRange}
+                  numberOfMonths={2}
+                />
               </div>
 
               {!canViewOrders ? (
@@ -787,30 +778,15 @@ export default function DeliveriesPage() {
                           onChange={(e) => setFilterLabel(e.target.value)}
                         />
                       </div>
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="slot-filter-from" className="text-xs">
-                          From date
-                        </Label>
-                        <Input
-                          id="slot-filter-from"
-                          type="date"
-                          value={filterDateFrom}
+                      <div className="sm:col-span-2">
+                        <DateRangePicker
+                          label="Slot date range"
+                          value={filterDateRange}
+                          onChange={setFilterDateRange}
                           min={range.from}
                           max={range.to}
-                          onChange={(e) => setFilterDateFrom(e.target.value)}
-                        />
-                      </div>
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="slot-filter-to" className="text-xs">
-                          To date
-                        </Label>
-                        <Input
-                          id="slot-filter-to"
-                          type="date"
-                          value={filterDateTo}
-                          min={range.from}
-                          max={range.to}
-                          onChange={(e) => setFilterDateTo(e.target.value)}
+                          numberOfMonths={2}
+                          showPresets={false}
                         />
                       </div>
                       <div className="grid gap-1.5">

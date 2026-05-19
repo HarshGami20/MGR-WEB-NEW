@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -39,6 +40,7 @@ export default function Orders() {
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
   const [assignmentScope, setAssignmentScope] = useState<"all" | "created_by_me" | "assigned_to_me">("all");
+  const [createdDateRange, setCreatedDateRange] = useState<DateRangeValue>({});
   const [page, setPage] = useState(1);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
@@ -69,15 +71,22 @@ export default function Orders() {
     }
   }, []);
 
-  const { data: ordersData, isLoading } = useListOrders({
-    search: search || undefined,
-    status: status !== "all" ? (status as any) : undefined,
-    isGst: isGst !== "all" ? isGst === "true" : undefined,
-    branchId: selectedBranchId ?? undefined,
-    assignmentScope: assignmentScope !== "all" ? (assignmentScope as any) : undefined,
-    page,
-    limit: 10,
-  });
+  const listOrdersParams = useMemo(
+    () => ({
+      search: search || undefined,
+      status: status !== "all" ? (status as any) : undefined,
+      isGst: isGst !== "all" ? isGst === "true" : undefined,
+      branchId: selectedBranchId ?? undefined,
+      assignmentScope: assignmentScope !== "all" ? (assignmentScope as any) : undefined,
+      ...(createdDateRange.from ? { createdFrom: createdDateRange.from } : {}),
+      ...(createdDateRange.to ? { createdTo: createdDateRange.to } : {}),
+      page,
+      limit: 10,
+    }),
+    [search, status, isGst, selectedBranchId, assignmentScope, createdDateRange.from, createdDateRange.to, page],
+  );
+
+  const { data: ordersData, isLoading } = useListOrders(listOrdersParams as Parameters<typeof useListOrders>[0]);
 
 
   const deleteOrder = useDeleteOrder({
@@ -518,8 +527,8 @@ export default function Orders() {
         </Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-card p-4 rounded-lg border">
-        <div className="flex flex-1 gap-4 items-center">
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
+        <div className="flex flex-1 flex-wrap gap-4 items-center">
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -529,6 +538,18 @@ export default function Orders() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <DateRangePicker
+            variant="filter"
+            label="Created date"
+            placeholder="Created date"
+            value={createdDateRange}
+            onChange={(next) => {
+              setCreatedDateRange(next);
+              setPage(1);
+            }}
+            showClear
+            triggerClassName="w-[200px]"
+          />
           <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1); }}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Status" />
