@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { isWebPushConfigured, onForegroundMessage, registerWebPush, showSystemNotification } from "@/lib/fcm-web";
 import { attachServiceWorkerPushLogListener, pushLog } from "@/lib/push-notification-log";
+import { notificationPayloadHref } from "@/lib/notification-links";
+import { useNotificationNavigate } from "@/lib/use-notification-navigate";
+import { ToastAction } from "@/components/ui/toast";
 
 function socketOrigin(): string {
   const api = import.meta.env.VITE_API_URL?.trim();
@@ -23,6 +26,7 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const navigateNotification = useNotificationNavigate();
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
@@ -63,21 +67,45 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     };
 
-    s.on("notification:new", (payload: { title?: string; message?: string }) => {
-      pushLog("info", "socket_notification", "In-app notification (socket)", { title: payload.title });
-      onNew();
-      toast({
-        title: payload.title ?? "Notification",
-        description: payload.message,
-      });
-    });
+    s.on(
+      "notification:new",
+      (payload: {
+        title?: string;
+        message?: string;
+        notificationType?: string;
+        module?: string | null;
+        metadata?: unknown;
+      }) => {
+        pushLog("info", "socket_notification", "In-app notification (socket)", { title: payload.title });
+        onNew();
+        const href = notificationPayloadHref(payload);
+        toast({
+          title: payload.title ?? "Notification",
+          description: payload.message,
+          action: href ? (
+            <ToastAction
+              altText="Open"
+              onClick={() =>
+                navigateNotification({
+                  metadata: payload.metadata,
+                  notificationType: payload.notificationType,
+                  module: payload.module,
+                })
+              }
+            >
+              Open
+            </ToastAction>
+          ) : undefined,
+        });
+      },
+    );
 
     return () => {
       s.off("notification:new");
       s.disconnect();
       setSocket(null);
     };
-  }, [user?.id, queryClient, toast]);
+  }, [user?.id, queryClient, toast, navigateNotification]);
 
   useEffect(() => {
     if (!user) return;
@@ -101,7 +129,29 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
         const title = payload.notification?.title ?? "Notification";
         const body = payload.notification?.body;
-        toast({ title, description: body });
+        const href =
+          payload.data?.actionPath?.trim() ||
+          notificationPayloadHref({
+            metadata: {
+              actionPath: payload.data?.actionPath,
+              orderId: payload.data?.orderId ? Number(payload.data.orderId) : undefined,
+              complaintId: payload.data?.complaintId ? Number(payload.data.complaintId) : undefined,
+              purchaseOrderId: payload.data?.purchaseOrderId
+                ? Number(payload.data.purchaseOrderId)
+                : undefined,
+            },
+            notificationType: payload.data?.type,
+            module: payload.data?.module ?? null,
+          });
+        toast({
+          title,
+          description: body,
+          action: href ? (
+            <ToastAction altText="Open" onClick={() => navigateNotification({ metadata: { actionPath: href } })}>
+              Open
+            </ToastAction>
+          ) : undefined,
+        });
         void showSystemNotification(payload);
         pushLog("info", "realtime_notification", "Handled FCM for app notification", {
           title,
@@ -117,7 +167,7 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
       detachSwLog();
       unsub?.();
     };
-  }, [user?.id, queryClient, toast]);
+  }, [user?.id, queryClient, toast, navigateNotification]);
 
   return <SocketCtx.Provider value={socket}>{children}</SocketCtx.Provider>;
 }

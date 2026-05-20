@@ -30,6 +30,7 @@ import {
   CalendarClock,
   ClipboardList,
   Headphones,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -116,19 +117,26 @@ const staffNavSections: StaffSection[] = [
 ];
 
 function partnerNavItemsForUser(user: { supplierId?: number | null; manufacturerId?: number | null }) {
-  const panelLabel = user.supplierId ? "Supplier panel" : "Manufacturer panel";
+  const panelLabel = user.supplierId ? "Supplier portal" : "Manufacturer portal";
   const PanelIcon = user.supplierId ? Truck : Factory;
   return [
-    { label: panelLabel, href: "/dashboard", icon: PanelIcon },
+    { label: "Dashboard", href: "/dashboard", icon: PanelIcon },
+    { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
+    { label: "Notifications", href: "/notifications", icon: Bell },
+    { label: "Settings", href: "/settings", icon: Settings },
     { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
   ];
 }
 
 function getPageTitle(location: string, partnerUser: boolean, user?: { supplierId?: number | null } | null): string {
   if (partnerUser && location === "/dashboard") {
-    return user?.supplierId ? "Supplier panel" : "Manufacturer panel";
+    return user?.supplierId ? "Supplier portal" : "Manufacturer portal";
   }
   if (partnerUser && location === "/settings") return "Settings";
+  if (partnerUser && location === "/notifications") return "Notifications";
+  if (partnerUser && location === "/purchase-orders") return "Purchase orders";
+  if (partnerUser && location.startsWith("/purchase-orders/")) return "Purchase order";
+  if (partnerUser && location.startsWith("/products/")) return "Product";
   if (partnerUser && user) {
     const found = partnerNavItemsForUser(user).find((item) => item.href === location);
     return found?.label ?? "MGR Casa";
@@ -440,7 +448,9 @@ export default function Layout({ children }: LayoutProps) {
                 </p>
                 <div className="space-y-1">
                   {partnerNav.map((item) => {
-                    const isActive = location === item.href;
+                    const isActive =
+                      location === item.href ||
+                      (item.href !== "/dashboard" && location.startsWith(`${item.href}/`));
                     const Icon = item.icon;
                     return (
                       <Link key={item.label} href={item.href} className="block" onClick={() => setMobileSidebarOpen(false)}>

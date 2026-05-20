@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Bell, CheckCheck, Loader2, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,7 +22,7 @@ import {
   type NotificationRow,
 } from "@/lib/notification-api";
 import { useAuth } from "@/lib/auth";
-import { isPartnerPortalUser } from "@/lib/partner";
+import { notificationActionLabel, notificationHref } from "@/lib/notification-links";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { WebPushLogPanel } from "@/components/web-push-log-panel";
@@ -33,22 +33,37 @@ function NotificationLine({
   onOpen,
 }: {
   row: NotificationRow;
-  onOpen: (recipientId: string) => void;
+  onOpen: (row: NotificationRow) => void;
 }) {
+  const [, setLocation] = useLocation();
+  const href = notificationHref(row);
+  const actionLabel = notificationActionLabel(row);
+
+  const handleClick = () => {
+    onOpen(row);
+    if (href) setLocation(href);
+  };
+
   return (
     <button
       type="button"
       className={cn(
         "w-full text-left px-3 py-2.5 rounded-lg transition-colors hover:bg-muted/80 border border-transparent",
         !row.isRead && "bg-primary/5 border-primary/15",
+        href && "cursor-pointer",
       )}
-      onClick={() => onOpen(row.recipientId)}
+      onClick={handleClick}
     >
       <p className="text-sm font-medium leading-snug line-clamp-2">{row.title}</p>
-      <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{row.message}</p>
-      <p className="text-[10px] text-muted-foreground mt-1">
-        {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
-      </p>
+      <p className="text-xs text-muted-foreground line-clamp-3 mt-0.5">{row.message}</p>
+      <div className="flex items-center justify-between gap-2 mt-1.5">
+        <p className="text-[10px] text-muted-foreground">
+          {formatDistanceToNow(new Date(row.createdAt), { addSuffix: true })}
+        </p>
+        {href && actionLabel ? (
+          <span className="text-[10px] font-medium text-primary shrink-0">{actionLabel} →</span>
+        ) : null}
+      </div>
     </button>
   );
 }
@@ -61,14 +76,14 @@ export function NotificationBell() {
   const { data: unread } = useQuery({
     queryKey: ["notifications", "unread-count"],
     queryFn: getUnreadCount,
-    enabled: !!user && !isPartnerPortalUser(user),
+    enabled: !!user,
     refetchInterval: 60_000,
   });
 
   const { data: recent, isLoading } = useQuery({
     queryKey: ["notifications", "dropdown"],
     queryFn: () => getNotifications(1, 12),
-    enabled: !!user && !isPartnerPortalUser(user),
+    enabled: !!user,
   });
 
   const markReadMut = useMutation({
@@ -113,13 +128,13 @@ export function NotificationBell() {
     },
   });
 
-  if (!user || isPartnerPortalUser(user)) return null;
+  if (!user) return null;
 
   const count = unread?.count ?? recent?.unreadCount ?? 0;
   const rows = recent?.data ?? [];
 
-  const handleOpen = (recipientId: string) => {
-    markReadMut.mutate(recipientId);
+  const handleOpen = (row: NotificationRow) => {
+    if (!row.isRead) markReadMut.mutate(row.recipientId);
   };
 
   return (

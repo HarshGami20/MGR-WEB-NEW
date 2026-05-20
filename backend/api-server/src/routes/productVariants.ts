@@ -1,6 +1,7 @@
 import { Router, IRouter } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
+import { requireProductReadAccess } from "../lib/partner-product-scope";
 import { CreateProductVariantBody, UpdateProductVariantBody } from "../zod";
 import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
@@ -32,7 +33,7 @@ function serializeVariant(v: any) {
   };
 }
 
-router.get("/products/:productId/variants", requireAuth, requirePermission("products", "read"), async (req, res): Promise<void> => {
+router.get("/products/:productId/variants", requireAuth, requireProductReadAccess(), async (req, res): Promise<void> => {
   const productId = parseInt(String(req.params.productId), 10);
   if (Number.isNaN(productId)) {
     res.status(400).json({ error: "Invalid productId" });

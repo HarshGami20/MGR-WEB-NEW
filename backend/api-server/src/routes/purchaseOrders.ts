@@ -1,10 +1,15 @@
 import type { Prisma } from "@prisma/client";
 import { Router, IRouter } from "express";
 import { CreatePurchaseOrderBody, UpdatePurchaseOrderBody, UpdatePurchaseOrderStatusBody } from "../zod";
+import { emitSafe } from "../lib/app-events";
+import {
+  getPartnerScope,
+  purchaseOrderMatchesScope,
+  PARTNER_ALLOWED_PO_STATUSES,
+} from "../lib/partner-scope";
 import { requireAuth } from "../middlewares/auth";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
-import { getPartnerScope, purchaseOrderMatchesScope, PARTNER_ALLOWED_PO_STATUSES } from "../lib/partner-scope";
 import {
   isCustomLineItem,
   buildCustomAttributesJson,
@@ -258,6 +263,16 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
       },
     });
   }
+  const actorId = (req as { user?: { id: number } }).user?.id;
+  emitSafe("PURCHASE_ORDER_CREATED", {
+    purchaseOrderId: po.id,
+    poNumber: po.poNumber,
+    branchId: po.branchId,
+    supplierId: po.supplierId,
+    manufacturerId: po.manufacturerId,
+    type: po.type,
+    createdById: actorId,
+  });
   res.status(201).json(await enrichPO(po));
 });
 
@@ -295,8 +310,33 @@ router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
     const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
     updateData.staffComments = JSON.stringify(normalized);
   }
+  const existing = await prisma.purchaseOrder.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
   const po = await prisma.purchaseOrder.update({ where: { id }, data: updateData }).catch(() => null);
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
+  const hasChanges =
+    (parsed.data.notes !== undefined && parsed.data.notes !== existing.notes) ||
+    (parsed.data.expectedDelivery !== undefined &&
+      String(parsed.data.expectedDelivery ?? "") !==
+        (existing.expectedDelivery ? existing.expectedDelivery.toISOString() : "")) ||
+    (parsed.data.staffComments !== undefined &&
+      JSON.stringify(parsed.data.staffComments ?? []) !== (existing.staffComments ?? "[]"));
+
+  if (hasChanges) {
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    emitSafe("PURCHASE_ORDER_UPDATED", {
+      purchaseOrderId: po.id,
+      poNumber: po.poNumber,
+      branchId: po.branchId,
+      supplierId: po.supplierId,
+      manufacturerId: po.manufacturerId,
+      type: po.type,
+      updatedById: actorId,
+    });
+  }
+
   res.json(await enrichPO(po));
 });
 
@@ -387,6 +427,21 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
       }
       return updated;
     });
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    if (existing.status !== po.status) {
+      emitSafe("PURCHASE_ORDER_STATUS_CHANGED", {
+        purchaseOrderId: po.id,
+        poNumber: po.poNumber,
+        branchId: po.branchId,
+        supplierId: po.supplierId,
+        manufacturerId: po.manufacturerId,
+        type: po.type,
+        previousStatus: existing.status,
+        nextStatus: po.status,
+        changedById: actorId,
+        changedByPartner: Boolean(scope),
+      });
+    }
     res.json(await enrichPO(po));
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

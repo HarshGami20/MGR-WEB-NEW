@@ -152,6 +152,7 @@ async function main() {
   const portalPermissions = perm({
     dashboard: { view: true },
     purchaseOrders: { view: true, edit: true },
+    products: { view: true },
     settings: { view: true },
   });
 
@@ -936,9 +937,18 @@ async function main() {
   // ——— Sample notifications ———
   await prisma.notificationTypeDefinition.createMany({
     data: [
-      { code: "order.created", label: "New order", description: "A sales order was created" },
-      { code: "order.status", label: "Order status", description: "Order status changed" },
-      { code: "delivery.updated", label: "Delivery update", description: "Delivery status changed" },
+      { code: "ORDER_CREATED", label: "New order", description: "A sales order was created" },
+      { code: "ORDER_STATUS_CHANGED", label: "Order status", description: "Order status changed" },
+      { code: "ORDER_DELIVERY_UPDATED", label: "Delivery update", description: "Delivery status changed" },
+      { code: "DELIVERY_REMINDER", label: "Delivery reminder", description: "Order scheduled for delivery today" },
+      { code: "PAYMENT_RECEIVED", label: "Payment received", description: "Payment recorded on an order" },
+      { code: "PAYMENT_REMINDER", label: "Payment reminder", description: "Payment follow-up due or overdue" },
+      { code: "COMPLAINT_CREATED", label: "New complaint", description: "Customer complaint opened" },
+      { code: "COMPLAINT_STATUS_CHANGED", label: "Complaint status", description: "Complaint status changed" },
+      { code: "COMPLAINT_COMMENT_ADDED", label: "Complaint comment", description: "New comment on a complaint" },
+      { code: "PURCHASE_ORDER_CREATED", label: "Purchase order created", description: "New purchase order for supplier or manufacturer" },
+      { code: "PURCHASE_ORDER_UPDATED", label: "Purchase order updated", description: "Purchase order details changed by HQ" },
+      { code: "PURCHASE_ORDER_STATUS_CHANGED", label: "Purchase order status", description: "Purchase order status changed" },
       { code: "inventory.low", label: "Low stock", description: "Product below threshold" },
     ],
     skipDuplicates: true,

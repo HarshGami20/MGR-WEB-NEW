@@ -4,6 +4,7 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import type { ComplaintStatus, Prisma } from "@prisma/client";
+import { emitSafe } from "../lib/app-events";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
@@ -335,6 +336,14 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     },
   });
 
+  emitSafe("COMPLAINT_CREATED", {
+    complaintId: created.id,
+    complaintNumber: created.complaintNumber,
+    orderId: order.id,
+    branchId: created.branchId,
+    createdById: authUser.id,
+  });
+
   res.status(201).json(await enrichComplaint(created));
 });
 
@@ -415,6 +424,19 @@ router.patch(
       },
     });
 
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    if (existing.status !== updated.status) {
+      emitSafe("COMPLAINT_STATUS_CHANGED", {
+        complaintId: updated.id,
+        complaintNumber: updated.complaintNumber,
+        orderId: updated.orderId,
+        branchId: updated.branchId,
+        previousStatus: existing.status,
+        nextStatus: updated.status,
+        changedById: actorId,
+      });
+    }
+
     res.json(await enrichComplaint(updated));
   },
 );
@@ -457,6 +479,15 @@ router.post(
       include: {
         user: { select: { id: true, name: true, mobile: true, avatarUrl: true } },
       },
+    });
+
+    emitSafe("COMPLAINT_COMMENT_ADDED", {
+      complaintId: existing.id,
+      complaintNumber: existing.complaintNumber,
+      orderId: existing.orderId,
+      branchId: existing.branchId,
+      commentId: comment.id,
+      authorId: authUser.id,
     });
 
     res.status(201).json({

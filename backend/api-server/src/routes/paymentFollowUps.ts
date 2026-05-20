@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
+import { emitSafe } from "../lib/app-events";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
@@ -217,6 +218,11 @@ router.post("/orders/:orderId/payment-follow-ups", requireAuth, requirePermissio
 
   const userId = ((req as { user?: { id: number } }).user?.id ?? null) as number | null;
 
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { orderNumber: true, branchId: true },
+  });
+
   const row = await prisma.paymentFollowUp.create({
     data: {
       orderId,
@@ -226,6 +232,17 @@ router.post("/orders/:orderId/payment-follow-ups", requireAuth, requirePermissio
     },
     include: { createdBy: { select: { id: true, name: true, mobile: true, avatarUrl: true } } },
   });
+
+  if (order) {
+    emitSafe("PAYMENT_FOLLOW_UP_CREATED", {
+      followUpId: row.id,
+      orderId,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      followUpDate: row.followUpDate.toISOString().slice(0, 10),
+      createdById: userId,
+    });
+  }
 
   res.status(201).json({
     id: row.id,

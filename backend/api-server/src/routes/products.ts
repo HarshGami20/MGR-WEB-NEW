@@ -2,6 +2,7 @@ import { Router, IRouter } from "express";
 import { CreateProductBody, UpdateProductBody, GetProductParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requireProductsCreateOrUpdate } from "../lib/permissions";
+import { requireProductReadAccess } from "../lib/partner-product-scope";
 import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
@@ -296,7 +297,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
   }
 });
 
-router.get("/products/:id", requireAuth, requirePermission("products", "read"), async (req, res): Promise<void> => {
+router.get("/products/:id", requireAuth, requireProductReadAccess(), async (req, res): Promise<void> => {
   const params = GetProductParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

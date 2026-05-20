@@ -51,6 +51,75 @@ export type SystemAlertPayload = {
   severity: "info" | "warning" | "critical";
 };
 
+export type PaymentFollowUpCreatedPayload = {
+  followUpId: number;
+  orderId: number;
+  orderNumber: string;
+  branchId: number | null;
+  followUpDate: string;
+  createdById?: number | null;
+};
+
+export type ComplaintCreatedPayload = {
+  complaintId: number;
+  complaintNumber: string;
+  orderId: number;
+  branchId: number | null;
+  createdById: number | null;
+};
+
+export type ComplaintStatusChangedPayload = {
+  complaintId: number;
+  complaintNumber: string;
+  orderId: number;
+  branchId: number | null;
+  previousStatus: string;
+  nextStatus: string;
+  changedById?: number | null;
+};
+
+export type ComplaintCommentAddedPayload = {
+  complaintId: number;
+  complaintNumber: string;
+  orderId: number;
+  branchId: number | null;
+  commentId: number;
+  authorId: number;
+};
+
+export type PurchaseOrderCreatedPayload = {
+  purchaseOrderId: number;
+  poNumber: string;
+  branchId: number | null;
+  supplierId: number | null;
+  manufacturerId: number | null;
+  type: string;
+  createdById?: number | null;
+};
+
+export type PurchaseOrderStatusChangedPayload = {
+  purchaseOrderId: number;
+  poNumber: string;
+  branchId: number | null;
+  supplierId: number | null;
+  manufacturerId: number | null;
+  type: string;
+  previousStatus: string;
+  nextStatus: string;
+  changedById?: number | null;
+  changedByPartner: boolean;
+};
+
+export type PurchaseOrderUpdatedPayload = {
+  purchaseOrderId: number;
+  poNumber: string;
+  branchId: number | null;
+  supplierId: number | null;
+  manufacturerId: number | null;
+  type: string;
+  updatedById?: number | null;
+};
+
 /** Typed domain events → notification listeners (decouple HTTP routes from delivery). */
 class AppEventsBus extends EventEmitter {
   constructor() {

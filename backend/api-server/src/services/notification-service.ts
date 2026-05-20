@@ -356,16 +356,7 @@ export const notificationService = {
         pushTargets.push(uid);
       }
       if (pushTargets.length > 0) {
-        await sendPushToUsers(
-          pushTargets,
-          notif.title,
-          notif.message,
-          stringifyData({
-            notificationId: notif.id,
-            type: notif.notificationType,
-            module: notif.module ?? "",
-          }),
-        );
+        await sendPushToUsers(pushTargets, notif.title, notif.message, pushDataFromNotification(notif));
       }
     }
 
@@ -442,16 +433,7 @@ export const notificationService = {
           pushTargets.push(uid);
         }
         if (pushTargets.length > 0) {
-          await sendPushToUsers(
-            pushTargets,
-            notif.title,
-            notif.message,
-            stringifyData({
-              notificationId: notif.id,
-              type: notif.notificationType,
-              module: notif.module ?? "",
-            }),
-          );
+          await sendPushToUsers(pushTargets, notif.title, notif.message, pushDataFromNotification(notif));
         }
       }
     }
@@ -517,16 +499,7 @@ export const notificationService = {
       pushTargets.push(uid);
     }
     if (pushTargets.length > 0) {
-      await sendPushToUsers(
-        pushTargets,
-        notif.title,
-        notif.message,
-        stringifyData({
-          notificationId: notif.id,
-          type: notif.notificationType,
-          module: notif.module ?? "",
-        }),
-      );
+      await sendPushToUsers(pushTargets, notif.title, notif.message, pushDataFromNotification(notif));
     }
   },
 
@@ -671,4 +644,26 @@ function stringifyData(obj: Record<string, string>): Record<string, string> {
     out[k] = v;
   }
   return out;
+}
+
+function pushDataFromNotification(n: {
+  id: string;
+  notificationType: string;
+  module: string | null;
+  metadata: Prisma.JsonValue;
+}): Record<string, string> {
+  const meta =
+    n.metadata && typeof n.metadata === "object" && !Array.isArray(n.metadata)
+      ? (n.metadata as Record<string, unknown>)
+      : {};
+  const actionPath = typeof meta.actionPath === "string" ? meta.actionPath : "";
+  return stringifyData({
+    notificationId: n.id,
+    type: n.notificationType,
+    module: n.module ?? "",
+    actionPath,
+    orderId: meta.orderId != null ? String(meta.orderId) : "",
+    complaintId: meta.complaintId != null ? String(meta.complaintId) : "",
+    purchaseOrderId: meta.purchaseOrderId != null ? String(meta.purchaseOrderId) : "",
+  });
 }

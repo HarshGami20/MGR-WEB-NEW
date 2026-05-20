@@ -8,7 +8,11 @@ import { BranchProvider } from "@/lib/branch-context";
 import { NotificationSocketProvider } from "@/lib/notification-socket";
 import Layout from "@/components/layout";
 import { isPartnerPortalUser } from "@/lib/partner";
+import { partnerAllowedPath } from "@/lib/partner-routes";
 import { usePermissions } from "@/lib/permissions";
+import { useLocation } from "wouter";
+import PurchaseOrdersRoute from "@/pages/purchase-orders-route";
+import ProductDetailRoute from "@/pages/product-detail-route";
 
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -54,6 +58,7 @@ function NoModuleAccess() {
 function ProtectedRoute({ component: Component, viewModule }: { component: any; viewModule: string }) {
   const { user, isLoading } = useAuth();
   const { can, firstAccessiblePath } = usePermissions();
+  const [location] = useLocation();
 
   if (isLoading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>;
@@ -64,15 +69,14 @@ function ProtectedRoute({ component: Component, viewModule }: { component: any; 
   }
 
   if (isPartnerPortalUser(user)) {
-    const allowed = viewModule === "dashboard" || viewModule === "settings" || viewModule === "tools";
-    if (allowed) {
-      return (
-        <Layout>
-          <Component />
-        </Layout>
-      );
+    if (!partnerAllowedPath(location)) {
+      return <Redirect to="/dashboard" />;
     }
-    return <Redirect to="/dashboard" />;
+    return (
+      <Layout>
+        <Component />
+      </Layout>
+    );
   }
 
   if (!can(viewModule, "view")) {
@@ -135,7 +139,7 @@ function Router() {
         <ProtectedRoute viewModule="products" component={ProductEdit} />
       </Route>
       <Route path="/products/:id">
-        <ProtectedRoute viewModule="products" component={ProductDetail} />
+        <ProtectedRoute viewModule="products" component={ProductDetailRoute} />
       </Route>
       <Route path="/products">
         <ProtectedRoute viewModule="products" component={Products} />
@@ -186,7 +190,7 @@ function Router() {
         <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrderDetailPage} />
       </Route>
       <Route path="/purchase-orders">
-        <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrders} />
+        <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrdersRoute} />
       </Route>
       <Route path="/suppliers">
         <ProtectedRoute viewModule="suppliers" component={Suppliers} />

@@ -12,6 +12,8 @@ import {
   type NotificationRow,
 } from "@/lib/notification-api";
 import { formatDistanceToNow } from "date-fns";
+import { useLocation } from "wouter";
+import { notificationActionLabel, notificationHref } from "@/lib/notification-links";
 import { WebPushLogPanel } from "@/components/web-push-log-panel";
 import { ServerPushLogPanel } from "@/components/server-push-log-panel";
 
@@ -19,6 +21,7 @@ const PAGE_SIZE = 25;
 
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } = useInfiniteQuery({
     queryKey: ["notifications", "infinite"],
@@ -77,20 +80,26 @@ export default function NotificationsPage() {
             <>
               <ScrollArea className="h-[min(70vh,560px)] pr-3">
                 <ul className="space-y-2">
-                  {rows.map((row) => (
+                  {rows.map((row) => {
+                    const href = notificationHref(row);
+                    const actionLabel = notificationActionLabel(row);
+                    const openRow = () => {
+                      if (!row.isRead) markReadMut.mutate(row.recipientId);
+                      if (href) setLocation(href);
+                    };
+                    return (
                     <li
                       key={row.recipientId}
                       className={cn(
                         "rounded-xl border p-4 flex gap-3 transition-colors",
                         !row.isRead ? "border-primary/25 bg-primary/[0.03]" : "border-border/80",
+                        href && "cursor-pointer hover:border-primary/20",
                       )}
                     >
                       <button
                         type="button"
                         className="flex-1 text-left min-w-0"
-                        onClick={() => {
-                          if (!row.isRead) markReadMut.mutate(row.recipientId);
-                        }}
+                        onClick={openRow}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <p className="font-medium leading-snug">{row.title}</p>
@@ -99,8 +108,8 @@ export default function NotificationsPage() {
                           </span>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">{row.message}</p>
-                        {row.module ? (
-                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-2">{row.module}</p>
+                        {href && actionLabel ? (
+                          <p className="text-xs font-medium text-primary mt-2">{actionLabel} →</p>
                         ) : null}
                       </button>
                       <Button
@@ -114,7 +123,8 @@ export default function NotificationsPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               </ScrollArea>
               {hasNextPage ? (

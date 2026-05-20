@@ -10,7 +10,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useBranch } from "@/lib/branch-context";
 import { isPartnerPortalUser } from "@/lib/partner";
-import PartnerPurchaseDashboard from "@/components/partner-purchase-dashboard";
+import PartnerDashboardPage from "@/pages/partner/dashboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -866,7 +866,7 @@ export default function Dashboard() {
     );
   }
   if (user && isPartnerPortalUser(user)) {
-    return <PartnerPurchaseDashboard />;
+    return <PartnerDashboardPage />;
   }
   return <StaffDashboard />;
 }

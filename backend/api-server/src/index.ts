@@ -2,9 +2,11 @@ import http from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachSocketIo } from "./realtime/socket-server";
+import { startNotificationReminderScheduler } from "./jobs/notification-reminders";
 import { registerNotificationEventListeners } from "./listeners/notification-listeners";
 
 registerNotificationEventListeners();
+startNotificationReminderScheduler();
 
 const rawPort = process.env["PORT"];
 

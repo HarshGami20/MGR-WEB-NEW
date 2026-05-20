@@ -12,6 +12,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { isPartnerPortalUser } from "@/lib/partner";
 import { usePermissions } from "@/lib/permissions";
 import { partnerLineSpecFromAttributes, poStatusLabel } from "@/lib/partner-po-attributes";
 import { parseImageUrlsList, productImageList, variantImageList } from "@/lib/image-urls";
@@ -51,6 +52,8 @@ const ALL_STATUSES: UpdatePurchaseOrderStatusBodyStatus[] = [
   "delivered",
   "cancelled",
 ];
+
+const PARTNER_STATUS_OPTIONS = ["confirmed", "in_production", "shipped", "delivered"] as const;
 
 type PoLineItem = {
   id: number;
@@ -199,6 +202,7 @@ export default function PurchaseOrderDetailPage() {
   const [, setLocation] = useLocation();
   const { can } = usePermissions();
   const { user } = useAuth();
+  const partnerUser = isPartnerPortalUser(user);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -268,7 +272,7 @@ export default function PurchaseOrderDetailPage() {
     );
   }, [po]);
 
-  if (!Number.isFinite(poId) || poId <= 0) return <Redirect to="/purchase-orders" />;
+  if (!Number.isFinite(poId) || poId <= 0) return <Redirect to={partnerUser ? "/purchase-orders" : "/purchase-orders"} />;
   if (isLoading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">
@@ -379,7 +383,7 @@ export default function PurchaseOrderDetailPage() {
                 variant="ghost"
                 size="icon"
                 className="mt-0.5 shrink-0 rounded-full"
-                aria-label="Back to purchase orders"
+                aria-label={partnerUser ? "Back to orders" : "Back to purchase orders"}
               >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
@@ -538,7 +542,16 @@ export default function PurchaseOrderDetailPage() {
                                   )}
                                   <div className="min-w-0">
                                     <p className="font-medium text-sm leading-snug">
-                                      {lineName}
+                                      {!isCustom && item.productId ? (
+                                        <Link
+                                          href={`/products/${item.productId}?fromPo=${po.id}`}
+                                          className="text-primary hover:underline"
+                                        >
+                                          {lineName}
+                                        </Link>
+                                      ) : (
+                                        lineName
+                                      )}
                                       {isCustom ? (
                                         <Badge
                                           variant="outline"
@@ -548,6 +561,9 @@ export default function PurchaseOrderDetailPage() {
                                         </Badge>
                                       ) : null}
                                     </p>
+                                    {!isCustom && item.productId ? (
+                                      <p className="text-[10px] text-primary mt-0.5">View product details →</p>
+                                    ) : null}
                                     <p className="text-xs text-muted-foreground font-mono mt-0.5">
                                       {isCustom
                                         ? "Custom line"
@@ -601,12 +617,13 @@ export default function PurchaseOrderDetailPage() {
               )}
             </DetailSection>
 
-            {!can("purchaseOrders", "edit") && po.notes?.trim() ? (
-              <DetailSection title="Notes" description="Internal notes for this PO">
+            {(partnerUser || !can("purchaseOrders", "edit")) && po.notes?.trim() ? (
+              <DetailSection title="Notes" description={partnerUser ? "Notes from MGR CASA" : "Internal notes for this PO"}>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">{po.notes}</p>
               </DetailSection>
             ) : null}
 
+            {!partnerUser ? (
             <DetailSection
               title="Staff comments"
               description="Internal notes visible to staff"
@@ -673,6 +690,7 @@ export default function PurchaseOrderDetailPage() {
                 </div>
               ) : null}
             </DetailSection>
+            ) : null}
           </div>
 
           {/* Sidebar — summary, status, vendor, schedule */}
@@ -701,7 +719,7 @@ export default function PurchaseOrderDetailPage() {
                   <span className="font-medium">{items.length}</span>
                 </div>
               </div>
-              {po.status === "delivered" ? (
+              {!partnerUser && po.status === "delivered" ? (
                 <p className="text-xs text-muted-foreground rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-green-800">
                   Stock was added to inventory when this PO was marked delivered.
                 </p>
@@ -709,7 +727,10 @@ export default function PurchaseOrderDetailPage() {
             </DetailSection>
 
             {can("purchaseOrders", "edit") ? (
-              <DetailSection title="Status" description="Update procurement progress">
+              <DetailSection
+                title={partnerUser ? "Delivery status" : "Status"}
+                description={partnerUser ? "Update progress for this order" : "Update procurement progress"}
+              >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">Current</span>
@@ -723,13 +744,18 @@ export default function PurchaseOrderDetailPage() {
                         data: { status: val as UpdatePurchaseOrderStatusBodyStatus },
                       })
                     }
-                    disabled={updateStatus.isPending}
+                    disabled={updateStatus.isPending || (partnerUser && ["cancelled", "delivered"].includes(po.status))}
                   >
                     <SelectTrigger className="rounded-xl">
                       <SelectValue placeholder="Change status" />
                     </SelectTrigger>
                     <SelectContent>
-                      {ALL_STATUSES.map((s) => (
+                      {(partnerUser
+                        ? [po.status, ...PARTNER_STATUS_OPTIONS].filter(
+                            (v, i, a) => a.indexOf(v) === i,
+                          )
+                        : ALL_STATUSES
+                      ).map((s) => (
                         <SelectItem key={s} value={s}>
                           {poStatusLabel(s)}
                         </SelectItem>
@@ -740,7 +766,7 @@ export default function PurchaseOrderDetailPage() {
               </DetailSection>
             ) : null}
 
-            {can("purchaseOrders", "edit") ? (
+            {can("purchaseOrders", "edit") && !partnerUser ? (
               <DetailSection title="Schedule & notes" description="Expected delivery and internal notes">
                 <div className="space-y-4">
                   <div className="space-y-2">
