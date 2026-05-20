@@ -462,7 +462,7 @@ export default function Orders() {
       },
       {
         id: "balance",
-        header: () => <span className=" w-full whitespace-nowrap text-right">Balance (₹)</span>,
+        header: () => <span className=" w-full whitespace-nowrap text-right">Due Amount (₹)</span>,
         meta: {
           headerClassName: "text-right whitespace-nowrap",
           cellClassName: "text-right whitespace-nowrap tabular-nums",

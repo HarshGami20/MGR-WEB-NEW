@@ -1,6 +1,18 @@
 import { z } from "zod";
 import { parseImageUrlsList } from "@/lib/image-urls";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
+import { FIELD_LIMITS, sanitizeAttributeText } from "@/lib/form-validation";
+
+const ATTRIBUTE_TEXT_REGEX = /^[a-zA-Z0-9\s-]*$/;
+
+function attributeTextField(label: string) {
+  return z
+    .string()
+    .optional()
+    .default("")
+    .transform((v) => sanitizeAttributeText(v ?? "", FIELD_LIMITS.attributeText))
+    .refine((v) => ATTRIBUTE_TEXT_REGEX.test(v), `${label} cannot contain special characters`);
+}
 
 export const lineItemFormSchema = z
   .object({
@@ -9,8 +21,8 @@ export const lineItemFormSchema = z
     variantId: z.coerce.number().optional().nullable(),
     customName: z.string().optional().default(""),
     customSize: z.string().optional().default(""),
-    customColour: z.string().optional().default(""),
-    customFabric: z.string().optional().default(""),
+    customColour: attributeTextField("Colour"),
+    customFabric: attributeTextField("Fabric"),
     customImageUrls: z.array(z.string()).default([]),
     description: z.string().optional().default(""),
     quantity: z.coerce.number().min(1, "Quantity must be at least 1"),

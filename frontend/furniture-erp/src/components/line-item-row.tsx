@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { ValidatedInput } from "@/components/validated-input";
 import type { UseFormReturn } from "react-hook-form";
 import { defaultCatalogLineItem, defaultCustomLineItem } from "@/lib/custom-line-item";
 import { Package, PackagePlus } from "lucide-react";
@@ -109,8 +110,9 @@ export function LineItemRow({
                 <FormItem>
                   <FormLabel className="text-xs">Colour</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Charcoal" {...field} />
+                    <ValidatedInput field={field} rule="attributeText" placeholder="e.g. Charcoal" />
                   </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -121,8 +123,9 @@ export function LineItemRow({
                 <FormItem>
                   <FormLabel className="text-xs">Fabric</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Velvet" {...field} />
+                    <ValidatedInput field={field} rule="attributeText" placeholder="e.g. Velvet" />
                   </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />

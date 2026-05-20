@@ -104,13 +104,13 @@ export function ProductImagesField({
                 type="button"
                 disabled={busy}
                 className={cn(
-                  "absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full",
-                  "bg-destructive text-destructive-foreground shadow-md",
-                  "hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "absolute right-0.5 top-0.5 z-10 flex h-7 w-7 items-center justify-center rounded-xl cursor-pointer",
+                  "bg-card/40 text-destructive shadow-md",
+                  "hover:bg-card/50 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   busy && "pointer-events-none opacity-50",
                 )}
                 onClick={(e) => {
-                  e.preventDefault();
+                  e.preventDefault();   
                   e.stopPropagation();
                   removeAt(index);
                 }}

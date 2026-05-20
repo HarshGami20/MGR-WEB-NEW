@@ -455,7 +455,7 @@ export default function Payments() {
                     <span className="text-green-600 font-medium">₹{selectedOrderDetails.paidAmount.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between pt-1 border-t mt-1 font-bold">
-                    <span>Balance Due:</span>
+                    <span>Due Amount:</span>
                     <span className="text-destructive">₹{(selectedOrderDetails.totalAmount - selectedOrderDetails.paidAmount).toLocaleString()}</span>
                   </div>
                 </div>

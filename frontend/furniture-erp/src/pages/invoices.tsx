@@ -306,7 +306,8 @@ export default function Invoices() {
                 <div className="w-64 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">
-                      {selectedInvoice.isGst ? "Taxable amount:" : "Subtotal:"}
+                      {/* {selectedInvoice.isGst ? "Taxable amount:" : "Subtotal:"} */}
+                      Sub Total:
                     </span>
                     <span>₹{selectedInvoice.order?.subtotal?.toLocaleString()}</span>
                   </div>

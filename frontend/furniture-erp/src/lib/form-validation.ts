@@ -22,6 +22,7 @@ export const FIELD_LIMITS = {
   city: 60,
   state: 60,
   invoicePrefix: 20,
+  attributeText: 20,
 } as const;
 
 const LETTERS_REGEX = /^[a-zA-Z\s]+$/;
@@ -56,6 +57,11 @@ export function sanitizePlainText(value: string, maxLength: number): string {
   return value.slice(0, maxLength);
 }
 
+/** Colour, fabric, and similar labels — letters, numbers, spaces, hyphens only. */
+export function sanitizeAttributeText(value: string, maxLength: number): string {
+  return value.replace(/[^a-zA-Z0-9\s-]/g, "").slice(0, maxLength);
+}
+
 export type InputRuleKey =
   | "customerName"
   | "personName"
@@ -73,7 +79,8 @@ export type InputRuleKey =
   | "plainText"
   | "address"
   | "notes"
-  | "invoicePrefix";
+  | "invoicePrefix"
+  | "attributeText";
 
 export type InputRule = {
   sanitize: (value: string) => string;
@@ -167,6 +174,11 @@ export const INPUT_RULES: Record<InputRuleKey, InputRule> = {
   invoicePrefix: {
     sanitize: (v) => v.toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, FIELD_LIMITS.invoicePrefix),
     maxLength: FIELD_LIMITS.invoicePrefix,
+    inputMode: "text",
+  },
+  attributeText: {
+    sanitize: (v) => sanitizeAttributeText(v, FIELD_LIMITS.attributeText),
+    maxLength: FIELD_LIMITS.attributeText,
     inputMode: "text",
   },
 };

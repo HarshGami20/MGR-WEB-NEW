@@ -17,9 +17,7 @@ import {
   MapPin,
   Package,
   PencilLine,
-  Phone,
   Plus,
-  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -96,6 +94,21 @@ function formatCommentDateTime(iso: string): string {
     }).format(new Date(iso));
   } catch {
     return iso;
+  }
+}
+
+function formatDeliverySlotDate(slotDate: string): string {
+  try {
+    const raw = String(slotDate).trim();
+    const d = raw.includes("T") ? new Date(raw) : new Date(`${raw.slice(0, 10)}T00:00:00`);
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(d);
+  } catch {
+    return slotDate;
   }
 }
 
@@ -283,6 +296,15 @@ export default function OrderDetailPage() {
   const photoComments = Array.isArray(orderAny.photoComments) ? orderAny.photoComments : [];
   const staffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
   const deliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
+  const deliverySlot = orderAny.deliverySlot as
+    | {
+        label: string;
+        startTime: string;
+        endTime: string;
+        slotDate?: string;
+      }
+    | null
+    | undefined;
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -394,48 +416,45 @@ export default function OrderDetailPage() {
               title="Order Details"
               description={`${itemCount} item${itemCount === 1 ? "" : "s"} on this order`}
             >
-              <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50 space-y-2">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50">
+                <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
                   {order.customerName ? (
-                    <span className="inline-flex items-center gap-1.5 font-medium">
-                      <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {order.customerName}
-                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Name</p>
+                      <p className="font-medium text-foreground">{order.customerName}</p>
+                    </div>
                   ) : null}
                   {order.customerMobile ? (
-                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                      <Phone className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-mono text-foreground">{order.customerMobile}</span>
-                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Mobile</p>
+                      <p className="font-mono text-foreground">{order.customerMobile}</p>
+                    </div>
                   ) : null}
-                  {orderAny.customerPincode ? (
-                    <span className="text-muted-foreground">
-                      Pincode :{" "}
-                      <span className="font-mono text-foreground">{orderAny.customerPincode}</span>
-                    </span>
+                  {order.customerAddress || orderAny.customerPincode ? (
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Address</p>
+                      <p className="text-foreground flex items-start gap-1.5 leading-snug">
+                        {/* <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" /> */}
+                        <span>
+                          {order.customerAddress ?? "—"}
+                          {orderAny.customerPincode ? (
+                            <span className="text-muted-foreground">
+                              {order.customerAddress ? " · " : ""}
+                              Pincode{" "}
+                              <span className="font-mono text-foreground">{orderAny.customerPincode}</span>
+                            </span>
+                          ) : null}
+                        </span>
+                      </p>
+                    </div>
+                  ) : null}
+                  {order.isGst && order.customerGstNumber ? (
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">GST</p>
+                      <p className="font-mono text-foreground">{order.customerGstNumber}</p>
+                    </div>
                   ) : null}
                 </div>
-                {order.customerAddress ? (
-                  <p className="text-sm text-muted-foreground flex items-start gap-1.5 leading-snug">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>{order.customerAddress}</span>
-                  </p>
-                ) : null}
-                {(orderAny.deliverySlot || (order.isGst && order.customerGstNumber)) ? (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    {orderAny.deliverySlot ? (
-                      <span>
-                        Slot: {orderAny.deliverySlot.label} ({orderAny.deliverySlot.startTime}–
-                        {orderAny.deliverySlot.endTime})
-                      </span>
-                    ) : null}
-                    {order.isGst && order.customerGstNumber ? (
-                      <span>
-                        GST: <span className="font-mono text-foreground">{order.customerGstNumber}</span>
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
 
               {!order.items?.length ? (
@@ -535,7 +554,7 @@ export default function OrderDetailPage() {
                       {order.isGst ? (
                         <>
                           <div className="flex justify-between gap-8 text-sm">
-                            <span className="text-muted-foreground">Taxable</span>
+                            <span className="text-muted-foreground">Sub Total</span>
                             <span className="tabular-nums">₹{Number(orderAny.subtotal ?? 0).toLocaleString()}</span>
                           </div>
                           <div className="flex justify-between gap-8 text-sm">
@@ -751,7 +770,7 @@ export default function OrderDetailPage() {
                 {order.isGst ? (
                   <>
                     <div className="flex justify-between gap-2 text-sm">
-                      <span className="text-muted-foreground">Taxable</span>
+                      <span className="text-muted-foreground">Sub Total</span>
                       <span className="tabular-nums">₹{Number(orderAny.subtotal ?? 0).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between gap-2 text-sm">
@@ -774,7 +793,7 @@ export default function OrderDetailPage() {
                   <span className="font-medium text-green-700 tabular-nums">₹{order.paidAmount.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between gap-2 text-sm">
-                  <span className="text-muted-foreground">Balance</span>
+                  <span className="text-muted-foreground">Due Amount</span>
                   <span className="font-semibold tabular-nums">₹{balance.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between gap-2 text-sm">
@@ -901,6 +920,25 @@ export default function OrderDetailPage() {
             <DetailSection title="Delivery status" description="Separate from main order status">
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
+                {deliverySlot ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2.5 text-sm space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Scheduled delivery
+                    </p>
+                    {deliverySlot.slotDate ? (
+                      <p className="font-medium text-foreground flex items-center gap-1.5">
+                        <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {formatDeliverySlotDate(deliverySlot.slotDate)}
+                      </p>
+                    ) : null}
+                    <p className="text-muted-foreground">
+                      {deliverySlot.label}{" "}
+                      <span className="font-mono text-foreground">
+                        ({deliverySlot.startTime}–{deliverySlot.endTime})
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
                 <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
                   <SelectTrigger className="rounded-xl">
                     <SelectValue />

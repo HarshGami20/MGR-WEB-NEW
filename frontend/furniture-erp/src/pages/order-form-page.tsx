@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
 import {
   useCreateOrder,
@@ -12,7 +12,7 @@ import {
   getListProductsQueryKey,
 } from "@/api-client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ImageIcon, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, CalendarClock, ImageIcon, IndianRupee, Plus, Trash2, Upload, X } from "lucide-react";
 import { z } from "zod";
 import { useFieldArray, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,6 +23,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import { formatPaymentStatusLabel } from "@/lib/payment-follow-up-api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -128,6 +130,42 @@ const GST_INVOICE_OPTIONS = [
   { value: "gst", label: "Yes" },
   { value: "non_gst", label: "No" },
 ] as const;
+
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {description ? <p className="text-xs text-muted-foreground mt-0.5">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function formatDeliveryDateLabel(value: string | null | undefined): string {
+  if (!value) return "";
+  try {
+    const raw = String(value).trim();
+    const d = raw.includes("T") ? new Date(raw) : new Date(`${raw.slice(0, 10)}T00:00:00`);
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(d);
+  } catch {
+    return String(value);
+  }
+}
 
 async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {
   const token = localStorage.getItem("erp_token");
@@ -355,6 +393,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
+  const watchedPaymentStatus = useWatch({ control: form.control, name: "paymentStatus" });
+  const watchedDeliverySlotId = useWatch({ control: form.control, name: "deliverySlotId" });
   const isGstInvoice = !!useWatch({ control: form.control, name: "isGst" });
   const orderSummary = useMemo(() => {
     const totals = computeOrderTotalsFromLines(
@@ -371,6 +411,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       remaining: Math.max(0, totals.total - advance),
     };
   }, [watchedItems, watchedAdvance, isGstInvoice]);
+
+  const paidAmountDisplay =
+    isEdit && order ? Number(order.paidAmount ?? 0) : Number(watchedAdvance ?? 0);
+  const balanceAmountDisplay = Math.max(0, orderSummary.total - paidAmountDisplay);
+  const selectedSlot =
+    isEdit && order
+      ? ((order as { deliverySlot?: { label: string; startTime: string; endTime: string; slotDate?: string } })
+          .deliverySlot ?? null)
+      : slotOptions.find((s) => s.id === watchedDeliverySlotId) ?? null;
 
   const handleUploadToFieldArray = async (
     file: File | undefined,
@@ -421,7 +470,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       isGst: !!data.isGst,
       customerGstNumber: data.customerGstNumber || null,
       items: data.items.map((item) => lineItemToApiPayload(item)),
-      status: data.status,
+      status: isEdit ? data.status : "order_received",
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
       paymentMode: data.paymentMode || "cash",
@@ -647,6 +696,36 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
               </div>
+
+              {isEdit ? (
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem className="max-w-md">
+                      <FormLabel>Order status</FormLabel>
+                      <Select
+                        value={field.value === "delivered" ? "complete" : field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ORDER_STATUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
             </div>
 
 
@@ -677,57 +756,19 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </Button>
                 </div>
               ))}
+                <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => append({ ...defaultCatalogLineItem })}>
+                  <Plus className="h-4 w-4 mr-0.5" /> Add item
+                </Button>
             </div>
 
 
-            <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
-              <div>
-                <h2 className="text-base font-semibold tracking-tight">Status &amp; payment</h2>
-                <p className="text-xs text-muted-foreground">Fulfillment, payment mode, delivery date and slot.</p>
-              </div>
-              <div className={cn("grid grid-cols-1 gap-4", isEdit ? "md:grid-cols-3" : "md:grid-cols-2")}>
-                {isEdit && (
-                <FormField control={form.control} name="status" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Order Status</FormLabel>
-                    <Select value={field.value === "delivered" ? "complete" : field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>{ORDER_STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-                )}
-                <FormField control={form.control} name="paymentStatus" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Payment Status</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>{PAYMENT_STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="paymentMode" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mode of Payment</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>{PAYMENT_MODE_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <FormField control={form.control} name="advanceAmount" render={({ field }) => (
-                  <FormItem><FormLabel>Advance Amount (Rs)</FormLabel><FormControl><Input type="number" min="0" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <div className="space-y-2">
-                  <label className="text-sm font-medium leading-none">Remaining Amount</label>
-                  <Input value={orderSummary.remaining.toFixed(2)} disabled />
-                </div>
+            <FormSection
+              title="Delivery"
+              description="Schedule delivery date, slot, and assign the team."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Date of Delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Date of delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="deliverySlotId" render={({ field }) => (
                   <FormItem>
@@ -756,18 +797,28 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   </FormItem>
                 )} />
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="assigneeUserIds"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Assign to (team)</FormLabel>
-                      {/* <p className="text-xs text-muted-foreground mb-2">
-                        Search and select one or more staff. Notifications go to all assignees.
-                      </p> */}
-                      <AssigneesMultiSelect
+              {deliveryDateWatch ? (
+                <div className="flex items-start gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
+                  <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium">{formatDeliveryDateLabel(deliveryDateWatch)}</p>
+                    {selectedSlot ? (
+                      <p className="text-muted-foreground text-xs mt-0.5">
+                        {selectedSlot.label} · {selectedSlot.startTime}–{selectedSlot.endTime}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground text-xs mt-0.5">Select a slot above</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              <FormField
+                control={form.control}
+                name="assigneeUserIds"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Assign to (team)</FormLabel>
+                    <AssigneesMultiSelect
                         options={(assignableUsersData?.data ?? []).map((u) => ({
                           id: u.id,
                           name: u.name,
@@ -790,26 +841,176 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </FormItem>
                   )}
                 />
+            </FormSection>
 
-                  <div className="grid">
-
-                      <p className="text-sm font-medium text-foreground mb-0.5">
-                        {isGstInvoice ? "GST include" : "Non-GST"}
-                      </p>
-                    <div className="rounded-lg border bg-muted/20 px-3 py-2 h-10 w-full text-sm">
-                      <div className="flex w-full justify-between font-semibold">
-                        <span>Order total</span>
-                        <span>₹{orderSummary.total.toLocaleString()}</span>
-                      </div>
-                    </div>
+            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Comments &amp; notes</h2>
+                <p className="text-xs text-muted-foreground">Internal staff notes and delivery instructions.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-2">
+                  <div>
+                    <h3 className="text-sm font-medium">Staff comments</h3>
+                    <p className="text-xs text-muted-foreground">One comment per line is saved separately.</p>
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="staffCommentsText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Textarea
+                            rows={5}
+                            className="min-h-[7.5rem] resize-y"
+                            placeholder="Enter staff comments (one comment per line)"
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-
+                <div className="space-y-2">
+                  <div>
+                    <h3 className="text-sm font-medium">Delivery comments / notes</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Instructions for drivers (one note per line).
+                    </p>
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="deliveryCommentsText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Textarea
+                            rows={5}
+                            className="min-h-[7.5rem] resize-y"
+                            placeholder="e.g. Call before arrival, lift not working…"
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
             </div>
 
             </div>
             
-            <aside className="order-2 space-y-6 lg:order-2 lg:col-span-4">
+            <aside className="order-2 space-y-6 lg:order-2 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
+              <FormSection title="Payment summary" description="Totals from line items">
+                <div className="space-y-3">
+                  {isGstInvoice ? (
+                    <>
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="text-muted-foreground">Sub Total</span>
+                        <span className="tabular-nums">₹{orderSummary.taxableSubtotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="text-muted-foreground">GST</span>
+                        <span className="tabular-nums">₹{orderSummary.taxAmount.toLocaleString()}</span>
+                      </div>
+                      <Separator />
+                    </>
+                  ) : null}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                      <IndianRupee className="h-4 w-4" />
+                      Total{isGstInvoice ? " (incl. GST)" : ""}
+                    </span>
+                    <span className="text-xl font-bold tabular-nums">₹{orderSummary.total.toLocaleString()}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-muted-foreground">{isEdit ? "Paid" : "Advance"}</span>
+                    <span className="font-medium text-green-700 tabular-nums">
+                      ₹{paidAmountDisplay.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-muted-foreground">Due Amount</span>
+                    <span className="font-semibold tabular-nums">₹{balanceAmountDisplay.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-muted-foreground">Payment status</span>
+                    <span className="font-medium">
+                      {formatPaymentStatusLabel(watchedPaymentStatus ?? "due")}
+                    </span>
+                  </div>
+                </div>
+              </FormSection>
+
+              <FormSection title="Payment" description={isEdit ? "Payment mode and advance on save" : "Initial payment details"}>
+                <div className="space-y-4">
+                  <FormField control={form.control} name="paymentStatus" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment status</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="paymentMode" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Mode of payment</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-xl">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {PAYMENT_MODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="advanceAmount" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{isEdit ? "Advance amount (₹)" : "Advance amount (₹)"}</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="0" step="0.01" className="rounded-xl" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium leading-none">Remaining</label>
+                      <Input
+                        className="rounded-xl"
+                        value={orderSummary.remaining.toFixed(2)}
+                        disabled
+                      />
+                    </div>
+                  </div>
+                </div>
+              </FormSection>
+
               <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight">Challan &amp; photos</h2>
@@ -882,7 +1083,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="rounded-full text-destructive hover:text-destructive"
+                            className="rounded-xl text-destructive hover:text-destructive"
                             onClick={() => {
                               field.onChange("");
                               const el = document.getElementById("challan-upload-input") as HTMLInputElement | null;
@@ -1006,57 +1207,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
-                <div className="mb-3">
-                  <h2 className="text-base font-semibold tracking-tight">Staff comments</h2>
-                  <p className="text-xs text-muted-foreground">Internal notes — one comment per line is saved as separate entries.</p>
-                </div>
-                <FormField
-                  control={form.control}
-                  name="staffCommentsText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Textarea
-                          rows={5}
-                          className="min-h-[7.5rem] resize-y"
-                          placeholder="Enter staff comments (one comment per line)"
-                          {...field}
-                          value={field.value || ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
-                <div className="mb-3">
-                  <h2 className="text-base font-semibold tracking-tight">Delivery comments / notes</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Instructions for drivers and delivery team (one note per line).
-                  </p>
-                </div>
-                <FormField
-                  control={form.control}
-                  name="deliveryCommentsText"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Textarea
-                          rows={4}
-                          className="min-h-[5rem] resize-y"
-                          placeholder="e.g. Call before arrival, lift not working, leave at security…"
-                          {...field}
-                          value={field.value || ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
             </aside>
 
           </div>
