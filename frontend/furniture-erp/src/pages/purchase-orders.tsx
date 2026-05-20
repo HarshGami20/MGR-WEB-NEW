@@ -30,6 +30,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Badge } from "@/components/ui/badge";
 import { usePermissions } from "@/lib/permissions";
 import { Input } from "@/components/ui/input";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { categoryIdToParam } from "@/lib/list-category-filter";
 
 const poSchema = z.object({
   type: z.enum(["supplier", "manufacturer"]),
@@ -47,6 +51,8 @@ export default function PurchaseOrders() {
   const { can } = usePermissions();
   const [type, setType] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<DateRangeValue>({});
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -67,6 +73,8 @@ export default function PurchaseOrders() {
     type: type !== "all" ? (type as any) : undefined,
     status: status !== "all" ? (status as any) : undefined,
     branchId: selectedBranchId ?? undefined,
+    ...dateRangeToCreatedParams(dateRange),
+    ...categoryIdToParam(categoryId),
     page,
     limit: 10,
   });
@@ -336,7 +344,22 @@ export default function PurchaseOrders() {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center bg-card p-4 rounded-lg border">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-center bg-card p-4 rounded-lg border">
+        <ListDateRangeFilter
+          context="purchaseOrders"
+          value={dateRange}
+          onChange={(next) => {
+            setDateRange(next);
+            setPage(1);
+          }}
+        />
+        <ListCategoryFilter
+          value={categoryId}
+          onChange={(next) => {
+            setCategoryId(next);
+            setPage(1);
+          }}
+        />
         <Select value={type} onValueChange={(val) => { setType(val); setPage(1); }}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="PO Type" />

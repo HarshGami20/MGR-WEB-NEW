@@ -2,7 +2,7 @@ import { Router, IRouter } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
-
+import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 const router: IRouter = Router();
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -13,6 +13,11 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
   const branchIdParam = req.query.branchId ? parseInt(String(req.query.branchId), 10) : NaN;
   const branchFilter =
     Number.isFinite(branchIdParam) && branchIdParam > 0 ? { branchId: branchIdParam } : {};
+  const categoryIdParam =
+    typeof req.query.categoryId === "string" ? parseInt(req.query.categoryId, 10) : NaN;
+  const categoryIds = await resolveCategoryFilterIds(
+    Number.isFinite(categoryIdParam) && categoryIdParam > 0 ? String(categoryIdParam) : undefined,
+  );
 
   const hasValidYear = Number.isFinite(yearParam) && (yearParam as number) >= 2000 && (yearParam as number) <= 3000;
   const hasValidMonth = Number.isFinite(monthParam) && (monthParam as number) >= 1 && (monthParam as number) <= 12;
@@ -34,6 +39,7 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     where: {
       ...branchFilter,
       ...(createdAtWhere.gte || createdAtWhere.lt ? { createdAt: createdAtWhere } : {}),
+      ...(categoryIds ? orderHasProductInCategories(categoryIds) : {}),
     },
     select: {
       id: true,
@@ -176,7 +182,13 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
       };
     });
 
-  const categoryWise = Array.from(byCategory.values())
+  let categoryWiseRows = Array.from(byCategory.values());
+  if (categoryIds) {
+    categoryWiseRows = categoryWiseRows.filter(
+      (c) => c.categoryId != null && categoryIds.includes(c.categoryId),
+    );
+  }
+  const categoryWise = categoryWiseRows
     .sort((a, b) => b.revenue - a.revenue)
     .map((c) => ({
       ...c,
@@ -201,6 +213,7 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
       year: hasValidYear ? yearParam : null,
       month: hasValidMonth ? monthParam : null,
       branchId: Number.isFinite(branchIdParam) && branchIdParam > 0 ? branchIdParam : null,
+      categoryId: Number.isFinite(categoryIdParam) && categoryIdParam > 0 ? categoryIdParam : null,
     },
     totals: {
       overallRevenue: Number(overallRevenue.toFixed(2)),

@@ -5,7 +5,11 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useListBranches, useListOrders, type Branch } from "@/api-client";
 import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
 import { DeliveryScheduleList } from "@/components/delivery-schedule-list";
-import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { type DateRangeValue } from "@/lib/list-date-filter";
+import { isDateRangeActive } from "@/lib/date-range";
+import { categoryIdToParam } from "@/lib/list-category-filter";
 import {
   addDaysYmd,
   computeDeliveryDayStats,
@@ -15,6 +19,8 @@ import {
 } from "@/lib/delivery-stats";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
+import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
+import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { usePermissions } from "@/lib/permissions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -216,14 +222,8 @@ export default function DeliveriesPage() {
   const [filterPincode, setFilterPincode] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
   const [location] = useLocation();
-  const defaultBookedRange = useMemo<DateRangeValue>(
-    () => ({
-      from: localTodayYmd(),
-      to: addDaysYmd(localTodayYmd(), 28),
-    }),
-    [],
-  );
-  const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>(defaultBookedRange);
+  const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>({});
+  const [categoryId, setCategoryId] = useState<number | undefined>();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -260,20 +260,27 @@ export default function DeliveriesPage() {
   });
 
   const todayYmd = localTodayYmd();
-  const bookedRange = useMemo(
-    () => normalizeYmdRange(bookedDateRange.from ?? "", bookedDateRange.to ?? ""),
-    [bookedDateRange.from, bookedDateRange.to],
-  );
-  const bookedRangeActive =
-    bookedDateRange.from !== defaultBookedRange.from || bookedDateRange.to !== defaultBookedRange.to;
+  const bookedRangeFilterActive = isDateRangeActive(bookedDateRange);
+  const bookedRange = useMemo(() => {
+    if (!bookedRangeFilterActive) return { fromYmd: undefined as string | undefined, toYmd: undefined as string | undefined };
+    const normalized = normalizeYmdRange(bookedDateRange.from ?? "", bookedDateRange.to ?? "");
+    return {
+      fromYmd: normalized.fromYmd || undefined,
+      toYmd: normalized.toYmd || undefined,
+    };
+  }, [bookedDateRange.from, bookedDateRange.to, bookedRangeFilterActive]);
   const canViewOrders = can("orders", "view");
-  const canUpdateDeliveryStatus = can("deliveries", "edit") || can("orders", "edit");
+  const canUpdateDeliveryForOrder = useCallback(
+    (order: DeliveryOrderRow) => canUpdateOrderDeliveryStatus(order, user),
+    [user],
+  );
 
   const { data: ordersData, isLoading: ordersLoading } = useListOrders(
     {
       page: 1,
-      limit: 1000,
+      limit: 2000,
       branchId: writeBranchId ?? undefined,
+      ...categoryIdToParam(categoryId),
     },
     { query: { enabled: writeBranchId != null && canViewOrders } },
   );
@@ -333,8 +340,8 @@ export default function DeliveriesPage() {
   }, []);
 
   const resetBookedDateRange = useCallback(() => {
-    setBookedDateRange(defaultBookedRange);
-  }, [defaultBookedRange]);
+    setBookedDateRange({});
+  }, []);
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["deliverySlots", writeBranchId, range.from, range.to] });
@@ -668,7 +675,9 @@ export default function DeliveriesPage() {
       <Tabs defaultValue="booked" className="space-y-4">
         <TabsList>
           <TabsTrigger value="booked">Booked deliveries</TabsTrigger>
-          <TabsTrigger value="slots">Delivery slots</TabsTrigger>
+          {DELIVERY_SLOTS_ENABLED ? (
+            <TabsTrigger value="slots">Delivery slots</TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent value="booked">
@@ -676,7 +685,8 @@ export default function DeliveriesPage() {
             <CardHeader>
               <CardTitle>Booked deliveries</CardTitle>
               <CardDescription>
-                Orders grouped by delivery date and time slot. Update delivery status inline.
+                All orders with a delivery date, grouped by day. Use the filter to narrow the list.
+                Only delivery assignees or Super Admin can update status.
                 {/* {bookedRange.fromYmd && bookedRange.toYmd ? (
                   <span className="block mt-1 text-foreground/90 tabular-nums">
                     Showing {bookedRange.fromYmd} → {bookedRange.toYmd}
@@ -687,33 +697,34 @@ export default function DeliveriesPage() {
             <CardContent className="space-y-4">
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">Date range</p>
+                <div className="flex flex-wrap flex-1 items-end gap-3">
+                  <ListDateRangeFilter
+                    context="deliveries"
+                    className="max-w-md "
+                    value={bookedDateRange}
+                    onChange={setBookedDateRange}
+                    // variant="default"
+                    numberOfMonths={2}
+                  />
+                  <ListCategoryFilter value={categoryId} onChange={setCategoryId} />
+                </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-8 text-muted-foreground"
                     onClick={resetBookedDateRange}
-                    disabled={!bookedRangeActive}
+                    disabled={!bookedRangeFilterActive}
                   >
-                    Reset range
+                    Show all dates
                   </Button>
                 </div>
-                <DateRangePicker
-                  className="max-w-md"
-                  value={bookedDateRange}
-                  onChange={setBookedDateRange}
-                  numberOfMonths={2}
-                />
+                
               </div>
 
               {!canViewOrders ? (
                 <p className="text-sm text-muted-foreground py-6 text-center">
                   Orders view permission is required to see booked deliveries.
-                </p>
-              ) : !bookedRange.fromYmd || !bookedRange.toYmd ? (
-                <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-dashed">
-                  Select both a from and to date to view booked deliveries.
                 </p>
               ) : (
                 <DeliveryScheduleList
@@ -723,13 +734,14 @@ export default function DeliveriesPage() {
                   fromYmd={bookedRange.fromYmd}
                   toYmd={bookedRange.toYmd}
                   loading={ordersLoading}
-                  canUpdateStatus={canUpdateDeliveryStatus}
+                  canUpdateStatus={canUpdateDeliveryForOrder}
                 />
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
+        {DELIVERY_SLOTS_ENABLED ? (
         <TabsContent value="slots">
           <Card>
             <CardHeader>
@@ -780,12 +792,14 @@ export default function DeliveriesPage() {
                         />
                       </div>
                       <div className="sm:col-span-2">
-                        <DateRangePicker
-                          label="Slot date range"
+                        <ListDateRangeFilter
+                          context="deliveries"
+                          placeholder="Slot date range"
                           value={filterDateRange}
                           onChange={setFilterDateRange}
                           min={range.from}
                           max={range.to}
+                          variant="default"
                           numberOfMonths={2}
                           showPresets={false}
                         />
@@ -929,6 +943,7 @@ export default function DeliveriesPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        ) : null}
       </Tabs>
 
       <Dialog open={addSlotsOpen} onOpenChange={setAddSlotsOpen}>

@@ -8,6 +8,8 @@ import {
   PARTNER_ALLOWED_PO_STATUSES,
 } from "../lib/partner-scope";
 import { requireAuth } from "../middlewares/auth";
+import { createdAtRangeFromQuery } from "../lib/created-at-filter";
+import { purchaseOrderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import {
@@ -143,7 +145,8 @@ async function enrichPO(po: any) {
 }
 
 router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
-  const { type, status, branchId, page = "1", limit = "20", openOnly } = req.query as Record<string, string>;
+  const { type, status, branchId, page = "1", limit = "20", openOnly, createdFrom, createdTo, categoryId } =
+    req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -173,6 +176,21 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", 
   } else {
     if (type) where.type = type;
     if (branchId) where.branchId = parseInt(branchId, 10);
+  }
+
+  const createdAt = createdAtRangeFromQuery(createdFrom, createdTo);
+  if (createdAt) where.createdAt = createdAt;
+
+  const categoryIds = await resolveCategoryFilterIds(categoryId);
+  if (categoryIds) {
+    const catClause = purchaseOrderHasProductInCategories(categoryIds);
+    if (where.AND) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), catClause];
+    } else if (Object.keys(where).length > 0) {
+      where.AND = [where, catClause];
+    } else {
+      Object.assign(where, catClause);
+    }
   }
 
   const [totalCount, pos] = await prisma.$transaction([

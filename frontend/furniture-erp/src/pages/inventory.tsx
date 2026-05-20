@@ -28,7 +28,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { categoryIdToParam } from "@/lib/list-category-filter";
 
 const adjustSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
@@ -47,6 +50,7 @@ export default function Inventory() {
   const [filterType, setFilterType] = useState<"all" | "in" | "out" | "adjustment">("all");
   const [filterSource, setFilterSource] = useState<"all" | "manual" | "order" | "product" | "variant" | "other">("all");
   const [logDateRange, setLogDateRange] = useState<DateRangeValue>({});
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [showLowStock, setShowLowStock] = useState(false);
 
   const queryClient = useQueryClient();
@@ -59,10 +63,10 @@ export default function Inventory() {
       limit: 10,
       type: filterType !== "all" ? filterType : undefined,
       branchId: selectedBranchId ?? undefined,
-      ...(logDateRange.from ? { createdFrom: logDateRange.from } : {}),
-      ...(logDateRange.to ? { createdTo: logDateRange.to } : {}),
+      ...dateRangeToCreatedParams(logDateRange),
+      ...categoryIdToParam(categoryId),
     }),
-    [page, filterType, selectedBranchId, logDateRange.from, logDateRange.to],
+    [page, filterType, selectedBranchId, logDateRange.from, logDateRange.to, categoryId],
   );
 
   const { data: logsData, isLoading } = useListInventoryLogs(
@@ -310,17 +314,20 @@ export default function Inventory() {
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
         <div className="flex flex-1 flex-wrap gap-4 items-center">
-          <DateRangePicker
-            variant="filter"
-            label="Log date"
-            placeholder="Log date"
+          <ListDateRangeFilter
+            context="inventory"
             value={logDateRange}
             onChange={(next) => {
               setLogDateRange(next);
               setPage(1);
             }}
-            showClear
-            triggerClassName="w-[200px]"
+          />
+          <ListCategoryFilter
+            value={categoryId}
+            onChange={(next) => {
+              setCategoryId(next);
+              setPage(1);
+            }}
           />
           <Select
             value={filterType}

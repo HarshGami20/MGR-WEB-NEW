@@ -5,6 +5,8 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
+import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
+import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 
 const router: IRouter = Router();
 function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "partially_paid" | "paid" {
@@ -14,7 +16,8 @@ function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "
 }
 
 router.get("/payments", requireAuth, requirePermission("payments", "read"), async (req, res): Promise<void> => {
-  const { orderId, branchId, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { orderId, branchId, page = "1", limit = "20", createdFrom, createdTo, categoryId } =
+    req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -27,7 +30,25 @@ router.get("/payments", requireAuth, requirePermission("payments", "read"), asyn
   if (branchId) {
     const bid = parseInt(branchId, 10);
     if (Number.isFinite(bid) && bid > 0) {
-      where.order = { branchId: bid };
+      where.order = { ...(where.order as object), branchId: bid };
+    }
+  }
+  if (typeof createdFrom === "string" && createdFrom.trim()) {
+    const start = ymdUtcDayStart(createdFrom.trim());
+    if (start) where.createdAt = { ...(where.createdAt as object), gte: start };
+  }
+  if (typeof createdTo === "string" && createdTo.trim()) {
+    const end = ymdUtcDayEnd(createdTo.trim());
+    if (end) where.createdAt = { ...(where.createdAt as object), lte: end };
+  }
+
+  const categoryIds = await resolveCategoryFilterIds(categoryId);
+  if (categoryIds) {
+    const orderCat = orderHasProductInCategories(categoryIds);
+    if (where.order) {
+      where.order = { AND: [where.order as Prisma.OrderWhereInput, orderCat] };
+    } else {
+      where.order = orderCat;
     }
   }
 

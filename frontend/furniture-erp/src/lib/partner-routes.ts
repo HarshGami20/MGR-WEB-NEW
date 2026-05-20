@@ -7,6 +7,8 @@ export function partnerAllowedPath(location: string): boolean {
   if (location === "/purchase-orders") return true;
   if (/^\/purchase-orders\/\d+$/.test(location)) return true;
   if (/^\/products\/\d+$/.test(location)) return true;
+  if (location === "/complaints") return true;
+  if (/^\/complaints\/\d+$/.test(location)) return true;
   if (location === "/notifications") return true;
   if (location === "/settings") return true;
   if (location === "/curtain-calculator") return true;

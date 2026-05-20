@@ -29,6 +29,10 @@ import { PaymentFollowUpsCalendar } from "@/components/payment-follow-up-panel";
 import { isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
 import { zodFields } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { categoryIdToParam } from "@/lib/list-category-filter";
 
 const paymentSchema = z
   .object({
@@ -53,6 +57,9 @@ export default function Payments() {
   const [orderPickerOpen, setOrderPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"due" | "payments" | "followups">("due");
   const [paymentsOrderFilter, setPaymentsOrderFilter] = useState("all");
+  const [paymentDateRange, setPaymentDateRange] = useState<DateRangeValue>({});
+  const [dueDateRange, setDueDateRange] = useState<DateRangeValue>({});
+  const [categoryId, setCategoryId] = useState<number | undefined>();
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -61,19 +68,44 @@ export default function Payments() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedBranchId]);
+  }, [selectedBranchId, paymentDateRange.from, paymentDateRange.to]);
 
-  const { data: paymentsData, isLoading } = useListPayments({
-    page,
-    limit: 10,
-    ...(paymentsOrderFilter !== "all" ? { orderId: Number(paymentsOrderFilter) } : {}),
-    branchId: selectedBranchId ?? undefined,
-  });
+  const listPaymentsParams = useMemo(
+    () => ({
+      page,
+      limit: 10,
+      ...(paymentsOrderFilter !== "all" ? { orderId: Number(paymentsOrderFilter) } : {}),
+      branchId: selectedBranchId ?? undefined,
+      ...dateRangeToCreatedParams(paymentDateRange),
+      ...categoryIdToParam(categoryId),
+    }),
+    [page, paymentsOrderFilter, selectedBranchId, paymentDateRange.from, paymentDateRange.to, categoryId],
+  );
+
+  const { data: paymentsData, isLoading } = useListPayments(
+    listPaymentsParams as Parameters<typeof useListPayments>[0],
+    { query: { enabled: activeTab === "payments" } },
+  );
 
   const { data: ordersData } = useListOrders({
     limit: 100,
     branchId: selectedBranchId ?? undefined,
   });
+
+  const listDueOrdersParams = useMemo(
+    () => ({
+      limit: 100,
+      branchId: selectedBranchId ?? undefined,
+      ...dateRangeToCreatedParams(dueDateRange),
+      ...categoryIdToParam(categoryId),
+    }),
+    [selectedBranchId, dueDateRange.from, dueDateRange.to, categoryId],
+  );
+
+  const { data: dueOrdersData, isLoading: dueOrdersLoading } = useListOrders(
+    listDueOrdersParams as Parameters<typeof useListOrders>[0],
+    { query: { enabled: activeTab === "due" } },
+  );
 
   const payableOrders = useMemo(
     () =>
@@ -84,7 +116,16 @@ export default function Payments() {
       }),
     [ordersData?.data],
   );
-  const dueOrders = payableOrders;
+
+  const dueOrders = useMemo(
+    () =>
+      (dueOrdersData?.data ?? []).filter((order: any) => {
+        if (!isPendingPaymentStatus(order.paymentStatus)) return false;
+        const remaining = Number(order.totalAmount || 0) - Number(order.paidAmount || 0);
+        return remaining > 0;
+      }),
+    [dueOrdersData?.data],
+  );
 
   const createPayment = useCreatePayment({
     mutation: {
@@ -281,6 +322,16 @@ export default function Payments() {
         </TabsList>
 
         <TabsContent value="due" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border bg-card p-4">
+            <ListDateRangeFilter context="paymentsDue" value={dueDateRange} onChange={setDueDateRange} />
+            <ListCategoryFilter
+              value={categoryId}
+              onChange={(next) => {
+                setCategoryId(next);
+                setPage(1);
+              }}
+            />
+          </div>
           <div className="rounded-lg border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <p className="text-sm font-medium">Orders With Due Amount</p>
@@ -292,6 +343,7 @@ export default function Payments() {
                   <tr>
                     <th className="px-4 py-2 text-left">Order #</th>
                     <th className="px-4 py-2 text-left">Customer</th>
+                    <th className="px-4 py-2 text-left">Order date</th>
                     <th className="px-4 py-2 text-left">Branch</th>
                     <th className="px-4 py-2 text-right">Total (₹)</th>
                     <th className="px-4 py-2 text-right">Paid (₹)</th>
@@ -299,10 +351,16 @@ export default function Payments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dueOrders.length === 0 ? (
+                  {dueOrdersLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
-                        No due payments found.
+                      <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                        Loading due orders…
+                      </td>
+                    </tr>
+                  ) : dueOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                        No due payments found for selected filters.
                       </td>
                     </tr>
                   ) : (
@@ -314,6 +372,11 @@ export default function Payments() {
                         <tr key={order.id} className="border-t">
                           <td className="px-4 py-2 font-mono">{order.orderNumber}</td>
                           <td className="px-4 py-2 font-medium">{order.customerName}</td>
+                          <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
+                            {order.createdAt
+                              ? new Date(order.createdAt).toLocaleDateString()
+                              : "—"}
+                          </td>
                           <td className="px-4 py-2 text-muted-foreground text-sm">
                             {order.branch?.name ?? "—"}
                           </td>
@@ -335,7 +398,22 @@ export default function Payments() {
         </TabsContent>
 
         <TabsContent value="payments" className="space-y-4">
-          <div className="flex items-center justify-end">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <ListDateRangeFilter
+              context="payments"
+              value={paymentDateRange}
+              onChange={(next) => {
+                setPaymentDateRange(next);
+                setPage(1);
+              }}
+            />
+            <ListCategoryFilter
+              value={categoryId}
+              onChange={(next) => {
+                setCategoryId(next);
+                setPage(1);
+              }}
+            />
             <Select
               value={paymentsOrderFilter}
               onValueChange={(value) => {

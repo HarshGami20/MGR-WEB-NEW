@@ -38,6 +38,7 @@ import {
   PencilLine,
   Phone,
   Plus,
+  Headphones,
   Trash2,
   Truck,
   UserRound,
@@ -408,6 +409,20 @@ export default function PurchaseOrderDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {can("complaints", "add") ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={() =>
+                  setLocation(`/complaints?kind=purchase_order&purchaseOrderId=${po.id}&create=1`)
+                }
+              >
+                <Headphones className="h-4 w-4 mr-2" />
+                Raise complaint
+              </Button>
+            ) : null}
             {can("purchaseOrders", "delete") ? (
               <Button
                 type="button"

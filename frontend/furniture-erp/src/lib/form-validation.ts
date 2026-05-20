@@ -367,10 +367,16 @@ export const userFormSchema = z
     branchIds: z.array(z.coerce.number()).default([]),
     supplierId: z.number().nullable().optional(),
     manufacturerId: z.number().nullable().optional(),
+    isSales: z.boolean().default(false),
+    ordersListScope: z.enum(["all", "assigned_to_me", "created_by_me"]).nullable().optional(),
   })
   .refine((d) => !(d.supplierId != null && d.manufacturerId != null), {
     message: "Link a supplier or a manufacturer, not both.",
     path: ["manufacturerId"],
+  })
+  .refine((d) => !d.isSales || (d.ordersListScope != null && d.ordersListScope.length > 0), {
+    message: "Choose which orders this sales user can access.",
+    path: ["ordersListScope"],
   });
 
 export type UserFormValues = z.infer<typeof userFormSchema>;

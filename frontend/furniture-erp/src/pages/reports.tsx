@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ListCategoryFilter } from "@/components/list-category-filter";
 import { formatInr } from "@/lib/format-currency";
 
 type MonthlyRevenue = {
@@ -86,10 +87,21 @@ function defaultYearForMonthView(yearOptionsDesc: number[]): string {
   return String(yearOptionsDesc[0]);
 }
 
+function currentCalendarMonthDefaults(): { year: string; month: string } {
+  const now = new Date();
+  return {
+    year: String(now.getFullYear()),
+    month: String(now.getMonth() + 1),
+  };
+}
+
+const INITIAL_MONTH_FILTER = currentCalendarMonthDefaults();
+
 export default function ReportsPage() {
-  const [viewMode, setViewMode] = useState<"year" | "month">("year");
-  const [selectedYear, setSelectedYear] = useState<string>("all");
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"year" | "month">("month");
+  const [selectedYear, setSelectedYear] = useState<string>(INITIAL_MONTH_FILTER.year);
+  const [selectedMonth, setSelectedMonth] = useState<string>(INITIAL_MONTH_FILTER.month);
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const { selectedBranchId, setSelectedBranchId } = useBranch();
   const { data: branchesData } = useListBranches({ isActive: true, limit: 100 });
 
@@ -102,9 +114,12 @@ export default function ReportsPage() {
     if (selectedBranchId != null) {
       params.set("branchId", String(selectedBranchId));
     }
+    if (categoryId != null) {
+      params.set("categoryId", String(categoryId));
+    }
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [selectedYear, selectedMonth, viewMode, selectedBranchId]);
+  }, [selectedYear, selectedMonth, viewMode, selectedBranchId, categoryId]);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["reports", "revenue-summary", queryString],
@@ -230,9 +245,15 @@ export default function ReportsPage() {
 
         <Card className="border-border/70 shadow-sm">
           <CardContent className="pt-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center flex-wrap">
+              <div className="w-full sm:w-[200px]">
+                <ListCategoryFilter
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  triggerClassName="h-10 w-full rounded-lg"
+                />
+              </div>
               <div className="w-full space-y-1 sm:w-[200px]">
-                {/* <span className="text-xs text-muted-foreground">Branch</span> */}
                 <Select
                   value={selectedBranchId?.toString() ?? "all"}
                   onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v, 10))}

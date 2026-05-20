@@ -56,6 +56,18 @@ export interface PartnerOrgRef {
   name: string;
 }
 
+/**
+ * When isSales is true, limits which orders the user can list and open.
+ */
+export type UserOrdersListScope = typeof UserOrdersListScope[keyof typeof UserOrdersListScope] | null;
+
+
+export const UserOrdersListScope = {
+  all: 'all',
+  assigned_to_me: 'assigned_to_me',
+  created_by_me: 'created_by_me',
+} as const;
+
 export interface User {
   id: number;
   name: string;
@@ -74,6 +86,10 @@ export interface User {
   manufacturerId?: number | null;
   manufacturer?: PartnerOrgRef | null;
   isActive: boolean;
+  /** Sales staff flag; enables configurable order list scope. */
+  isSales?: boolean;
+  /** When isSales is true, limits which orders the user can list and open. */
+  ordersListScope?: UserOrdersListScope;
   createdAt: string;
 }
 
@@ -90,11 +106,22 @@ export interface AssignableOrderUser {
   id: number;
   name: string;
   mobile: string;
+  /** Role label (e.g. Super Admin) for default assignee selection on new orders. */
+  roleName?: string | null;
 }
 
 export interface AssignableOrderUsersResponse {
   data: AssignableOrderUser[];
 }
+
+export type CreateUserBodyOrdersListScope = typeof CreateUserBodyOrdersListScope[keyof typeof CreateUserBodyOrdersListScope] | null;
+
+
+export const CreateUserBodyOrdersListScope = {
+  all: 'all',
+  assigned_to_me: 'assigned_to_me',
+  created_by_me: 'created_by_me',
+} as const;
 
 export interface CreateUserBody {
   name: string;
@@ -106,7 +133,18 @@ export interface CreateUserBody {
   branchId?: number | null;
   supplierId?: number | null;
   manufacturerId?: number | null;
+  isSales?: boolean;
+  ordersListScope?: CreateUserBodyOrdersListScope;
 }
+
+export type UpdateUserBodyOrdersListScope = typeof UpdateUserBodyOrdersListScope[keyof typeof UpdateUserBodyOrdersListScope] | null;
+
+
+export const UpdateUserBodyOrdersListScope = {
+  all: 'all',
+  assigned_to_me: 'assigned_to_me',
+  created_by_me: 'created_by_me',
+} as const;
 
 export interface UpdateUserBody {
   name?: string;
@@ -117,6 +155,8 @@ export interface UpdateUserBody {
   branchId?: number | null;
   supplierId?: number | null;
   manufacturerId?: number | null;
+  isSales?: boolean;
+  ordersListScope?: UpdateUserBodyOrdersListScope;
 }
 
 export interface UserListResponse {
@@ -258,6 +298,7 @@ export interface ProductVariant {
   name: string;
   sku: string;
   imageUrl?: string | null;
+  /** Gallery URLs; first is also stored in imageUrl */
   imageUrls?: string[];
   price?: number | null;
   stockQty: number;
@@ -461,6 +502,7 @@ export interface Payment {
   amount: number;
   mode: PaymentMode;
   notes?: string | null;
+  recordedBy?: string | null;
   createdAt: string;
 }
 
@@ -571,6 +613,12 @@ export const PurchaseOrderStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type PurchaseOrderStaffCommentsItem = {
+  comment: string;
+  authorName?: string | null;
+  createdAt: string;
+};
+
 export interface PurchaseOrder {
   id: number;
   poNumber: string;
@@ -584,6 +632,7 @@ export interface PurchaseOrder {
   totalAmount: number;
   expectedDelivery?: string | null;
   notes?: string | null;
+  staffComments?: PurchaseOrderStaffCommentsItem[];
   branchId?: number | null;
   branch?: Branch | null;
   createdAt: string;
@@ -613,9 +662,16 @@ export interface CreatePurchaseOrderBody {
   branchId?: number | null;
 }
 
+export type UpdatePurchaseOrderBodyStaffCommentsItem = {
+  comment: string;
+  authorName?: string | null;
+  createdAt: string;
+};
+
 export interface UpdatePurchaseOrderBody {
   expectedDelivery?: string | null;
   notes?: string | null;
+  staffComments?: UpdatePurchaseOrderBodyStaffCommentsItem[];
 }
 
 export type UpdatePurchaseOrderStatusBodyStatus = typeof UpdatePurchaseOrderStatusBodyStatus[keyof typeof UpdatePurchaseOrderStatusBodyStatus];
@@ -727,6 +783,8 @@ categoryId?: number;
 lowStock?: boolean;
 page?: number;
 limit?: number;
+createdFrom?: string;
+createdTo?: string;
 };
 
 export type UploadProductImageBody = {
@@ -739,6 +797,18 @@ type?: ListInventoryLogsType;
 branchId?: number;
 page?: number;
 limit?: number;
+/**
+ * Filter logs on or after this date (YYYY-MM-DD)
+ */
+createdFrom?: string;
+/**
+ * Filter logs on or before this date (YYYY-MM-DD)
+ */
+createdTo?: string;
+/**
+ * Filter logs for products in this category (includes child categories when a parent is selected).
+ */
+categoryId?: number;
 };
 
 export type ListInventoryLogsType = typeof ListInventoryLogsType[keyof typeof ListInventoryLogsType];
@@ -761,6 +831,12 @@ limit?: number;
  * Filter by creator or assignee for the signed-in user. Use `all` or omit for every order.
  */
 assignmentScope?: ListOrdersAssignmentScope;
+createdFrom?: string;
+createdTo?: string;
+/**
+ * Filter orders that include at least one line item in this category (includes child categories when a parent is selected).
+ */
+categoryId?: number;
 };
 
 export type ListOrdersStatus = typeof ListOrdersStatus[keyof typeof ListOrdersStatus];
@@ -812,6 +888,18 @@ orderId?: number;
 page?: number;
 limit?: number;
 branchId?: number;
+/**
+ * Filter payments on or after this date (YYYY-MM-DD)
+ */
+createdFrom?: string;
+/**
+ * Filter payments on or before this date (YYYY-MM-DD)
+ */
+createdTo?: string;
+/**
+ * Filter payments for orders that include at least one line item in this category (includes child categories when a parent is selected).
+ */
+categoryId?: number;
 };
 
 export type ListSuppliersParams = {
@@ -832,6 +920,12 @@ status?: ListPurchaseOrdersStatus;
 branchId?: number;
 page?: number;
 limit?: number;
+createdFrom?: string;
+createdTo?: string;
+/**
+ * Filter purchase orders that include at least one catalog product in this category (includes child categories when a parent is selected).
+ */
+categoryId?: number;
 };
 
 export type ListPurchaseOrdersType = typeof ListPurchaseOrdersType[keyof typeof ListPurchaseOrdersType];

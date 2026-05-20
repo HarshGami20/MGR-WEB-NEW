@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { isPartnerPortalUser } from "@/lib/partner";
 import { ArrowLeft, Upload } from "lucide-react";
 
 function getComplaintStatusBadge(status: ComplaintStatus) {
@@ -42,6 +43,7 @@ export default function ComplaintDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const partnerUser = isPartnerPortalUser(user);
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
   const writeBranchId =
@@ -118,6 +120,8 @@ export default function ComplaintDetailPage() {
   if (isError || !complaint) return <div className="text-muted-foreground">Complaint not found.</div>;
 
   const order = complaint.order;
+  const purchaseOrder = complaint.purchaseOrder;
+  const isPoComplaint = complaint.kind === "purchase_order";
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
@@ -141,8 +145,32 @@ export default function ComplaintDetailPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h2 className="text-sm font-semibold mb-2">Customer &amp; order</h2>
-              {order ? (
+              <h2 className="text-sm font-semibold mb-2">
+                {isPoComplaint ? "Purchase order" : "Customer & order"}
+              </h2>
+              {isPoComplaint ? (
+                purchaseOrder ? (
+                  <>
+                    <p className="text-sm mt-2">
+                      PO:{" "}
+                      <Link
+                        href={`/purchase-orders/${purchaseOrder.id}`}
+                        className="font-mono text-primary hover:underline"
+                      >
+                        {purchaseOrder.poNumber}
+                      </Link>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 capitalize">
+                      Type: {purchaseOrder.type} · Status: {purchaseOrder.status.replace(/_/g, " ")}
+                    </p>
+                    {purchaseOrder.branch?.name ? (
+                      <p className="text-xs text-muted-foreground mt-1">Branch: {purchaseOrder.branch.name}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Purchase order not found</p>
+                )
+              ) : order ? (
                 <>
                   <p className="text-sm font-medium">{order.customerName}</p>
                   <p className="text-sm text-muted-foreground">{order.customerMobile || "—"}</p>
@@ -190,7 +218,9 @@ export default function ComplaintDetailPage() {
                   <p className="text-muted-foreground text-xs">SKU: {complaint.product.sku}</p>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground mt-4">All items on order</p>
+                <p className="text-sm text-muted-foreground mt-4">
+                  {isPoComplaint ? "All items on PO" : "All items on order"}
+                </p>
               )}
             </div>
           </div>
@@ -200,7 +230,34 @@ export default function ComplaintDetailPage() {
             <p className="text-sm whitespace-pre-wrap">{complaint.description}</p>
           </div>
 
-          {order?.items && order.items.length > 0 ? (
+          {isPoComplaint && purchaseOrder?.items && purchaseOrder.items.length > 0 ? (
+            <div className="rounded-xl border border-border/60 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Unit (₹)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {purchaseOrder.items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        {item.isCustom
+                          ? item.customName ?? "Custom item"
+                          : item.product?.name ?? `Product #${item.productId}`}
+                      </TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.unitPrice.toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+
+          {!isPoComplaint && order?.items && order.items.length > 0 ? (
             <div className="rounded-xl border border-border/60 overflow-hidden">
               <Table>
                 <TableHeader>
@@ -265,8 +322,10 @@ export default function ComplaintDetailPage() {
           </div>
 
           <div className="rounded-xl border border-border/60 p-4 space-y-4">
-            <h3 className="text-lg font-semibold">Internal comments</h3>
-            <p className="text-xs text-muted-foreground">Staff-only notes (not visible to customers)</p>
+            <h3 className="text-lg font-semibold">Comments</h3>
+            <p className="text-xs text-muted-foreground">
+              {partnerUser ? "Discussion with MGR CASA on this complaint" : "Internal notes (not visible to customers)"}
+            </p>
             {complaint.comments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No internal comments yet.</p>
             ) : (

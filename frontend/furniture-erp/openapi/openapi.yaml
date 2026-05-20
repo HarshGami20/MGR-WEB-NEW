@@ -505,6 +505,16 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: Products list
@@ -761,6 +771,23 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: createdFrom
+          in: query
+          description: Filter logs on or after this date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: createdTo
+          in: query
+          description: Filter logs on or before this date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: categoryId
+          in: query
+          description: Filter logs for products in this category (includes child categories when a parent is selected).
+          schema:
+            type: integer
       responses:
         "200":
           description: Inventory logs
@@ -843,6 +870,21 @@ paths:
             type: string
             enum: [all, created_by_me, assigned_to_me]
           description: Filter by creator or assignee for the signed-in user. Use `all` or omit for every order.
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: categoryId
+          in: query
+          description: Filter orders that include at least one line item in this category (includes child categories when a parent is selected).
+          schema:
+            type: integer
       responses:
         "200":
           description: Orders list
@@ -1071,6 +1113,23 @@ paths:
             default: 20
         - name: branchId
           in: query
+          schema:
+            type: integer
+        - name: createdFrom
+          in: query
+          description: Filter payments on or after this date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: createdTo
+          in: query
+          description: Filter payments on or before this date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: categoryId
+          in: query
+          description: Filter payments for orders that include at least one line item in this category (includes child categories when a parent is selected).
           schema:
             type: integer
       responses:
@@ -1338,6 +1397,21 @@ paths:
           schema:
             type: integer
             default: 20
+        - name: createdFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: createdTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: categoryId
+          in: query
+          description: Filter purchase orders that include at least one catalog product in this category (includes child categories when a parent is selected).
+          schema:
+            type: integer
       responses:
         "200":
           description: Purchase orders
@@ -1799,6 +1873,14 @@ components:
           nullable: true
         isActive:
           type: boolean
+        isSales:
+          type: boolean
+          description: Sales staff flag; enables configurable order list scope.
+        ordersListScope:
+          type: string
+          nullable: true
+          enum: [all, assigned_to_me, created_by_me]
+          description: When isSales is true, limits which orders the user can list and open.
         createdAt:
           type: string
           format: date-time
@@ -1813,6 +1895,10 @@ components:
           type: string
         mobile:
           type: string
+        roleName:
+          type: string
+          nullable: true
+          description: Role label (e.g. Super Admin) for default assignee selection on new orders.
       required: [id, name, mobile]
 
     AssignableOrderUsersResponse:
@@ -1851,6 +1937,12 @@ components:
         manufacturerId:
           type: integer
           nullable: true
+        isSales:
+          type: boolean
+        ordersListScope:
+          type: string
+          nullable: true
+          enum: [all, assigned_to_me, created_by_me]
       required: [name, mobile, password, roleId]
 
     UpdateUserBody:
@@ -1878,6 +1970,12 @@ components:
         manufacturerId:
           type: integer
           nullable: true
+        isSales:
+          type: boolean
+        ordersListScope:
+          type: string
+          nullable: true
+          enum: [all, assigned_to_me, created_by_me]
 
     UserListResponse:
       type: object

@@ -32,6 +32,8 @@ import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
+import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
+import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
 import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
@@ -296,15 +298,19 @@ export default function OrderDetailPage() {
   const photoComments = Array.isArray(orderAny.photoComments) ? orderAny.photoComments : [];
   const staffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
   const deliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
-  const deliverySlot = orderAny.deliverySlot as
-    | {
-        label: string;
-        startTime: string;
-        endTime: string;
-        slotDate?: string;
-      }
-    | null
-    | undefined;
+  const deliverySlot = DELIVERY_SLOTS_ENABLED
+    ? (orderAny.deliverySlot as
+        | {
+            label: string;
+            startTime: string;
+            endTime: string;
+            slotDate?: string;
+          }
+        | null
+        | undefined)
+    : null;
+  const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
+  const canUpdateDelivery = canUpdateOrderDeliveryStatus(orderAny, user);
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -920,6 +926,16 @@ export default function OrderDetailPage() {
             <DetailSection title="Delivery status" description="Separate from main order status">
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
+                {deliveryAssignees.length > 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Delivery assignees:{" "}
+                    <span className="text-foreground">
+                      {deliveryAssignees.map((u: { name?: string }) => u.name).filter(Boolean).join(", ")}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No delivery assignees — only Super Admin can update status.</p>
+                )}
                 {deliverySlot ? (
                   <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2.5 text-sm space-y-1">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -939,50 +955,60 @@ export default function OrderDetailPage() {
                     </p>
                   </div>
                 ) : null}
-                <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem
-                      value="out_for_delivery"
-                      disabled={status !== "ready_to_ship"}
-                      title={
-                        status !== "ready_to_ship"
-                          ? "Set main order status to Ready to ship first"
-                          : undefined
+                {canUpdateDelivery ? (
+                  <>
+                    <Select value={deliveryStatus} onValueChange={(v) => setDeliveryStatus(v as typeof deliveryStatus)}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem
+                          value="out_for_delivery"
+                          disabled={status !== "ready_to_ship"}
+                          title={
+                            status !== "ready_to_ship"
+                              ? "Set main order status to Ready to ship first"
+                              : undefined
+                          }
+                        >
+                          Out for delivery
+                        </SelectItem>
+                        <SelectItem
+                          value="delivered"
+                          disabled={serverDeliveryStatus !== "out_for_delivery"}
+                          title={
+                            serverDeliveryStatus !== "out_for_delivery"
+                              ? "Save Out for delivery first, then you can mark Delivered"
+                              : undefined
+                          }
+                        >
+                          Delivered
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full rounded-xl"
+                      disabled={
+                        patchDelivery.isPending ||
+                        deliveryStatus === serverDeliveryStatus ||
+                        (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
+                        (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
+                      }
+                      onClick={() =>
+                        patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")
                       }
                     >
-                      Out for delivery
-                    </SelectItem>
-                    <SelectItem
-                      value="delivered"
-                      disabled={serverDeliveryStatus !== "out_for_delivery"}
-                      title={
-                        serverDeliveryStatus !== "out_for_delivery"
-                          ? "Save Out for delivery first, then you can mark Delivered"
-                          : undefined
-                      }
-                    >
-                      Delivered
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full rounded-xl"
-                  disabled={
-                    patchDelivery.isPending ||
-                    deliveryStatus === serverDeliveryStatus ||
-                    (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
-                    (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
-                  }
-                  onClick={() => patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")}
-                >
-                  Save delivery status
-                </Button>
+                      Save delivery status
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Only delivery assignees or Super Admin can change delivery status.
+                  </p>
+                )}
               </div>
             </DetailSection>
 

@@ -157,13 +157,20 @@ export function copyDeliveryReminder(input: {
 export async function copyComplaintCreated(input: {
   complaintId: number;
   complaintNumber: string;
-  orderId: number;
+  kind: "sales_order" | "purchase_order";
+  poNumber?: string;
   createdById: number | null;
 }): Promise<NotificationCopy> {
   const who = byActor(await actorName(input.createdById));
+  const context =
+    input.kind === "purchase_order"
+      ? input.poNumber
+        ? ` for purchase order ${input.poNumber}`
+        : " for a purchase order"
+      : "";
   return {
-    title: "New complaint logged",
-    message: `Complaint ${input.complaintNumber} was opened${who}. Review details and respond on the complaint.`,
+    title: input.kind === "purchase_order" ? "New PO complaint" : "New complaint logged",
+    message: `Complaint ${input.complaintNumber}${context} was opened${who}. Review details and respond on the complaint.`,
     actionPath: complaintActionPath(input.complaintId),
   };
 }

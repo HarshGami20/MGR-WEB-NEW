@@ -122,6 +122,7 @@ function partnerNavItemsForUser(user: { supplierId?: number | null; manufacturer
   return [
     { label: "Dashboard", href: "/dashboard", icon: PanelIcon },
     { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
+    { label: "Complaints", href: "/complaints", icon: Headphones },
     { label: "Notifications", href: "/notifications", icon: Bell },
     { label: "Settings", href: "/settings", icon: Settings },
     { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
@@ -325,7 +326,7 @@ export default function Layout({ children }: LayoutProps) {
     <>
       <div className="h-[4.75rem] w-full flex items-center gap-2 border-b border-border/60 px-5">
         <div className="h-11 w-11 rounded-2xl size-11 shadow-xl flex items-center justify-center">
-          <img src="/icon.png" alt="" className="size-full object-contain" />
+          <img src="/mgr_casa_logo_blue_mg.svg" alt="" className="size-full object-contain" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="font-bold text-foreground truncate leading-tight">MGR Casa</p>
@@ -431,7 +432,7 @@ export default function Layout({ children }: LayoutProps) {
         <>
           <div className="h-[4.75rem] w-full flex items-center gap-2 border-b border-border/60 px-5 shrink-0">
             <div className="h-11 w-11 rounded-2xl size-11 shadow-xl flex items-center justify-center shrink-0">
-              <img src="/icon.png" alt="" className="size-full object-contain" />
+              <img src="/mgr_casa_logo_blue_mg.svg" alt="" className="size-full object-contain" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-bold text-foreground truncate leading-tight">MGR Casa</p>

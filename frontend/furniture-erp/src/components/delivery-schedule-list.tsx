@@ -18,6 +18,7 @@ import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DELIVERY_STATUS_LABEL } from "@/lib/delivery-status-ui";
+import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 
 function deliveryStatusTriggerClass(s: DeliveryStatusValue) {
   switch (s) {
@@ -42,10 +43,12 @@ export function DeliveryScheduleList({
   orders: DeliveryOrderRow[];
   slots?: DeliverySlotRow[];
   branchId: number;
-  fromYmd: string;
-  toYmd: string;
+  /** Omit both bounds to show every order that has a delivery date. */
+  fromYmd?: string;
+  toYmd?: string;
   loading?: boolean;
-  canUpdateStatus?: boolean;
+  /** When false or a function returns false, delivery status is read-only for that row. */
+  canUpdateStatus?: boolean | ((order: DeliveryOrderRow) => boolean);
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -93,24 +96,110 @@ export function DeliveryScheduleList({
   if (schedule.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center rounded-xl border border-dashed">
-        No booked deliveries in this date range.
+        {fromYmd || toYmd
+          ? "No booked deliveries in this date range."
+          : "No orders with a delivery date yet."}
       </p>
     );
   }
 
+  const dateOnlyLayout = !DELIVERY_SLOTS_ENABLED;
+
+  const renderOrderRow = (order: DeliveryOrderRow) => {
+    const del = normalizeDeliveryStatus(order.deliveryStatus);
+    const main = normalizeMainStatus(order.status);
+    const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === order.id;
+    const canUpdate =
+      typeof canUpdateStatus === "function" ? canUpdateStatus(order) : canUpdateStatus;
+
+    return (
+      <li
+        key={order.id}
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm font-medium">{order.orderNumber}</span>
+            <span className="text-sm text-foreground truncate">{order.customerName}</span>
+          </div>
+          {order.customerMobile ? (
+            <p className="text-xs text-muted-foreground mt-0.5">{order.customerMobile}</p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {canUpdate ? (
+            <Select
+              value={del}
+              disabled={rowPending}
+              onValueChange={(val) =>
+                patchDelivery.mutate({
+                  orderId: order.id,
+                  deliveryStatus: val as DeliveryStatusValue,
+                })
+              }
+            >
+              <SelectTrigger
+                className={cn(
+                  "h-8 min-w-[148px] border-border text-xs font-medium",
+                  deliveryStatusTriggerClass(del),
+                )}
+              >
+                <SelectValue>{DELIVERY_STATUS_LABEL[del]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="out_for_delivery" disabled={main !== "ready_to_ship"}>
+                  Out for delivery
+                </SelectItem>
+                <SelectItem value="delivered" disabled={del !== "out_for_delivery"}>
+                  Delivered
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <span
+              className={cn(
+                "inline-flex h-8 min-w-[148px] items-center rounded-md border border-border px-3 text-xs font-medium",
+                deliveryStatusTriggerClass(del),
+              )}
+            >
+              {DELIVERY_STATUS_LABEL[del]}
+            </span>
+          )}
+          <Link
+            href={`/orders/${order.id}`}
+            aria-label={`View order ${order.orderNumber}`}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")}
+          >
+            <Eye className="h-4 w-4" />
+          </Link>
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div className="space-y-6">
-      {schedule.map((day) => (
+      {schedule.map((day) => {
+        const dayOrderCount = day.slots.reduce((n, s) => n + s.orders.length, 0);
+        const dayOrders = day.slots.flatMap((s) => s.orders);
+
+        return (
         <section key={day.dateYmd} className="space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/80 pb-2">
             <h3 className="text-base font-semibold text-foreground">{formatYmdLabel(day.dateYmd)}</h3>
             <span className="text-xs text-muted-foreground tabular-nums">
-              {day.slots.reduce((n, s) => n + s.orders.length, 0)} order
-              {day.slots.reduce((n, s) => n + s.orders.length, 0) === 1 ? "" : "s"}
+              {dayOrderCount} order{dayOrderCount === 1 ? "" : "s"}
             </span>
           </div>
 
-          {day.slots.map((slot) => (
+          {dateOnlyLayout ? (
+            <div className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden">
+              <ul className="divide-y divide-border/60">{dayOrders.map(renderOrderRow)}</ul>
+            </div>
+          ) : (
+          day.slots.map((slot) => (
             <div
               key={`${day.dateYmd}-${slot.slotId ?? "none"}`}
               className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden"
@@ -118,7 +207,9 @@ export function DeliveryScheduleList({
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/30 border-b border-border/60">
                 <div>
                   <p className="font-medium text-sm">{slot.label}</p>
-                  <p className="text-xs text-muted-foreground">{slot.timeRange}</p>
+                  {slot.timeRange ? (
+                    <p className="text-xs text-muted-foreground">{slot.timeRange}</p>
+                  ) : null}
                 </div>
                 <span className="text-xs font-medium tabular-nums text-muted-foreground">
                   {slot.booked}
@@ -126,90 +217,13 @@ export function DeliveryScheduleList({
                 </span>
               </div>
 
-              <ul className="divide-y divide-border/60">
-                {slot.orders.map((order) => {
-                  const del = normalizeDeliveryStatus(order.deliveryStatus);
-                  const main = normalizeMainStatus(order.status);
-                  const rowPending =
-                    patchDelivery.isPending && patchDelivery.variables?.orderId === order.id;
-
-                  return (
-                    <li
-                      key={order.id}
-                      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 hover:bg-muted/20 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-medium">{order.orderNumber}</span>
-                          <span className="text-sm text-foreground truncate">{order.customerName}</span>
-                        </div>
-                        {order.customerMobile ? (
-                          <p className="text-xs text-muted-foreground mt-0.5">{order.customerMobile}</p>
-                        ) : null}
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {canUpdateStatus ? (
-                          <Select
-                            value={del}
-                            disabled={rowPending}
-                            onValueChange={(val) =>
-                              patchDelivery.mutate({
-                                orderId: order.id,
-                                deliveryStatus: val as DeliveryStatusValue,
-                              })
-                            }
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                "h-8 min-w-[148px] border-border text-xs font-medium",
-                                deliveryStatusTriggerClass(del),
-                              )}
-                            >
-                              <SelectValue>{DELIVERY_STATUS_LABEL[del]}</SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem
-                                value="out_for_delivery"
-                                disabled={main !== "ready_to_ship"}
-                              >
-                                Out for delivery
-                              </SelectItem>
-                              <SelectItem
-                                value="delivered"
-                                disabled={del !== "out_for_delivery"}
-                              >
-                                Delivered
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <span
-                            className={cn(
-                              "inline-flex h-8 min-w-[148px] items-center rounded-md border border-border px-3 text-xs font-medium",
-                              deliveryStatusTriggerClass(del),
-                            )}
-                          >
-                            {DELIVERY_STATUS_LABEL[del]}
-                          </span>
-                        )}
-                        <Link
-                          href={`/orders/${order.id}`}
-                          aria-label={`View order ${order.orderNumber}`}
-                          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Link>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className="divide-y divide-border/60">{slot.orders.map(renderOrderRow)}</ul>
             </div>
-          ))}
+          ))
+          )}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -76,7 +76,7 @@ export default function Login() {
         <Card className="w-full rounded-[2rem] border-white/55 bg-white/70 shadow-[0_24px_70px_rgba(56,39,67,0.14)] backdrop-blur-xl">
           <CardHeader className="space-y-3 pb-4 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/12 ring-1 ring-primary/20">
-              <img src="/icon.png" alt="MGR Casa" className="h-10 w-10 object-contain" />
+              <img src="/mgr_casa_logo_blue_mg.svg" alt="MGR Casa" className="h-10 w-10 object-contain" />
             </div>
             <div>
               <CardTitle className="text-2xl font-semibold tracking-tight">MGR Casa ERP</CardTitle>

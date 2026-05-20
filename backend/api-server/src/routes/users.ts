@@ -5,6 +5,7 @@ import { requirePermission } from "../lib/permissions";
 import { hashPassword } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
+import { salesUserFieldsFromBody } from "../lib/sales-order-scope";
 import { assignedBranchIds } from "../lib/user-branches";
 
 const router: IRouter = Router();
@@ -138,11 +139,15 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
   delete userFields.branchIds;
   delete userFields.branchId;
   delete userFields.userBranches;
+  const salesFields = salesUserFieldsFromBody(userFields);
+  delete userFields.isSales;
+  delete userFields.ordersListScope;
   try {
     const user = await prisma.$transaction(async (tx) => {
       const u = await tx.user.create({
         data: {
           ...userFields,
+          ...salesFields,
           passwordHash,
           branchId: branchIds[0] ?? null,
           ...(branchIds.length > 0
@@ -208,6 +213,9 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
   }
 
   const updateData: Record<string, unknown> = { ...rest };
+  if (rest.isSales !== undefined || rest.ordersListScope !== undefined) {
+    Object.assign(updateData, salesUserFieldsFromBody(rest as Record<string, unknown>));
+  }
   if (password) {
     updateData.passwordHash = await hashPassword(password);
   }

@@ -241,17 +241,19 @@ export function registerNotificationEventListeners(): void {
   appEvents.on("COMPLAINT_CREATED", (payload: ComplaintCreatedPayload) => {
     void (async () => {
       try {
-        const targets = await complaintNotificationTargets(
-          payload.complaintId,
-          payload.orderId,
-          payload.branchId,
-          payload.createdById,
-        );
+        const targets = await complaintNotificationTargets({
+          kind: payload.kind,
+          orderId: payload.orderId,
+          purchaseOrderId: payload.purchaseOrderId,
+          branchId: payload.branchId,
+          createdById: payload.createdById,
+        });
         if (targets.length === 0) return;
         const copy = await copyComplaintCreated({
           complaintId: payload.complaintId,
           complaintNumber: payload.complaintNumber,
-          orderId: payload.orderId,
+          kind: payload.kind,
+          poNumber: payload.poNumber,
           createdById: payload.createdById,
         });
         await notificationService.sendToUsers(
@@ -265,7 +267,9 @@ export function registerNotificationEventListeners(): void {
             metadata: withActionMeta(copy.actionPath, {
               complaintId: payload.complaintId,
               complaintNumber: payload.complaintNumber,
+              kind: payload.kind,
               orderId: payload.orderId,
+              purchaseOrderId: payload.purchaseOrderId,
               branchId: payload.branchId,
             }),
           },
@@ -281,12 +285,13 @@ export function registerNotificationEventListeners(): void {
     void (async () => {
       try {
         if (payload.previousStatus === payload.nextStatus) return;
-        const targets = await complaintNotificationTargets(
-          payload.complaintId,
-          payload.orderId,
-          payload.branchId,
-          null,
-        );
+        const targets = await complaintNotificationTargets({
+          kind: payload.kind,
+          orderId: payload.orderId,
+          purchaseOrderId: payload.purchaseOrderId,
+          branchId: payload.branchId,
+          createdById: null,
+        });
         if (targets.length === 0) return;
         const copy = await copyComplaintStatusChanged({
           complaintId: payload.complaintId,
@@ -306,7 +311,9 @@ export function registerNotificationEventListeners(): void {
             metadata: withActionMeta(copy.actionPath, {
               complaintId: payload.complaintId,
               complaintNumber: payload.complaintNumber,
+              kind: payload.kind,
               orderId: payload.orderId,
+              purchaseOrderId: payload.purchaseOrderId,
               branchId: payload.branchId,
               previousStatus: payload.previousStatus,
               nextStatus: payload.nextStatus,
@@ -323,12 +330,13 @@ export function registerNotificationEventListeners(): void {
   appEvents.on("COMPLAINT_COMMENT_ADDED", (payload: ComplaintCommentAddedPayload) => {
     void (async () => {
       try {
-        const targets = await complaintNotificationTargets(
-          payload.complaintId,
-          payload.orderId,
-          payload.branchId,
-          null,
-        );
+        const targets = await complaintNotificationTargets({
+          kind: payload.kind,
+          orderId: payload.orderId,
+          purchaseOrderId: payload.purchaseOrderId,
+          branchId: payload.branchId,
+          createdById: null,
+        });
         const filtered = targets.filter((id) => id !== payload.authorId);
         if (filtered.length === 0) return;
         const copy = await copyComplaintCommentAdded({
@@ -347,7 +355,9 @@ export function registerNotificationEventListeners(): void {
             metadata: withActionMeta(copy.actionPath, {
               complaintId: payload.complaintId,
               complaintNumber: payload.complaintNumber,
+              kind: payload.kind,
               orderId: payload.orderId,
+              purchaseOrderId: payload.purchaseOrderId,
               commentId: payload.commentId,
               branchId: payload.branchId,
             }),

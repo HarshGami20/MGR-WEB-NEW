@@ -1,6 +1,7 @@
 import { customFetch } from "@/api-client/custom-fetch";
 
 export type ComplaintStatus = "open" | "in_progress" | "resolved";
+export type ComplaintKind = "sales_order" | "purchase_order";
 
 export type ComplaintProduct = {
   id: number;
@@ -34,6 +35,26 @@ export type ComplaintOrder = {
   items: ComplaintOrderItem[];
 };
 
+export type ComplaintPurchaseOrderItem = {
+  id: number;
+  productId: number | null;
+  isCustom: boolean;
+  customName: string | null;
+  quantity: number;
+  unitPrice: number;
+  product: ComplaintProduct | null;
+};
+
+export type ComplaintPurchaseOrder = {
+  id: number;
+  poNumber: string;
+  status: string;
+  type: string;
+  totalAmount: number;
+  branch: { id: number; name: string; code: string } | null;
+  items: ComplaintPurchaseOrderItem[];
+};
+
 export type ComplaintComment = {
   id: number;
   body: string;
@@ -44,7 +65,9 @@ export type ComplaintComment = {
 export type Complaint = {
   id: number;
   complaintNumber: string;
-  orderId: number;
+  kind: ComplaintKind;
+  orderId: number | null;
+  purchaseOrderId: number | null;
   productId: number | null;
   branchId: number | null;
   createdById: number | null;
@@ -56,6 +79,7 @@ export type Complaint = {
   createdAt: string;
   updatedAt: string;
   order: ComplaintOrder | null;
+  purchaseOrder: ComplaintPurchaseOrder | null;
   product: ComplaintProduct | null;
   branch: { id: number; name: string; code: string } | null;
   createdBy: { id: number; name: string; mobile: string; avatarUrl: string | null } | null;
@@ -106,16 +130,26 @@ export async function uploadComplaintImage(
 export async function listComplaints(params: {
   search?: string;
   status?: ComplaintStatus;
+  kind?: ComplaintKind;
   branchId?: number;
   orderId?: number;
+  purchaseOrderId?: number;
+  createdFrom?: string;
+  createdTo?: string;
+  categoryId?: number;
   page?: number;
   limit?: number;
 }): Promise<ComplaintsListResponse> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
+  if (params.kind) qs.set("kind", params.kind);
   if (params.branchId != null) qs.set("branchId", String(params.branchId));
   if (params.orderId != null) qs.set("orderId", String(params.orderId));
+  if (params.purchaseOrderId != null) qs.set("purchaseOrderId", String(params.purchaseOrderId));
+  if (params.createdFrom) qs.set("createdFrom", params.createdFrom);
+  if (params.createdTo) qs.set("createdTo", params.createdTo);
+  if (params.categoryId != null) qs.set("categoryId", String(params.categoryId));
   qs.set("page", String(params.page ?? 1));
   qs.set("limit", String(params.limit ?? 20));
   return customFetch<ComplaintsListResponse>(`/api/complaints?${qs}`);
@@ -126,7 +160,9 @@ export async function getComplaint(id: number): Promise<Complaint> {
 }
 
 export async function createComplaint(body: {
-  orderId: number;
+  kind?: ComplaintKind;
+  orderId?: number;
+  purchaseOrderId?: number;
   productId?: number | null;
   subject?: string | null;
   description: string;

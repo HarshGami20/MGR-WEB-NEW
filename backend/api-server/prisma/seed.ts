@@ -153,6 +153,7 @@ async function main() {
     dashboard: { view: true },
     purchaseOrders: { view: true, edit: true },
     products: { view: true },
+    complaints: { view: true, add: true, edit: true },
     settings: { view: true },
   });
 
@@ -259,6 +260,8 @@ async function main() {
       roleId: roleSales.id,
       branchId: branchAndheri.id,
       isActive: true,
+      isSales: true,
+      ordersListScope: "assigned_to_me",
       userBranches: { create: [{ branchId: branchAndheri.id }] },
     },
   });
@@ -272,6 +275,8 @@ async function main() {
       roleId: roleSales.id,
       branchId: branchPune.id,
       isActive: true,
+      isSales: true,
+      ordersListScope: "all",
       userBranches: { create: [{ branchId: branchPune.id }] },
     },
   });

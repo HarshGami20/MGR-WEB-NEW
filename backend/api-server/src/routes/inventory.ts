@@ -6,11 +6,13 @@ import { prisma, toNumber } from "../lib/prisma";
 import { decrementProductStock, incrementProductStock, setProductStockAbsolute, syncProductStockFromVariants } from "../lib/product-stock";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
+import { inventoryLogProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 
 const router: IRouter = Router();
 
 router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"), async (req, res): Promise<void> => {
-  const { productId, type, branchId, page = "1", limit = "20", createdFrom, createdTo } = req.query as Record<string, string>;
+  const { productId, type, branchId, page = "1", limit = "20", createdFrom, createdTo, categoryId } =
+    req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -31,6 +33,11 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
   }
   if (createdAtFilter.gte != null || createdAtFilter.lte != null) {
     where.createdAt = createdAtFilter;
+  }
+
+  const categoryIds = await resolveCategoryFilterIds(categoryId);
+  if (categoryIds) {
+    Object.assign(where, inventoryLogProductInCategories(categoryIds));
   }
 
   const [total, logs] = await prisma.$transaction([

@@ -31,7 +31,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { categoryIdToParam } from "@/lib/list-category-filter";
+import { getSalesOrderScopeConfig } from "@/lib/sales-order-scope";
+import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
+import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -41,6 +47,7 @@ export default function Orders() {
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
   const [assignmentScope, setAssignmentScope] = useState<"all" | "created_by_me" | "assigned_to_me">("all");
   const [createdDateRange, setCreatedDateRange] = useState<DateRangeValue>({});
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
@@ -63,6 +70,14 @@ export default function Orders() {
           : null
         : selectedBranchId;
 
+  const orderScopeConfig = useMemo(() => getSalesOrderScopeConfig(user), [user]);
+
+  useEffect(() => {
+    if (orderScopeConfig.forcedScope) {
+      setAssignmentScope(orderScopeConfig.forcedScope);
+    }
+  }, [orderScopeConfig.forcedScope]);
+
   useEffect(() => {
     const q = sessionStorage.getItem(ORDERS_SEARCH_PREFILL_KEY);
     if (q) {
@@ -77,13 +92,29 @@ export default function Orders() {
       status: status !== "all" ? (status as any) : undefined,
       isGst: isGst !== "all" ? isGst === "true" : undefined,
       branchId: selectedBranchId ?? undefined,
-      assignmentScope: assignmentScope !== "all" ? (assignmentScope as any) : undefined,
-      ...(createdDateRange.from ? { createdFrom: createdDateRange.from } : {}),
-      ...(createdDateRange.to ? { createdTo: createdDateRange.to } : {}),
+      assignmentScope: orderScopeConfig.forcedScope
+        ? orderScopeConfig.forcedScope
+        : orderScopeConfig.showScopePicker && assignmentScope !== "all"
+          ? (assignmentScope as any)
+          : undefined,
+      ...dateRangeToCreatedParams(createdDateRange),
+      ...categoryIdToParam(categoryId),
       page,
       limit: 10,
     }),
-    [search, status, isGst, selectedBranchId, assignmentScope, createdDateRange.from, createdDateRange.to, page],
+    [
+      search,
+      status,
+      isGst,
+      selectedBranchId,
+      assignmentScope,
+      orderScopeConfig.forcedScope,
+      orderScopeConfig.showScopePicker,
+      createdDateRange.from,
+      createdDateRange.to,
+      categoryId,
+      page,
+    ],
   );
 
   const { data: ordersData, isLoading } = useListOrders(listOrdersParams as Parameters<typeof useListOrders>[0]);
@@ -376,6 +407,7 @@ export default function Orders() {
             status: string;
             deliveryStatus?: string;
             deliveryDate?: string | null;
+            deliveryAssignees?: Array<{ id: number }>;
             deliverySlot?: {
               label: string;
               startTime: string;
@@ -386,6 +418,7 @@ export default function Orders() {
           const del = String(ord.deliveryStatus ?? "pending");
           const main = String(ord.status) === "delivered" ? "complete" : String(ord.status ?? "order_received");
           const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === ord.id;
+          const canEditDelivery = canUpdateOrderDeliveryStatus(ord, user);
           const dateSource = ord.deliveryDate ?? ord.deliverySlot?.slotDate ?? null;
           const dateStr =
             dateSource != null && String(dateSource).trim() !== ""
@@ -396,8 +429,29 @@ export default function Orders() {
                   year: "numeric",
                 })
               : null;
-          const slot = ord.deliverySlot;
+          const slot = DELIVERY_SLOTS_ENABLED ? ord.deliverySlot : null;
           const slotStr = slot ? `${slot.label} (${slot.startTime}–${slot.endTime})` : null;
+          if (!canEditDelivery) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">{getDeliveryStatusBadge(del)}</span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[280px] space-y-1.5 py-2 text-left font-normal leading-snug">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide opacity-80">Delivery date</div>
+                    <div className="text-sm">{dateStr ?? "—"}</div>
+                  </div>
+                  {DELIVERY_SLOTS_ENABLED ? (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide opacity-80">Slot</div>
+                      <div className="text-sm break-words">{slotStr ?? "—"}</div>
+                    </div>
+                  ) : null}
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
           return (
             <Select
               value={del}
@@ -511,6 +565,7 @@ export default function Orders() {
       selectedCount,
       selectedOrderIds,
       updateStatus,
+      user,
     ],
   );
 
@@ -538,17 +593,20 @@ export default function Orders() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <DateRangePicker
-            variant="filter"
-            label="Created date"
-            placeholder="Created date"
+          <ListDateRangeFilter
+            context="orders"
             value={createdDateRange}
             onChange={(next) => {
               setCreatedDateRange(next);
               setPage(1);
             }}
-            showClear
-            triggerClassName="w-[200px]"
+          />
+          <ListCategoryFilter
+            value={categoryId}
+            onChange={(next) => {
+              setCategoryId(next);
+              setPage(1);
+            }}
           />
           <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1); }}>
             <SelectTrigger className="w-[180px]">
@@ -573,16 +631,28 @@ export default function Orders() {
               <SelectItem value="false">Non-GST</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={assignmentScope} onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => { setAssignmentScope(val); setPage(1); }}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="My orders" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All orders</SelectItem>
-              <SelectItem value="created_by_me">Created by me</SelectItem>
-              <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
-            </SelectContent>
-          </Select>
+          {orderScopeConfig.showScopePicker ? (
+            <Select
+              value={assignmentScope}
+              onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => {
+                setAssignmentScope(val);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="My orders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All orders</SelectItem>
+                <SelectItem value="created_by_me">Created by me</SelectItem>
+                <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : orderScopeConfig.forcedScope ? (
+            <div className="flex h-11 items-center rounded-xl border border-border/80 bg-muted/30 px-3 text-sm text-muted-foreground">
+              {orderScopeConfig.scopeLabel}
+            </div>
+          ) : null}
         </div>
       </div>
       {selectedCount > 0 ? (

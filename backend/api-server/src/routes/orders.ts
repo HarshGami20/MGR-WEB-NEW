@@ -18,6 +18,12 @@ import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
+import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import {
+  assertOrderAccessibleBySalesScope,
+  assignmentScopeWhere,
+  resolveOrdersAssignmentScope,
+} from "../lib/sales-order-scope";
 import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import {
   isCustomLineItem,
@@ -29,6 +35,12 @@ import {
 import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
 import { parseImageUrlsJson } from "../lib/image-urls";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
+import { DELIVERY_SLOTS_ENABLED } from "../lib/delivery-feature";
+import {
+  assertCanUpdateOrderDeliveryStatus,
+  loadDeliveryAssigneesForOrder,
+  replaceOrderDeliveryAssignees,
+} from "../lib/order-delivery-assignees";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -328,10 +340,11 @@ async function enrichOrder(order: any) {
     if (c) createdBy = c as any;
   }
   let deliverySlot: Awaited<ReturnType<typeof prisma.deliverySlot.findUnique>> = null;
-  if (order.deliverySlotId) {
+  if (DELIVERY_SLOTS_ENABLED && order.deliverySlotId) {
     const ds = await prisma.deliverySlot.findUnique({ where: { id: order.deliverySlotId } });
     if (ds) deliverySlot = ds;
   }
+  const deliveryAssignees = await loadDeliveryAssigneesForOrder(order.id);
   return {
     ...order,
     status: normalizeMainOrderStatus(order.status ?? "order_received"),
@@ -356,6 +369,7 @@ async function enrichOrder(order: any) {
     branch,
     assignedTo,
     assignees,
+    deliveryAssignees,
     createdBy,
     deliverySlot: deliverySlot
       ? {
@@ -396,12 +410,13 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
     assignmentScope,
     createdFrom,
     createdTo,
+    categoryId,
   } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  const authUser = (req as { user?: { id: number } }).user;
+  const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
   const userId = authUser?.id;
 
   const where: any = {};
@@ -437,13 +452,15 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
       ],
     });
   }
-  const scope = typeof assignmentScope === "string" ? assignmentScope : "all";
-  if (scope === "created_by_me" && userId != null) {
-    clauses.push({ createdById: userId });
-  } else if (scope === "assigned_to_me" && userId != null) {
-    clauses.push({
-      OR: [{ assignedToId: userId }, { assignees: { some: { userId } } }],
-    });
+  const effectiveScope = authUser
+    ? resolveOrdersAssignmentScope(authUser, assignmentScope)
+    : null;
+  if (effectiveScope && userId != null) {
+    clauses.push(assignmentScopeWhere(effectiveScope, userId));
+  }
+  const categoryIds = await resolveCategoryFilterIds(categoryId);
+  if (categoryIds) {
+    clauses.push(orderHasProductInCategories(categoryIds));
   }
   if (clauses.length === 1) {
     Object.assign(where, clauses[0]);
@@ -516,12 +533,18 @@ router.get(
         id: true,
         name: true,
         mobile: true,
+        role: { select: { name: true } },
       },
       orderBy: [{ name: "asc" }],
     });
 
     res.json({
-      data: rows.map((u) => ({ id: u.id, name: u.name, mobile: u.mobile })),
+      data: rows.map((u) => ({
+        id: u.id,
+        name: u.name,
+        mobile: u.mobile,
+        roleName: u.role?.name ?? null,
+      })),
     });
   },
 );
@@ -548,6 +571,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     googlePlaceId,
     deliveryStatus,
     assigneeUserIds: inputAssigneeUserIds,
+    deliveryAssigneeUserIds: inputDeliveryAssigneeUserIds,
     assignedToId: clientAssignedToId,
     ...orderData
   } = parsed.data as any;
@@ -583,8 +607,13 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       ? [Number(clientAssignedToId)]
       : [];
 
+  const deliveryAssigneeIdsFromBody = Array.isArray(inputDeliveryAssigneeUserIds)
+    ? normalizeAssigneeUserIds(inputDeliveryAssigneeUserIds)
+    : [];
+
   try {
     await assertActiveUserIdsExist(assigneeIdsFromBody);
+    await assertActiveUserIdsExist(deliveryAssigneeIdsFromBody);
   } catch (e: unknown) {
     res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
     return;
@@ -599,29 +628,31 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       const pincode =
         typeof customerPincode === "string" && customerPincode.trim() ? customerPincode.trim() : null;
       const deliveryDateObj = orderData.deliveryDate ? new Date(orderData.deliveryDate) : null;
-      let resolvedDeliverySlotId: number | null =
-        typeof inputDeliverySlotId === "number" && Number.isFinite(inputDeliverySlotId)
-          ? inputDeliverySlotId
-          : null;
-
-      if (deliveryDateObj) {
-        if (resolvedDeliverySlotId != null) {
-          const v = await assertValidOrderDeliverySlot(tx, {
-            branchId,
-            deliverySlotId: resolvedDeliverySlotId,
-            deliveryDate: deliveryDateObj,
-            pincode,
-          });
-          if (!v.ok) throw new Error(v.error);
+      let resolvedDeliverySlotId: number | null = null;
+      if (DELIVERY_SLOTS_ENABLED) {
+        resolvedDeliverySlotId =
+          typeof inputDeliverySlotId === "number" && Number.isFinite(inputDeliverySlotId)
+            ? inputDeliverySlotId
+            : null;
+        if (deliveryDateObj) {
+          if (resolvedDeliverySlotId != null) {
+            const v = await assertValidOrderDeliverySlot(tx, {
+              branchId,
+              deliverySlotId: resolvedDeliverySlotId,
+              deliveryDate: deliveryDateObj,
+              pincode,
+            });
+            if (!v.ok) throw new Error(v.error);
+          } else {
+            resolvedDeliverySlotId = await pickBestDeliverySlot(tx, {
+              branchId,
+              deliveryDate: deliveryDateObj,
+              pincode,
+            });
+          }
         } else {
-          resolvedDeliverySlotId = await pickBestDeliverySlot(tx, {
-            branchId,
-            deliveryDate: deliveryDateObj,
-            pincode,
-          });
+          resolvedDeliverySlotId = null;
         }
-      } else {
-        resolvedDeliverySlotId = null;
       }
 
       const order = await tx.order.create({
@@ -661,6 +692,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       });
 
       await replaceOrderAssignees(tx, order.id, assigneeIdsFromBody);
+      await replaceOrderDeliveryAssignees(tx, order.id, deliveryAssigneeIdsFromBody);
 
       for (const item of resolvedItems) {
         await tx.orderItem.create({
@@ -754,6 +786,16 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
 router.get("/orders/:id", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
   const params = GetOrderParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
+  if (!authUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const access = await assertOrderAccessibleBySalesScope(params.data.id, authUser);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.message });
+    return;
+  }
   const order = await prisma.order.findUnique({ where: { id: params.data.id } });
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   res.json(await enrichOrder(order));
@@ -768,15 +810,36 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   const existingOrder = await prisma.order.findUnique({ where: { id } });
   if (!existingOrder) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
+  const user = (req as {
+    id: number;
+    branchId: number | null;
+    userBranches?: { branchId: number }[];
+    isSales?: boolean;
+    ordersListScope?: string | null;
+  }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const access = await assertOrderAccessibleBySalesScope(id, user);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.message });
     return;
   }
   const logBranchId = await resolveLogBranchId(req, user, existingOrder.branchId);
 
   const existingItems = await prisma.orderItem.findMany({ where: { orderId: id } });
   const payload = parsed.data as any;
+  if (payload.deliveryStatus !== undefined) {
+    const delAccess = await assertCanUpdateOrderDeliveryStatus(
+      user as { id: number; role?: { name?: string | null } | null },
+      id,
+    );
+    if (!delAccess.ok) {
+      res.status(delAccess.status).json({ error: delAccess.message });
+      return;
+    }
+  }
 
   const assigned = assignedBranchIds(user);
   let nextOrderBranchId: number | null = existingOrder.branchId;
@@ -920,6 +983,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         addressLng: payloadAddressLng,
         googlePlaceId: payloadGooglePlaceId,
         assigneeUserIds: payloadAssigneeUserIds,
+        deliveryAssigneeUserIds: payloadDeliveryAssigneeUserIds,
         assignedToId: payloadAssignedToIdField,
         ...orderFields
       } = payload;
@@ -950,26 +1014,14 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
             : null
           : (eo.customerPincode ?? null);
 
-      let nextSlotId: number | null;
-      if (payloadDeliverySlotId !== undefined) {
-        nextSlotId =
-          typeof payloadDeliverySlotId === "number" && Number.isFinite(payloadDeliverySlotId)
-            ? payloadDeliverySlotId
-            : null;
-        if (nextSlotId != null && nextDeliveryDate) {
-          const v = await assertValidOrderDeliverySlot(tx, {
-            branchId: branchForSlot,
-            deliverySlotId: nextSlotId,
-            deliveryDate: nextDeliveryDate,
-            pincode: nextPin,
-            excludeOrderId: id,
-          });
-          if (!v.ok) throw new Error(v.error);
-        }
-      } else {
-        nextSlotId = eo.deliverySlotId ?? null;
-        if (nextDeliveryDate) {
-          if (nextSlotId != null) {
+      let nextSlotId: number | null = DELIVERY_SLOTS_ENABLED ? (eo.deliverySlotId ?? null) : null;
+      if (DELIVERY_SLOTS_ENABLED) {
+        if (payloadDeliverySlotId !== undefined) {
+          nextSlotId =
+            typeof payloadDeliverySlotId === "number" && Number.isFinite(payloadDeliverySlotId)
+              ? payloadDeliverySlotId
+              : null;
+          if (nextSlotId != null && nextDeliveryDate) {
             const v = await assertValidOrderDeliverySlot(tx, {
               branchId: branchForSlot,
               deliverySlotId: nextSlotId,
@@ -977,7 +1029,28 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
               pincode: nextPin,
               excludeOrderId: id,
             });
-            if (!v.ok) {
+            if (!v.ok) throw new Error(v.error);
+          }
+        } else {
+          nextSlotId = eo.deliverySlotId ?? null;
+          if (nextDeliveryDate) {
+            if (nextSlotId != null) {
+              const v = await assertValidOrderDeliverySlot(tx, {
+                branchId: branchForSlot,
+                deliverySlotId: nextSlotId,
+                deliveryDate: nextDeliveryDate,
+                pincode: nextPin,
+                excludeOrderId: id,
+              });
+              if (!v.ok) {
+                nextSlotId = await pickBestDeliverySlot(tx, {
+                  branchId: branchForSlot,
+                  deliveryDate: nextDeliveryDate,
+                  pincode: nextPin,
+                  excludeOrderId: id,
+                });
+              }
+            } else {
               nextSlotId = await pickBestDeliverySlot(tx, {
                 branchId: branchForSlot,
                 deliveryDate: nextDeliveryDate,
@@ -986,15 +1059,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
               });
             }
           } else {
-            nextSlotId = await pickBestDeliverySlot(tx, {
-              branchId: branchForSlot,
-              deliveryDate: nextDeliveryDate,
-              pincode: nextPin,
-              excludeOrderId: id,
-            });
+            nextSlotId = null;
           }
-        } else {
-          nextSlotId = null;
         }
       }
 
@@ -1086,6 +1152,12 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         await replaceOrderAssignees(tx, id, nextAssigneeIds);
       }
 
+      if (Object.prototype.hasOwnProperty.call(payload, "deliveryAssigneeUserIds")) {
+        const nextDeliveryAssigneeIds = normalizeAssigneeUserIds(payloadDeliveryAssigneeUserIds);
+        await assertActiveUserIdsExist(nextDeliveryAssigneeIds);
+        await replaceOrderDeliveryAssignees(tx, id, nextDeliveryAssigneeIds);
+      }
+
       const invoice = await tx.invoice.findFirst({ where: { orderId: id } });
       if (invoice) {
         const cgst = nextIsGst ? taxAmount / 2 : 0;
@@ -1150,6 +1222,16 @@ router.delete("/orders/:id", requireAuth, requirePermission("orders", "delete"),
     res.status(400).json({ error: "Invalid order id" });
     return;
   }
+  const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
+  if (!authUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const access = await assertOrderAccessibleBySalesScope(id, authUser);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.message });
+    return;
+  }
   try {
     const deleted = await deleteOrderWithDependents(id);
     if (!deleted) {
@@ -1178,14 +1260,40 @@ router.patch(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
-    if (parsed.data.deliveryStatus === undefined && parsed.data.deliverySlotId === undefined) {
-      res.status(400).json({ error: "Provide deliveryStatus and/or deliverySlotId" });
+    const wantsStatus = parsed.data.deliveryStatus !== undefined;
+    const wantsSlot = DELIVERY_SLOTS_ENABLED && parsed.data.deliverySlotId !== undefined;
+    if (!wantsStatus && !wantsSlot) {
+      res.status(400).json({
+        error: DELIVERY_SLOTS_ENABLED
+          ? "Provide deliveryStatus and/or deliverySlotId"
+          : "Provide deliveryStatus",
+      });
       return;
     }
     const existing = await prisma.order.findUnique({ where: { id } });
     if (!existing) {
       res.status(404).json({ error: "Order not found" });
       return;
+    }
+    const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
+    if (!authUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const access = await assertOrderAccessibleBySalesScope(id, authUser);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.message });
+      return;
+    }
+    if (wantsStatus) {
+      const delAccess = await assertCanUpdateOrderDeliveryStatus(
+        authUser as { id: number; role?: { name?: string | null } | null },
+        id,
+      );
+      if (!delAccess.ok) {
+        res.status(delAccess.status).json({ error: delAccess.message });
+        return;
+      }
     }
     const branchId = existing.branchId; 
     if (branchId == null) {
@@ -1199,7 +1307,7 @@ router.patch(
     try {
       const updated = await prisma.$transaction(async (tx) => {
         let nextSlotId = eo.deliverySlotId ?? null;
-        if (parsed.data.deliverySlotId !== undefined) {
+        if (DELIVERY_SLOTS_ENABLED && parsed.data.deliverySlotId !== undefined) {
           nextSlotId = parsed.data.deliverySlotId;
           if (nextSlotId != null && deliveryDate) {
             const v = await assertValidOrderDeliverySlot(tx, {
@@ -1231,7 +1339,9 @@ router.patch(
         return tx.order.update({
           where: { id },
           data: {
-            ...(parsed.data.deliverySlotId !== undefined ? { deliverySlotId: nextSlotId } : {}),
+            ...(DELIVERY_SLOTS_ENABLED && parsed.data.deliverySlotId !== undefined
+              ? { deliverySlotId: nextSlotId }
+              : {}),
             ...(parsed.data.deliveryStatus !== undefined ? { deliveryStatus: nextDel } : {}),
           },
         });
@@ -1266,6 +1376,16 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
+  const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
+  if (!authUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const access = await assertOrderAccessibleBySalesScope(id, authUser);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.message });
+    return;
+  }
   const rawSt = typeof (parsed.data as any).status === "string" ? (parsed.data as any).status : "order_received";
   const norm = rawSt === "delivered" ? "complete" : rawSt;
   const nextStatus = ORDER_STATUSES.has(norm) ? norm : "order_received";

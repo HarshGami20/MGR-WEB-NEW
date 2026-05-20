@@ -93,6 +93,10 @@ model User {
   supplierId       Int?     @map("supplier_id")
   manufacturerId   Int?     @map("manufacturer_id")
   isActive         Boolean  @default(true) @map("is_active")
+  /// Sales staff: order list access can be restricted to assigned, created-by, or all orders.
+  isSales          Boolean  @default(false) @map("is_sales")
+  /// When `isSales` is true: `all` | `assigned_to_me` | `created_by_me`. Null when not sales.
+  ordersListScope  String?  @map("orders_list_scope")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   role           Role?         @relation(fields: [roleId], references: [id])
@@ -102,7 +106,8 @@ model User {
   manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
   assignedOrders Order[]       @relation("OrderAssignee")
   createdOrders  Order[]       @relation("OrderCreatedBy")
-  orderAssignees OrderAssignee[]
+  orderAssignees         OrderAssignee[]
+  orderDeliveryAssignees OrderDeliveryAssignee[]
   createdComplaints     Complaint[]         @relation("ComplaintCreatedBy")
   complaintComments     ComplaintComment[]
   paymentFollowUps      PaymentFollowUp[]   @relation("PaymentFollowUpCreatedBy")
@@ -352,7 +357,8 @@ model Order {
   deliverySlot DeliverySlot? @relation(fields: [deliverySlotId], references: [id], onDelete: SetNull)
   assignedTo   User?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
   createdBy    User?         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  assignees    OrderAssignee[]
+  assignees           OrderAssignee[]
+  deliveryAssignees   OrderDeliveryAssignee[]
   items        OrderItem[]
   invoices     Invoice[]
   payments          Payment[]
@@ -370,10 +376,19 @@ enum ComplaintStatus {
   @@map("complaint_status")
 }
 
+enum ComplaintKind {
+  sales_order
+  purchase_order
+
+  @@map("complaint_kind")
+}
+
 model Complaint {
   id              Int             @id @default(autoincrement())
   complaintNumber String          @unique @map("complaint_number")
-  orderId         Int             @map("order_id")
+  kind            ComplaintKind   @default(sales_order)
+  orderId         Int?            @map("order_id")
+  purchaseOrderId Int?            @map("purchase_order_id")
   productId       Int?            @map("product_id")
   branchId        Int?            @map("branch_id")
   createdById     Int?            @map("created_by_id")
@@ -386,14 +401,16 @@ model Complaint {
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
-  branch    Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  createdBy User?              @relation("ComplaintCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  comments  ComplaintComment[]
+  order         Order?             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  branch        Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy     User?              @relation("ComplaintCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  comments      ComplaintComment[]
 
   @@index([orderId])
-  @@index([branchId, status])
+  @@index([purchaseOrderId])
+  @@index([kind, branchId, status])
   @@map("complaints")
 }
 
@@ -421,6 +438,19 @@ model OrderAssignee {
   @@id([orderId, userId])
   @@index([userId])
   @@map("order_assignees")
+}
+
+/** Staff assigned to handle delivery / delivery-status updates for an order. */
+model OrderDeliveryAssignee {
+  orderId Int @map("order_id")
+  userId  Int @map("user_id")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, userId])
+  @@index([userId])
+  @@map("order_delivery_assignees")
 }
 
 model OrderItem {
@@ -546,6 +576,7 @@ model PurchaseOrder {
   manufacturer Manufacturer?       @relation(fields: [manufacturerId], references: [id])
   branch       Branch?             @relation(fields: [branchId], references: [id])
   items        PurchaseOrderItem[]
+  complaints   Complaint[]
 
   @@map("purchase_orders")
 }

@@ -84,17 +84,32 @@ export async function usersWithModuleRead(
   return [...targets];
 }
 
-export async function complaintNotificationTargets(
-  complaintId: number,
-  orderId: number,
-  branchId: number | null,
-  createdById: number | null,
-): Promise<number[]> {
+export async function complaintNotificationTargets(input: {
+  kind: "sales_order" | "purchase_order";
+  orderId: number | null;
+  purchaseOrderId: number | null;
+  branchId: number | null;
+  createdById: number | null;
+}): Promise<number[]> {
   const targets = new Set<number>();
-  const orderTargets = await orderNotificationTargets(orderId);
-  for (const id of orderTargets) targets.add(id);
-  if (createdById) targets.add(createdById);
-  const staff = await usersWithModuleRead("complaints", branchId);
+  if (input.createdById) targets.add(input.createdById);
+
+  if (input.kind === "sales_order" && input.orderId) {
+    for (const id of await orderNotificationTargets(input.orderId)) targets.add(id);
+  }
+
+  if (input.kind === "purchase_order" && input.purchaseOrderId) {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: input.purchaseOrderId },
+      select: { branchId: true, supplierId: true, manufacturerId: true, type: true },
+    });
+    if (po) {
+      for (const id of await purchaseOrderStaffTargets(po.branchId)) targets.add(id);
+      for (const id of await purchaseOrderPartnerTargets(po)) targets.add(id);
+    }
+  }
+
+  const staff = await usersWithModuleRead("complaints", input.branchId);
   for (const id of staff) targets.add(id);
   return [...targets];
 }

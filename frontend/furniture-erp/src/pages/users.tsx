@@ -26,6 +26,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { coerceRoleList, usePermissions } from "@/lib/permissions";
@@ -43,6 +44,8 @@ const emptyForm: UserFormValues = {
   branchIds: [],
   supplierId: null,
   manufacturerId: null,
+  isSales: false,
+  ordersListScope: "all",
 };
 
 export default function Users() {
@@ -117,6 +120,7 @@ export default function Users() {
 
   const roleRows = coerceRoleList(rolesData) as { id: number; name: string }[];
   const roleIdWatch = form.watch("roleId");
+  const isSalesWatch = form.watch("isSales");
   const selectedRoleIsSuperAdmin = useMemo(() => {
     const r = roleRows.find((x) => x.id === roleIdWatch);
     return r?.name === "Super Admin";
@@ -151,21 +155,30 @@ export default function Users() {
       })(),
       supplierId: user.supplierId ?? null,
       manufacturerId: user.manufacturerId ?? null,
+      isSales: user.isSales === true,
+      ordersListScope:
+        user.ordersListScope === "assigned_to_me" || user.ordersListScope === "created_by_me"
+          ? user.ordersListScope
+          : "all",
     });
     setIsDialogOpen(true);
   };
 
   const onSubmit = (data: UserFormValues) => {
+    const payload: UserFormValues = {
+      ...data,
+      ordersListScope: data.isSales ? data.ordersListScope ?? "all" : null,
+    };
     if (editingId) {
-      const updateData: any = { ...data };  
+      const updateData: Record<string, unknown> = { ...payload };
       if (!updateData.password) delete updateData.password;
-      updateUser.mutate({ id: editingId, data: updateData });
+      updateUser.mutate({ id: editingId, data: updateData as any });
     } else {
-      if (!data.password) {
+      if (!payload.password) {
         form.setError("password", { message: "Password is required for new users" });
         return;
       }
-      createUser.mutate({ data: data as any });
+      createUser.mutate({ data: payload as any });
     }
   };
 
@@ -548,6 +561,69 @@ export default function Users() {
               <p className="text-xs text-muted-foreground -mt-2">
                 Links this login to procurement POs for that supplier or manufacturer. Only one link per user.
               </p>
+
+              <FormField
+                control={form.control}
+                name="isSales"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel>Sales user</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Restrict which orders this user can view in the orders list and detail pages.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={(checked) => {
+                          field.onChange(checked);
+                          if (checked && !form.getValues("ordersListScope")) {
+                            form.setValue("ordersListScope", "all", { shouldValidate: true });
+                          }
+                          if (!checked) {
+                            form.setValue("ordersListScope", null, { shouldValidate: true });
+                          }
+                        }}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {isSalesWatch ? (
+                <FormField
+                  control={form.control}
+                  name="ordersListScope"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Orders access</FormLabel>
+                      <Select
+                        value={field.value ?? "all"}
+                        onValueChange={(val) =>
+                          field.onChange(val as "all" | "assigned_to_me" | "created_by_me")
+                        }
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select scope" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="all">All orders (can switch filter on orders page)</SelectItem>
+                          <SelectItem value="assigned_to_me">Assigned to me only (forced)</SelectItem>
+                          <SelectItem value="created_by_me">Created by me only (forced)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Forced scopes hide the orders filter and always apply that restriction. All orders lets the
+                        user choose All / Created / Assigned on the orders page.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
 
               <FormField
                 control={form.control}

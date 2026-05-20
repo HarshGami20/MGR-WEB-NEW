@@ -1,22 +1,23 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useListProducts, useDeleteProduct, getListProductsQueryKey, useListCategories, useListProductVariants } from "@/api-client";
+import { useListProducts, useDeleteProduct, getListProductsQueryKey, useListProductVariants } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Trash2, Edit, Layers, ImageIcon } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import type { CategoryRoot } from "@/components/category-picker-with-manage";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
+import { ListCategoryFilter } from "@/components/list-category-filter";
 import { formatInr } from "@/lib/format-currency";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { productImageList, variantImageList } from "@/lib/image-urls";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 
 type ProductRow = Record<string, any>;
 
@@ -57,21 +58,11 @@ function ProductNameCell({ product }: { product: ProductRow }) {
   );
 }
 
-function categoryFilterOptions(roots: CategoryRoot[]): { id: number; label: string }[] {
-  const items: { id: number; label: string }[] = [];
-  for (const r of roots) {
-    items.push({ id: r.id, label: r.name });
-    for (const ch of r.children ?? []) {
-      items.push({ id: ch.id, label: `${r.name} › ${ch.name}` });
-    }
-  }
-  return items;
-}
-
 export default function Products() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [lowStock, setLowStock] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRangeValue>({});
   const [page, setPage] = useState(1);
 
   const queryClient = useQueryClient();
@@ -82,15 +73,10 @@ export default function Products() {
     search: search || undefined,
     categoryId,
     lowStock: lowStock ? true : undefined,
+    ...dateRangeToCreatedParams(dateRange),
     page,
     limit: 15,
   });
-
-  const { data: categoriesData } = useListCategories();
-  const categoryOptions = useMemo(() => {
-    const roots = Array.isArray(categoriesData) ? (categoriesData as CategoryRoot[]) : [];
-    return categoryFilterOptions(roots);
-  }, [categoriesData]);
 
   const deleteProduct = useDeleteProduct({
     mutation: {
@@ -266,25 +252,21 @@ export default function Products() {
               </div>
 
               <div className="flex flex-1 flex-wrap items-center gap-4">
-                <Select
-                  value={categoryId?.toString() ?? "all"}
-                  onValueChange={(val) => {
-                    setCategoryId(val === "all" ? undefined : parseInt(val, 10));
+                <ListDateRangeFilter
+                  context="products"
+                  value={dateRange}
+                  onChange={(next) => {
+                    setDateRange(next);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="h-11 w-[min(100%,260px)] rounded-xl border-border/80 bg-background">
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categoryOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id.toString()}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
+                <ListCategoryFilter
+                  value={categoryId}
+                  onChange={(next) => {
+                    setCategoryId(next);
+                    setPage(1);
+                  }}
+                />
 
                 <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-background px-4 h-11">
                   <Switch id="low-stock-only" checked={lowStock} onCheckedChange={(v) => { setLowStock(v); setPage(1); }} />

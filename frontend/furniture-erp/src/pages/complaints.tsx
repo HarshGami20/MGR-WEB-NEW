@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
-import { useListOrders } from "@/api-client";
+import { useListOrders, useListPurchaseOrders } from "@/api-client";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
+import { isPartnerPortalUser } from "@/lib/partner";
 import {
   listComplaints,
   createComplaint,
@@ -14,6 +15,7 @@ import {
   updateComplaintStatus,
   uploadComplaintImage,
   type Complaint,
+  type ComplaintKind,
   type ComplaintStatus,
 } from "@/lib/complaint-api";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
@@ -22,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +37,9 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Eye, Trash2, Upload, ImageIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { ListCategoryFilter } from "@/components/list-category-filter";
 
 function getComplaintStatusBadge(status: ComplaintStatus) {
   switch (status) {
@@ -54,10 +60,11 @@ export default function ComplaintsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const partnerUser = isPartnerPortalUser(user);
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
 
-  const branchId = selectedBranchId ?? undefined;
+  const branchId = partnerUser ? undefined : (selectedBranchId ?? undefined);
   const writeBranchId =
     assigned.length === 1
       ? assigned[0]!
@@ -67,8 +74,13 @@ export default function ComplaintsPage() {
           : null
         : selectedBranchId;
 
+  const [activeTab, setActiveTab] = useState<ComplaintKind>(
+    partnerUser ? "purchase_order" : "sales_order",
+  );
   const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRangeValue>({});
   const [status, setStatus] = useState<string>("all");
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -76,29 +88,61 @@ export default function ComplaintsPage() {
   const [singleDeleteId, setSingleDeleteId] = useState<number | null>(null);
 
   const [formOrderId, setFormOrderId] = useState("");
+  const [formPoId, setFormPoId] = useState("");
   const [formProductId, setFormProductId] = useState("none");
   const [formSubject, setFormSubject] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formImages, setFormImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get("kind");
+    const poId = params.get("purchaseOrderId");
+    const create = params.get("create");
+    if (kind === "purchase_order" || partnerUser) {
+      setActiveTab("purchase_order");
+    } else if (kind === "sales_order") {
+      setActiveTab("sales_order");
+    }
+    if (poId) {
+      setFormPoId(poId);
+      setActiveTab("purchase_order");
+    }
+    if (create === "1" || create === "true") {
+      setDialogOpen(true);
+    }
+    if (poId || create) {
+      window.history.replaceState({}, "", "/complaints");
+    }
+  }, [partnerUser]);
+
+  const listKind = partnerUser ? "purchase_order" : activeTab;
+
   const { data: complaintsData, isLoading } = useQuery({
-    queryKey: ["complaints", search, status, branchId, page],
+    queryKey: ["complaints", listKind, search, status, branchId, categoryId, dateRange.from, dateRange.to, page],
     queryFn: () =>
       listComplaints({
+        kind: listKind,
         search: search || undefined,
         status: status !== "all" ? (status as ComplaintStatus) : undefined,
         branchId,
+        categoryId,
+        ...dateRangeToCreatedParams(dateRange),
         page,
         limit: 10,
       }),
   });
 
-  const { data: ordersData } = useListOrders({
-    branchId,
-    limit: 200,
-    page: 1,
-  });
+  const { data: ordersData } = useListOrders(
+    { branchId, limit: 200, page: 1 },
+    { query: { enabled: !partnerUser && activeTab === "sales_order" && dialogOpen } },
+  );
+
+  const { data: poData } = useListPurchaseOrders(
+    { limit: 200, page: 1 },
+    { query: { enabled: activeTab === "purchase_order" && dialogOpen } },
+  );
 
   const complaints = complaintsData?.data ?? [];
 
@@ -107,6 +151,12 @@ export default function ComplaintsPage() {
     if (!Number.isFinite(id)) return null;
     return ordersData?.data?.find((o) => o.id === id) ?? null;
   }, [formOrderId, ordersData]);
+
+  const selectedPo = useMemo(() => {
+    const id = parseInt(formPoId, 10);
+    if (!Number.isFinite(id)) return null;
+    return poData?.data?.find((p) => p.id === id) ?? null;
+  }, [formPoId, poData]);
 
   const statusMut = useMutation({
     mutationFn: ({ id, status: next }: { id: number; status: ComplaintStatus }) =>
@@ -129,14 +179,27 @@ export default function ComplaintsPage() {
   });
 
   const createMut = useMutation({
-    mutationFn: () =>
-      createComplaint({
+    mutationFn: () => {
+      const isPo = partnerUser || activeTab === "purchase_order";
+      if (isPo) {
+        return createComplaint({
+          kind: "purchase_order",
+          purchaseOrderId: parseInt(formPoId, 10),
+          productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
+          subject: formSubject.trim() || null,
+          description: formDescription.trim(),
+          imageUrls: formImages.length > 0 ? formImages : undefined,
+        });
+      }
+      return createComplaint({
+        kind: "sales_order",
         orderId: parseInt(formOrderId, 10),
         productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
         subject: formSubject.trim() || null,
         description: formDescription.trim(),
         imageUrls: formImages.length > 0 ? formImages : undefined,
-      }),
+      });
+    },
     onSuccess: (c) => {
       queryClient.invalidateQueries({ queryKey: ["complaints"] });
       toast({ title: "Complaint registered" });
@@ -149,6 +212,7 @@ export default function ComplaintsPage() {
 
   const resetForm = () => {
     setFormOrderId("");
+    setFormPoId("");
     setFormProductId("none");
     setFormSubject("");
     setFormDescription("");
@@ -200,7 +264,12 @@ export default function ComplaintsPage() {
     }
   };
 
-  const columns = useMemo<ColumnDef<Complaint>[]>(
+  const isPoTab = partnerUser || activeTab === "purchase_order";
+  const createDisabled = isPoTab
+    ? !formPoId || !formDescription.trim()
+    : !formOrderId || !formDescription.trim();
+
+  const salesColumns = useMemo<ColumnDef<Complaint>[]>(
     () => [
       {
         accessorKey: "complaintNumber",
@@ -302,23 +371,160 @@ export default function ComplaintsPage() {
         ),
       },
     ],
-    [can, openDetailPage, statusMut],
+    [can, statusMut],
   );
+
+  const poColumns = useMemo<ColumnDef<Complaint>[]>(
+    () => [
+      {
+        accessorKey: "complaintNumber",
+        header: "Complaint #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-medium">{row.original.complaintNumber}</span>
+        ),
+      },
+      {
+        id: "po",
+        header: "PO #",
+        cell: ({ row }) => (
+          <span className="font-mono text-sm text-muted-foreground">
+            {row.original.purchaseOrder?.poNumber ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "type",
+        header: "Type",
+        cell: ({ row }) => (
+          <Badge variant="secondary" className="capitalize font-normal">
+            {row.original.purchaseOrder?.type ?? "—"}
+          </Badge>
+        ),
+      },
+      {
+        id: "product",
+        header: "Product",
+        meta: { cellClassName: "max-w-[160px]" },
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground line-clamp-2" title={row.original.product?.name ?? "All items"}>
+            {row.original.product?.name ?? "All items"}
+          </span>
+        ),
+      },
+      {
+        id: "subject",
+        header: "Subject",
+        meta: { cellClassName: "max-w-[180px]" },
+        cell: ({ row }) => (
+          <span className="text-sm line-clamp-2" title={row.original.subject ?? row.original.description}>
+            {row.original.subject || row.original.description.slice(0, 60)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) =>
+          can("complaints", "edit") ? (
+            <Select
+              value={row.original.status}
+              onValueChange={(val) =>
+                statusMut.mutate({ id: row.original.id, status: val as ComplaintStatus })
+              }
+            >
+              <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+                {getComplaintStatusBadge(row.original.status)}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            getComplaintStatusBadge(row.original.status)
+          ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-[90px]", cellClassName: "text-right" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="icon" onClick={() => openDetailPage(row.original)}>
+              <Eye className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            {!partnerUser && can("complaints", "delete") && (
+              <Button variant="ghost" size="icon" onClick={() => openSingleDeleteDialog(row.original.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [can, partnerUser, statusMut],
+  );
+
+  const columns = isPoTab ? poColumns : salesColumns;
+
+  const poProductOptions = useMemo(() => {
+    if (!selectedPo?.items) return [];
+    return selectedPo.items
+      .filter((item) => item.productId != null && !item.isCustom)
+      .map((item) => ({
+        productId: item.productId!,
+        label: item.product?.name ?? `Product #${item.productId}`,
+      }));
+  }, [selectedPo]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Complaints</h2>
-          <p className="text-muted-foreground">Manage customer complaints linked to orders</p>
+          <p className="text-muted-foreground">
+            {partnerUser
+              ? "Raise and track issues on your purchase orders"
+              : "Manage complaints for sales orders and purchase orders"}
+          </p>
         </div>
         {can("complaints", "add") && (
-          <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+          <Button
+            onClick={() => {
+              resetForm();
+              setDialogOpen(true);
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             New complaint
           </Button>
         )}
       </div>
+
+      {!partnerUser && (
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            setActiveTab(v as ComplaintKind);
+            setPage(1);
+          }}
+        >
+          <TabsList>
+            <TabsTrigger value="sales_order">Sales orders</TabsTrigger>
+            <TabsTrigger value="purchase_order">Purchase orders</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-card p-4 rounded-lg border">
         <div className="flex flex-1 gap-4 items-center flex-wrap">
@@ -328,10 +534,34 @@ export default function ComplaintsPage() {
               placeholder="Search complaints..."
               className="pl-8"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
             />
           </div>
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+          <ListDateRangeFilter
+            context="complaints"
+            value={dateRange}
+            onChange={(next) => {
+              setDateRange(next);
+              setPage(1);
+            }}
+          />
+          <ListCategoryFilter
+            value={categoryId}
+            onChange={(next) => {
+              setCategoryId(next);
+              setPage(1);
+            }}
+          />
+          <Select
+            value={status}
+            onValueChange={(v) => {
+              setStatus(v);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -350,7 +580,7 @@ export default function ComplaintsPage() {
           columns={columns}
           data={complaints}
           isLoading={isLoading}
-          emptyMessage="No complaints found."
+          emptyMessage={isPoTab ? "No purchase order complaints found." : "No sales order complaints found."}
           footer={
             <DataTablePaginationFooter
               page={page}
@@ -367,49 +597,108 @@ export default function ComplaintsPage() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Register complaint</DialogTitle>
-            <DialogDescription>Link an order, describe the issue, and attach photos if needed.</DialogDescription>
+            <DialogDescription>
+              {isPoTab
+                ? "Link a purchase order, describe the issue, and attach photos if needed."
+                : "Link a sales order, describe the issue, and attach photos if needed."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Linked order *</Label>
-              <Select value={formOrderId} onValueChange={(v) => { setFormOrderId(v); setFormProductId("none"); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(ordersData?.data ?? []).map((o) => (
-                    <SelectItem key={o.id} value={String(o.id)}>
-                      {o.orderNumber} — {o.customerName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedOrder && (
-              <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                <p className="font-medium">Order summary</p>
-                <p className="text-muted-foreground">{selectedOrder.customerMobile}</p>
-                <p className="mt-1 text-muted-foreground line-clamp-2">{selectedOrder.customerAddress}</p>
-              </div>
+            {isPoTab ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Linked purchase order *</Label>
+                  <Select
+                    value={formPoId}
+                    onValueChange={(v) => {
+                      setFormPoId(v);
+                      setFormProductId("none");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select purchase order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(poData?.data ?? []).map((po) => (
+                        <SelectItem key={po.id} value={String(po.id)}>
+                          {po.poNumber} — {po.status.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedPo && (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                    <p className="font-medium">PO summary</p>
+                    <p className="text-muted-foreground capitalize">Type: {selectedPo.type}</p>
+                    <p className="text-muted-foreground">Status: {selectedPo.status.replace(/_/g, " ")}</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Product (optional)</Label>
+                  <Select value={formProductId} onValueChange={setFormProductId} disabled={!formPoId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All products on PO" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">All / general issue</SelectItem>
+                      {poProductOptions.map((opt) => (
+                        <SelectItem key={opt.productId} value={String(opt.productId)}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Linked order *</Label>
+                  <Select
+                    value={formOrderId}
+                    onValueChange={(v) => {
+                      setFormOrderId(v);
+                      setFormProductId("none");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(ordersData?.data ?? []).map((o) => (
+                        <SelectItem key={o.id} value={String(o.id)}>
+                          {o.orderNumber} — {o.customerName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedOrder && (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                    <p className="font-medium">Order summary</p>
+                    <p className="text-muted-foreground">{selectedOrder.customerMobile}</p>
+                    <p className="mt-1 text-muted-foreground line-clamp-2">{selectedOrder.customerAddress}</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Product (optional)</Label>
+                  <Select value={formProductId} onValueChange={setFormProductId} disabled={!formOrderId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All products on order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">All / general issue</SelectItem>
+                      {(selectedOrder?.items ?? []).map((item) => (
+                        <SelectItem key={item.productId} value={String(item.productId)}>
+                          {item.product?.name ?? `Product #${item.productId}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
-
-            <div className="space-y-2">
-              <Label>Product (optional)</Label>
-              <Select value={formProductId} onValueChange={setFormProductId} disabled={!formOrderId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All products on order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">All / general issue</SelectItem>
-                  {(selectedOrder?.items ?? []).map((item: { productId: number; product?: { name?: string } | null }) => (
-                    <SelectItem key={item.productId} value={String(item.productId)}>
-                      {item.product?.name ?? `Product #${item.productId}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             <div className="space-y-2">
               <Label>Subject</Label>
@@ -499,11 +788,10 @@ export default function ComplaintsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button
-              disabled={!formOrderId || !formDescription.trim() || createMut.isPending}
-              onClick={() => createMut.mutate()}
-            >
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={createDisabled || createMut.isPending} onClick={() => createMut.mutate()}>
               Save complaint
             </Button>
           </DialogFooter>

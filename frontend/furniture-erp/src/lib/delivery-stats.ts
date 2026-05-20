@@ -6,6 +6,7 @@ export type DeliveryOrderRow = {
   status: string;
   deliveryStatus?: string | null;
   deliveryDate?: string | null;
+  deliveryAssignees?: Array<{ id: number; name?: string; mobile?: string }>;
   deliverySlotId?: number | null;
   deliverySlot?: {
     id: number;
@@ -117,14 +118,14 @@ export function buildDateSlotSchedule(
   orders: DeliveryOrderRow[],
   options?: { fromYmd?: string; toYmd?: string },
 ): DateScheduleGroup[] {
-  const from = options?.fromYmd ?? localTodayYmd();
-  const to = options?.toYmd;
+  const from = options?.fromYmd?.trim() || undefined;
+  const to = options?.toYmd?.trim() || undefined;
 
   const filtered = orders.filter((o) => {
     if (normalizeMainStatus(o.status) === "cancelled") return false;
     const ymd = orderDeliveryYmd(o);
     if (!ymd) return false;
-    if (ymd < from) return false;
+    if (from && ymd < from) return false;
     if (to && ymd > to) return false;
     return true;
   });
@@ -152,8 +153,8 @@ export function buildDateSlotSchedule(
       } else {
         slotMap.set(key, {
           slotId: slot?.id ?? null,
-          label: slot?.label ?? "No slot assigned",
-          timeRange: slot ? `${slot.startTime}–${slot.endTime}` : "—",
+          label: slot?.label ?? "Deliveries",
+          timeRange: slot ? `${slot.startTime}–${slot.endTime}` : "",
           booked: 1,
           maxOrders: null,
           orders: [o],

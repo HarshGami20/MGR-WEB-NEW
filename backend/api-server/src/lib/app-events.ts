@@ -63,7 +63,10 @@ export type PaymentFollowUpCreatedPayload = {
 export type ComplaintCreatedPayload = {
   complaintId: number;
   complaintNumber: string;
-  orderId: number;
+  kind: "sales_order" | "purchase_order";
+  orderId: number | null;
+  purchaseOrderId: number | null;
+  poNumber?: string;
   branchId: number | null;
   createdById: number | null;
 };
@@ -71,7 +74,9 @@ export type ComplaintCreatedPayload = {
 export type ComplaintStatusChangedPayload = {
   complaintId: number;
   complaintNumber: string;
-  orderId: number;
+  kind: "sales_order" | "purchase_order";
+  orderId: number | null;
+  purchaseOrderId: number | null;
   branchId: number | null;
   previousStatus: string;
   nextStatus: string;
@@ -81,7 +86,9 @@ export type ComplaintStatusChangedPayload = {
 export type ComplaintCommentAddedPayload = {
   complaintId: number;
   complaintNumber: string;
-  orderId: number;
+  kind: "sales_order" | "purchase_order";
+  orderId: number | null;
+  purchaseOrderId: number | null;
   branchId: number | null;
   commentId: number;
   authorId: number;

@@ -34,6 +34,7 @@ import { lineItemFormSchema, lineItemToApiPayload, apiItemToFormValues } from "@
 import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
+import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
@@ -43,8 +44,7 @@ const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
 const orderSchema = z.object({
   customerName: zodFields.customerName(),
   customerMobile: zodFields.mobileRequired(),
-  customerAddress: zodFields.addressRequired(),
-  customerPincode: zodFields.pincodeOptional(),
+  customerAddress: zodFields.addressOptional(),
   deliverySlotId: z
     .union([z.number().int().positive(), z.null()])
     .optional()
@@ -60,6 +60,7 @@ const orderSchema = z.object({
   advanceAmount: z.coerce.number().min(0).default(0),
   paymentMode: z.string().default("cash"),
   assigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
+  deliveryAssigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryDate: z.string().nullable().optional(),
   challanImages: z
     .array(
@@ -268,7 +269,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       customerName: "",
       customerMobile: "",
       customerAddress: "",
-      customerPincode: "",
       deliverySlotId: null as number | null,
       googlePlaceId: "",
       addressLat: null as number | null,
@@ -281,6 +281,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       advanceAmount: 0,
       paymentMode: "cash",
       assigneeUserIds: [] as number[],
+      deliveryAssigneeUserIds: [] as number[],
       deliveryDate: null,
       challanImages: [{ imageUrl: "" }],
       photoComments: [{ imageUrl: "", comment: "" }],
@@ -290,18 +291,17 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   });
 
   const deliveryDateWatch = form.watch("deliveryDate");
-  const pincodeWatch = form.watch("customerPincode");
 
   const { data: slotOptionsRaw } = useQuery({
-    queryKey: ["availableSlots", writeBranchId, deliveryDateWatch, pincodeWatch, isEdit ? orderId : 0],
+    queryKey: ["availableSlots", writeBranchId, deliveryDateWatch, isEdit ? orderId : 0],
     queryFn: () =>
       fetchAvailableDeliverySlots({
         branchId: writeBranchId!,
         date: String(deliveryDateWatch).slice(0, 10),
-        pincode: (pincodeWatch || "").trim() || undefined,
         excludeOrderId: isEdit && Number.isFinite(orderId) ? orderId : undefined,
       }),
     enabled:
+      DELIVERY_SLOTS_ENABLED &&
       writeBranchId != null &&
       !!deliveryDateWatch &&
       String(deliveryDateWatch).trim().length >= 8,
@@ -314,17 +314,16 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   );
 
   useEffect(() => {
-    if (!deliveryDateWatch || freeSlotIds.length === 0) return;
+    if (!DELIVERY_SLOTS_ENABLED || !deliveryDateWatch || freeSlotIds.length === 0) return;
     const cur = getValues("deliverySlotId");
     if (cur != null && freeSlotIds.includes(cur)) return;
     const nextId = freeSlotIds[0]!;
     if (cur === nextId) return;
     setValue("deliverySlotId", nextId, { shouldDirty: false, shouldTouch: false, shouldValidate: false });
-  }, [deliveryDateWatch, pincodeWatch, freeSlotIds, getValues, setValue]);
+  }, [deliveryDateWatch, freeSlotIds, getValues, setValue]);
 
   const onGoogleResolved = useCallback(
     (sel: import("@/components/google-address-input").GoogleAddressSelection) => {
-      if (sel.pincode) form.setValue("customerPincode", sel.pincode);
       if (sel.placeId) form.setValue("googlePlaceId", sel.placeId);
       form.setValue("addressLat", sel.lat ?? null);
       form.setValue("addressLng", sel.lng ?? null);
@@ -338,6 +337,31 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   });
   const photoFields = useFieldArray({ control: form.control, name: "photoComments" });
   const hydratedOrderIdRef = useRef<number | null>(null);
+  const defaultAssigneesAppliedRef = useRef<string>("");
+
+  const assignableUsers = useMemo(
+    () => assignableUsersData?.data ?? [],
+    [assignableUsersData?.data],
+  );
+
+  useEffect(() => {
+    if (isEdit || writeBranchId == null) return;
+    if (assignableUsers.length === 0) return;
+    const key = String(writeBranchId);
+    if (defaultAssigneesAppliedRef.current === key) return;
+    defaultAssigneesAppliedRef.current = key;
+
+    const ids = new Set<number>();
+    if (user?.id != null && assignableUsers.some((u) => u.id === user.id)) {
+      ids.add(user.id);
+    }
+    for (const u of assignableUsers) {
+      if (u.roleName === "Super Admin") ids.add(u.id);
+    }
+    if (ids.size > 0) {
+      setValue("assigneeUserIds", [...ids], { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+    }
+  }, [isEdit, writeBranchId, assignableUsers, user?.id, setValue]);
 
   useEffect(() => {
     if (!isEdit || !order?.id) return;
@@ -350,7 +374,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       customerName: sanitizeLettersOnly(order.customerName ?? "", FIELD_LIMITS.customerName),
       customerMobile: order.customerMobile ?? "",
       customerAddress: order.customerAddress ?? "",
-      customerPincode: orderAny.customerPincode ?? "",
       deliverySlotId: orderAny.deliverySlotId ?? null,
       googlePlaceId: orderAny.googlePlaceId ?? "",
       addressLat: orderAny.addressLat != null ? Number(orderAny.addressLat) : null,
@@ -369,6 +392,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         : orderAny.assignedToId != null
           ? [Number(orderAny.assignedToId)]
           : [],
+      deliveryAssigneeUserIds: Array.isArray(orderAny.deliveryAssignees)
+        ? orderAny.deliveryAssignees
+            .map((a: { id: number }) => a.id)
+            .filter((x: number) => Number.isFinite(x))
+        : [],
       deliveryDate: orderAny.deliveryDate ? String(orderAny.deliveryDate).slice(0, 10) : null,
       challanImages: Array.isArray(orderAny.challanImages) && orderAny.challanImages.length > 0
         ? [{ imageUrl: String(orderAny.challanImages[0] || "") }]
@@ -461,9 +489,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     const payload = {
       customerName: data.customerName,
       customerMobile: data.customerMobile || null,
-      customerAddress: data.customerAddress || null,
-      customerPincode: data.customerPincode?.trim() || null,
-      deliverySlotId: data.deliverySlotId ?? null,
+      customerAddress: data.customerAddress?.trim() || null,
+      deliverySlotId: DELIVERY_SLOTS_ENABLED ? (data.deliverySlotId ?? null) : null,
       googlePlaceId: data.googlePlaceId?.trim() || null,
       addressLat: data.addressLat ?? null,
       addressLng: data.addressLng ?? null,
@@ -475,6 +502,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       advanceAmount: Number(data.advanceAmount ?? 0),
       paymentMode: data.paymentMode || "cash",
       assigneeUserIds: (data.assigneeUserIds ?? []).filter((id) => Number.isFinite(id) && id > 0),
+      deliveryAssigneeUserIds: (data.deliveryAssigneeUserIds ?? []).filter(
+        (id) => Number.isFinite(id) && id > 0,
+      ),
       deliveryDate: data.deliveryDate || null,
       challanImages: data.challanImages.map((x) => x.imageUrl).filter(Boolean),
       photoComments: data.photoComments
@@ -672,29 +702,49 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Address*</FormLabel>
-                  <FormControl>
-                    <GoogleAddressInput
-                      value={field.value || ""}
-                      onChangeAddress={field.onChange}
-                      onResolved={onGoogleResolved}
-                      placeholder="Search or type full address"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="customerPincode" render={({ field }) => (
+                <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Pincode</FormLabel>
+                    <FormLabel>Address</FormLabel>
                     <FormControl>
-                      <ValidatedInput field={field} rule="pincode" placeholder="6-digit pincode" />
+                      <GoogleAddressInput
+                        value={field.value || ""}
+                        onChangeAddress={field.onChange}
+                        onResolved={onGoogleResolved}
+                        placeholder="Search or type address (optional)"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField
+                  control={form.control}
+                  name="assigneeUserIds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assign to (team)</FormLabel>
+                      <AssigneesMultiSelect
+                        options={assignableUsers.map((u) => ({
+                          id: u.id,
+                          name: u.name,
+                          mobile: u.mobile,
+                        }))}
+                        value={field.value ?? []}
+                        onChange={field.onChange}
+                        disabled={writeBranchId == null}
+                        placeholder={
+                          writeBranchId == null
+                            ? "Select a branch in the header first"
+                            : assignableUsersError
+                              ? "Could not load staff (check orders permission)"
+                              : assignableUsers.length === 0
+                                ? "No staff available for this branch"
+                                : "Select staff…"
+                        }
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               {isEdit ? (
@@ -764,62 +814,20 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
             <FormSection
               title="Delivery"
-              description="Schedule delivery date, slot, and assign the team."
+              description="Delivery date and staff who can update delivery status."
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Date of delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="deliverySlotId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Delivery slot</FormLabel>
-                    <Select
-                      value={field.value != null ? String(field.value) : undefined}
-                      onValueChange={(v) => field.onChange(Number(v))}
-                      disabled={!deliveryDateWatch || !slotOptions.some((s) => s.remaining > 0)}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={slotOptions.some((s) => s.remaining > 0) ? "Select slot" : "No capacity"} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {slotOptions
-                          .filter((s) => s.remaining > 0)
-                          .map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.label} ({s.startTime}–{s.endTime}) · {s.remaining} left
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
-              {deliveryDateWatch ? (
-                <div className="flex items-start gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
-                  <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium">{formatDeliveryDateLabel(deliveryDateWatch)}</p>
-                    {selectedSlot ? (
-                      <p className="text-muted-foreground text-xs mt-0.5">
-                        {selectedSlot.label} · {selectedSlot.startTime}–{selectedSlot.endTime}
-                      </p>
-                    ) : (
-                      <p className="text-muted-foreground text-xs mt-0.5">Select a slot above</p>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-              <FormField
-                control={form.control}
-                name="assigneeUserIds"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Assign to (team)</FormLabel>
-                    <AssigneesMultiSelect
-                        options={(assignableUsersData?.data ?? []).map((u) => ({
+                <FormField
+                  control={form.control}
+                  name="deliveryAssigneeUserIds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery assignees</FormLabel>
+                      <AssigneesMultiSelect
+                        options={assignableUsers.map((u) => ({
                           id: u.id,
                           name: u.name,
                           mobile: u.mobile,
@@ -830,17 +838,33 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                         placeholder={
                           writeBranchId == null
                             ? "Select a branch in the header first"
-                            : assignableUsersError
-                              ? "Could not load staff (check orders permission)"
-                              : (assignableUsersData?.data ?? []).length === 0
-                                ? "No staff available for this branch"
-                                : "Select staff…"
+                            : assignableUsers.length === 0
+                              ? "No staff available for this branch"
+                              : "Select delivery staff…"
                         }
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Only these users and Super Admin can change delivery status for this order.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+              </div>
+              {deliveryDateWatch ? (
+                <div className="flex items-start gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
+                  <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                  <p className="font-medium">{formatDeliveryDateLabel(deliveryDateWatch)}</p>
+                </div>
+              ) : null}
+              {/* Delivery time slots — disabled (DELIVERY_SLOTS_ENABLED). Re-enable slot picker when scheduling goes live.
+              <FormField control={form.control} name="deliverySlotId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Delivery slot</FormLabel>
+                  ...
+                </FormItem>
+              )} />
+              */}
             </FormSection>
 
             <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">

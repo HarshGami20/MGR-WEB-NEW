@@ -3,17 +3,27 @@ import { z } from "zod";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
-import type { ComplaintStatus, Prisma } from "@prisma/client";
+import type { ComplaintKind, ComplaintStatus, Prisma } from "@prisma/client";
 import { emitSafe } from "../lib/app-events";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
-import { prisma, toNumber } from "../lib/prisma";
+import { prisma } from "../lib/prisma";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import { enrichComplaint } from "../lib/complaint-enrich";
+import {
+  assertComplaintReadAccess,
+  branchFilterForUser,
+  partnerComplaintWhere,
+} from "../lib/complaint-scope";
+import { getPartnerScope, purchaseOrderMatchesScope } from "../lib/partner-scope";
 import { assignedBranchIds } from "../lib/user-branches";
+import { createdAtRangeFromQuery } from "../lib/created-at-filter";
+import { complaintInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 
 const router: IRouter = Router();
 
 const COMPLAINT_STATUSES = new Set<ComplaintStatus>(["open", "in_progress", "resolved"]);
+const COMPLAINT_KINDS = new Set<ComplaintKind>(["sales_order", "purchase_order"]);
 
 const complaintImageUploadDir = path.resolve(process.cwd(), "uploads", "complaints");
 if (!fs.existsSync(complaintImageUploadDir)) fs.mkdirSync(complaintImageUploadDir, { recursive: true });
@@ -33,26 +43,35 @@ const complaintImageUpload = multer({
   },
 });
 
-function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 function generateComplaintNumber() {
   return `CMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
-const CreateComplaintBody = z.object({
-  orderId: z.coerce.number().int().positive(),
-  productId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
-  subject: z.string().max(200).optional().nullable(),
-  description: z.string().min(1, "Issue description is required"),
-  imageUrls: z.array(z.string()).optional(),
-});
+const CreateComplaintBody = z
+  .object({
+    kind: z.enum(["sales_order", "purchase_order"]).optional().default("sales_order"),
+    orderId: z.coerce.number().int().positive().optional(),
+    purchaseOrderId: z.coerce.number().int().positive().optional(),
+    productId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
+    subject: z.string().max(200).optional().nullable(),
+    description: z.string().min(1, "Issue description is required"),
+    imageUrls: z.array(z.string()).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.kind === "sales_order") {
+      if (!data.orderId) ctx.addIssue({ code: "custom", path: ["orderId"], message: "orderId is required" });
+      if (data.purchaseOrderId) {
+        ctx.addIssue({ code: "custom", path: ["purchaseOrderId"], message: "not allowed for sales order complaints" });
+      }
+    } else {
+      if (!data.purchaseOrderId) {
+        ctx.addIssue({ code: "custom", path: ["purchaseOrderId"], message: "purchaseOrderId is required" });
+      }
+      if (data.orderId) {
+        ctx.addIssue({ code: "custom", path: ["orderId"], message: "not allowed for purchase order complaints" });
+      }
+    }
+  });
 
 const UpdateComplaintBody = z.object({
   productId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
@@ -69,117 +88,8 @@ const CreateComplaintCommentBody = z.object({
   body: z.string().min(1, "Comment is required"),
 });
 
-async function enrichProduct(product: {
-  id: number;
-  name: string;
-  sku: string;
-  imageUrl: string | null;
-  price: Prisma.Decimal;
-  gstPercent: Prisma.Decimal;
-  description: string | null;
-}) {
-  return {
-    ...product,
-    price: toNumber(product.price),
-    gstPercent: toNumber(product.gstPercent),
-  };
-}
-
-async function enrichOrderItems(orderId: number) {
-  const items = await prisma.orderItem.findMany({ where: { orderId } });
-  return Promise.all(
-    items.map(async (item) => {
-      const product = await prisma.product.findUnique({ where: { id: item.productId } });
-      return {
-        ...item,
-        unitPrice: toNumber(item.unitPrice),
-        gstPercent: toNumber(item.gstPercent),
-        totalPrice: toNumber(item.totalPrice),
-        product: product ? await enrichProduct(product) : null,
-      };
-    }),
-  );
-}
-
-async function enrichComplaint(complaint: {
-  id: number;
-  complaintNumber: string;
-  orderId: number;
-  productId: number | null;
-  branchId: number | null;
-  createdById: number | null;
-  subject: string | null;
-  description: string;
-  status: ComplaintStatus;
-  imageUrls: string | null;
-  resolvedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  const order = await prisma.order.findUnique({ where: { id: complaint.orderId } });
-  let product: Awaited<ReturnType<typeof enrichProduct>> | null = null;
-  if (complaint.productId) {
-    const p = await prisma.product.findUnique({ where: { id: complaint.productId } });
-    if (p) product = await enrichProduct(p);
-  }
-  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
-  if (complaint.branchId) {
-    branch = await prisma.branch.findUnique({ where: { id: complaint.branchId } });
-  }
-  let createdBy: { id: number; name: string; mobile: string; avatarUrl: string | null } | null = null;
-  if (complaint.createdById) {
-    createdBy = await prisma.user.findUnique({
-      where: { id: complaint.createdById },
-      select: { id: true, name: true, mobile: true, avatarUrl: true },
-    });
-  }
-
-  const comments = await prisma.complaintComment.findMany({
-    where: { complaintId: complaint.id },
-    orderBy: { createdAt: "asc" },
-    include: {
-      user: { select: { id: true, name: true, mobile: true, avatarUrl: true } },
-    },
-  });
-
-  const orderItems = order ? await enrichOrderItems(order.id) : [];
-
-  return {
-    ...complaint,
-    imageUrls: safeJsonParse<string[]>(complaint.imageUrls, []),
-    order: order
-      ? {
-          id: order.id,
-          orderNumber: order.orderNumber,
-          customerName: order.customerName,
-          customerMobile: order.customerMobile,
-          customerAddress: order.customerAddress,
-          status: order.status,
-          paymentStatus: order.paymentStatus,
-          totalAmount: toNumber(order.totalAmount),
-          createdAt: order.createdAt,
-          items: orderItems,
-        }
-      : null,
-    product,
-    branch,
-    createdBy,
-    comments: comments.map((c) => ({
-      id: c.id,
-      body: c.body,
-      createdAt: c.createdAt,
-      user: c.user,
-    })),
-  };
-}
-
-function branchFilterForUser(user: {
-  branchId?: number | null;
-  userBranches?: { branchId: number }[];
-}): Prisma.ComplaintWhereInput | null {
-  const assigned = assignedBranchIds(user);
-  if (assigned.length === 0) return null;
-  return { branchId: { in: assigned } };
+function mergeAnd(where: Prisma.ComplaintWhereInput, clause: Prisma.ComplaintWhereInput) {
+  where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause];
 }
 
 router.post(
@@ -201,7 +111,8 @@ router.post(
 );
 
 router.get("/complaints", requireAuth, requirePermission("complaints", "read"), async (req, res): Promise<void> => {
-  const { search, status, branchId, orderId, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { search, status, branchId, orderId, purchaseOrderId, kind, page = "1", limit = "20", createdFrom, createdTo, categoryId } =
+    req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
@@ -209,18 +120,31 @@ router.get("/complaints", requireAuth, requirePermission("complaints", "read"), 
   const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
   const where: Prisma.ComplaintWhereInput = {};
 
+  const partnerScope = await getPartnerScope(req);
+  if (partnerScope) {
+    Object.assign(where, partnerComplaintWhere(partnerScope));
+  } else {
+    if (kind && COMPLAINT_KINDS.has(kind as ComplaintKind)) {
+      where.kind = kind as ComplaintKind;
+    }
+    if (user) {
+      const branchScope = branchFilterForUser(user);
+      if (branchScope) mergeAnd(where, branchScope);
+    }
+  }
+
   if (status && COMPLAINT_STATUSES.has(status as ComplaintStatus)) {
     where.status = status as ComplaintStatus;
   }
   if (branchId) where.branchId = parseInt(branchId, 10);
   if (orderId) where.orderId = parseInt(orderId, 10);
+  if (purchaseOrderId) where.purchaseOrderId = parseInt(purchaseOrderId, 10);
 
-  if (user) {
-    const branchScope = branchFilterForUser(user);
-    if (branchScope) {
-      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), branchScope];
-    }
-  }
+  const createdAt = createdAtRangeFromQuery(createdFrom, createdTo);
+  if (createdAt) where.createdAt = createdAt;
+
+  const categoryIds = await resolveCategoryFilterIds(categoryId);
+  if (categoryIds) mergeAnd(where, complaintInCategories(categoryIds));
 
   if (search?.trim()) {
     const q = search.trim();
@@ -231,9 +155,10 @@ router.get("/complaints", requireAuth, requirePermission("complaints", "read"), 
         { description: { contains: q, mode: "insensitive" } },
         { order: { orderNumber: { contains: q, mode: "insensitive" } } },
         { order: { customerName: { contains: q, mode: "insensitive" } } },
+        { purchaseOrder: { poNumber: { contains: q, mode: "insensitive" } } },
       ],
     };
-    where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), searchClause];
+    mergeAnd(where, searchClause);
   }
 
   const [total, rows] = await prisma.$transaction([
@@ -263,20 +188,26 @@ router.get("/complaints/:id", requireAuth, requirePermission("complaints", "read
     return;
   }
 
-  const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
-  if (user) {
-    const branchScope = branchFilterForUser(user);
-    if (branchScope && complaint.branchId != null) {
-      const allowed = assignedBranchIds(user);
-      if (!allowed.includes(complaint.branchId)) {
-        res.status(403).json({ error: "Forbidden", message: "Complaint is outside your branch access" });
-        return;
-      }
-    }
+  const access = await assertComplaintReadAccess(req, complaint);
+  if (!access.ok) {
+    res.status(access.status).json({ error: "Forbidden", message: access.message });
+    return;
   }
 
   res.json(await enrichComplaint(complaint));
 });
+
+async function validateProductOnOrder(orderId: number, productId: number): Promise<boolean> {
+  const item = await prisma.orderItem.findFirst({ where: { orderId, productId } });
+  return item != null;
+}
+
+async function validateProductOnPurchaseOrder(purchaseOrderId: number, productId: number): Promise<boolean> {
+  const item = await prisma.purchaseOrderItem.findFirst({
+    where: { purchaseOrderId, productId, isCustom: false },
+  });
+  return item != null;
+}
 
 router.post("/complaints", requireAuth, requirePermission("complaints", "create"), async (req, res): Promise<void> => {
   const parsed = CreateComplaintBody.safeParse(req.body);
@@ -292,43 +223,112 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     return;
   }
 
-  const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId } });
-  if (!order) {
-    res.status(400).json({ error: "Order not found" });
-    return;
-  }
-
-  const branchScope = branchFilterForUser(authUser);
-  if (branchScope && order.branchId != null) {
-    const allowed = assignedBranchIds(authUser);
-    if (!allowed.includes(order.branchId)) {
-      res.status(403).json({ error: "Forbidden", message: "Order is outside your branch access" });
+  const partnerScope = await getPartnerScope(req);
+  let kind = parsed.data.kind;
+  if (partnerScope) {
+    if (kind !== "purchase_order") {
+      res.status(403).json({ error: "Forbidden", message: "Portal users can only raise purchase order complaints" });
       return;
     }
+    kind = "purchase_order";
   }
-
-  if (parsed.data.productId) {
-    const item = await prisma.orderItem.findFirst({
-      where: { orderId: order.id, productId: parsed.data.productId },
-    });
-    if (!item) {
-      res.status(400).json({ error: "Selected product is not part of this order" });
-      return;
-    }
-  }
-
-  const branchId = order.branchId ?? (await requireWriteBranchId(req, res, authUser));
-  if (order.branchId == null && branchId == null) return;
 
   const imageUrls =
     parsed.data.imageUrls && parsed.data.imageUrls.length > 0 ? JSON.stringify(parsed.data.imageUrls) : null;
 
+  if (kind === "sales_order") {
+    const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId! } });
+    if (!order) {
+      res.status(400).json({ error: "Order not found" });
+      return;
+    }
+
+    const branchScope = branchFilterForUser(authUser);
+    if (branchScope && order.branchId != null) {
+      const allowed = assignedBranchIds(authUser);
+      if (!allowed.includes(order.branchId)) {
+        res.status(403).json({ error: "Forbidden", message: "Order is outside your branch access" });
+        return;
+      }
+    }
+
+    if (parsed.data.productId) {
+      if (!(await validateProductOnOrder(order.id, parsed.data.productId))) {
+        res.status(400).json({ error: "Selected product is not part of this order" });
+        return;
+      }
+    }
+
+    const branchId = order.branchId ?? (await requireWriteBranchId(req, res, authUser));
+    if (order.branchId == null && branchId == null) return;
+
+    const created = await prisma.complaint.create({
+      data: {
+        complaintNumber: generateComplaintNumber(),
+        kind: "sales_order",
+        orderId: order.id,
+        productId: parsed.data.productId ?? null,
+        branchId: order.branchId ?? branchId,
+        createdById: authUser.id,
+        subject: parsed.data.subject?.trim() || null,
+        description: parsed.data.description.trim(),
+        imageUrls,
+      },
+    });
+
+    emitSafe("COMPLAINT_CREATED", {
+      complaintId: created.id,
+      complaintNumber: created.complaintNumber,
+      kind: "sales_order",
+      orderId: order.id,
+      purchaseOrderId: null,
+      branchId: created.branchId,
+      createdById: authUser.id,
+    });
+
+    res.status(201).json(await enrichComplaint(created));
+    return;
+  }
+
+  const po = await prisma.purchaseOrder.findUnique({ where: { id: parsed.data.purchaseOrderId! } });
+  if (!po) {
+    res.status(400).json({ error: "Purchase order not found" });
+    return;
+  }
+
+  if (partnerScope && !purchaseOrderMatchesScope(po, partnerScope)) {
+    res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your portal access" });
+    return;
+  }
+
+  if (!partnerScope) {
+    const branchScope = branchFilterForUser(authUser);
+    if (branchScope && po.branchId != null) {
+      const allowed = assignedBranchIds(authUser);
+      if (!allowed.includes(po.branchId)) {
+        res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your branch access" });
+        return;
+      }
+    }
+  }
+
+  if (parsed.data.productId) {
+    if (!(await validateProductOnPurchaseOrder(po.id, parsed.data.productId))) {
+      res.status(400).json({ error: "Selected product is not part of this purchase order" });
+      return;
+    }
+  }
+
+  const branchId = po.branchId ?? (partnerScope ? null : await requireWriteBranchId(req, res, authUser));
+  if (!partnerScope && po.branchId == null && branchId == null) return;
+
   const created = await prisma.complaint.create({
     data: {
       complaintNumber: generateComplaintNumber(),
-      orderId: order.id,
+      kind: "purchase_order",
+      purchaseOrderId: po.id,
       productId: parsed.data.productId ?? null,
-      branchId: order.branchId ?? branchId,
+      branchId: po.branchId ?? branchId,
       createdById: authUser.id,
       subject: parsed.data.subject?.trim() || null,
       description: parsed.data.description.trim(),
@@ -339,7 +339,10 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
   emitSafe("COMPLAINT_CREATED", {
     complaintId: created.id,
     complaintNumber: created.complaintNumber,
-    orderId: order.id,
+    kind: "purchase_order",
+    orderId: null,
+    purchaseOrderId: po.id,
+    poNumber: po.poNumber,
     branchId: created.branchId,
     createdById: authUser.id,
   });
@@ -366,11 +369,20 @@ router.put("/complaints/:id", requireAuth, requirePermission("complaints", "upda
     return;
   }
 
+  const access = await assertComplaintReadAccess(req, existing);
+  if (!access.ok) {
+    res.status(access.status).json({ error: "Forbidden", message: access.message });
+    return;
+  }
+
   if (parsed.data.productId !== undefined && parsed.data.productId != null) {
-    const item = await prisma.orderItem.findFirst({
-      where: { orderId: existing.orderId, productId: parsed.data.productId },
-    });
-    if (!item) {
+    const valid =
+      existing.kind === "purchase_order" && existing.purchaseOrderId
+        ? await validateProductOnPurchaseOrder(existing.purchaseOrderId, parsed.data.productId)
+        : existing.orderId
+          ? await validateProductOnOrder(existing.orderId, parsed.data.productId)
+          : false;
+    if (!valid) {
       res.status(400).json({ error: "Selected product is not part of this order" });
       return;
     }
@@ -379,9 +391,7 @@ router.put("/complaints/:id", requireAuth, requirePermission("complaints", "upda
   const data: Prisma.ComplaintUpdateInput = {};
   if (parsed.data.productId !== undefined) {
     data.product =
-      parsed.data.productId == null
-        ? { disconnect: true }
-        : { connect: { id: parsed.data.productId } };
+      parsed.data.productId == null ? { disconnect: true } : { connect: { id: parsed.data.productId } };
   }
   if (parsed.data.subject !== undefined) data.subject = parsed.data.subject?.trim() || null;
   if (parsed.data.description !== undefined) data.description = parsed.data.description.trim();
@@ -416,6 +426,12 @@ router.patch(
       return;
     }
 
+    const access = await assertComplaintReadAccess(req, existing);
+    if (!access.ok) {
+      res.status(access.status).json({ error: "Forbidden", message: access.message });
+      return;
+    }
+
     const updated = await prisma.complaint.update({
       where: { id },
       data: {
@@ -429,7 +445,9 @@ router.patch(
       emitSafe("COMPLAINT_STATUS_CHANGED", {
         complaintId: updated.id,
         complaintNumber: updated.complaintNumber,
+        kind: updated.kind,
         orderId: updated.orderId,
+        purchaseOrderId: updated.purchaseOrderId,
         branchId: updated.branchId,
         previousStatus: existing.status,
         nextStatus: updated.status,
@@ -470,6 +488,12 @@ router.post(
       return;
     }
 
+    const access = await assertComplaintReadAccess(req, existing);
+    if (!access.ok) {
+      res.status(access.status).json({ error: "Forbidden", message: access.message });
+      return;
+    }
+
     const comment = await prisma.complaintComment.create({
       data: {
         complaintId: id,
@@ -484,7 +508,9 @@ router.post(
     emitSafe("COMPLAINT_COMMENT_ADDED", {
       complaintId: existing.id,
       complaintNumber: existing.complaintNumber,
+      kind: existing.kind,
       orderId: existing.orderId,
+      purchaseOrderId: existing.purchaseOrderId,
       branchId: existing.branchId,
       commentId: comment.id,
       authorId: authUser.id,
@@ -509,6 +535,12 @@ router.delete("/complaints/:id", requireAuth, requirePermission("complaints", "d
   const existing = await prisma.complaint.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ error: "Complaint not found" });
+    return;
+  }
+
+  const partnerScope = await getPartnerScope(req);
+  if (partnerScope) {
+    res.status(403).json({ error: "Forbidden", message: "Portal users cannot delete complaints" });
     return;
   }
 

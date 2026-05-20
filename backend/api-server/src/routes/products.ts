@@ -8,6 +8,8 @@ import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
+import { createdAtRangeFromQuery } from "../lib/created-at-filter";
+import { loadCategoryNodes, productMatchesCategoryFilter } from "../lib/category-filter";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -113,17 +115,6 @@ function resolveProductImagesInput(
   return serializeImageUrls(single ? [single] : []);
 }
 
-function productMatchesCategoryFilter(
-  productCategoryId: number | null,
-  filterId: number,
-  allCats: { id: number; parentId: number | null }[],
-): boolean {
-  if (productCategoryId == null) return false;
-  if (productCategoryId === filterId) return true;
-  const c = allCats.find((x) => x.id === productCategoryId);
-  return c?.parentId === filterId;
-}
-
 router.post(
   "/products/upload-image",
   requireAuth,
@@ -140,19 +131,23 @@ router.post(
 );
 
 router.get("/products", requireAuth, requirePermission("products", "read"), async (req, res): Promise<void> => {
-  const { search, categoryId, lowStock, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { search, categoryId, lowStock, page = "1", limit = "20", createdFrom, createdTo } =
+    req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  const allCats = await prisma.category.findMany({ select: { id: true, parentId: true } });
+  const allCats = await loadCategoryNodes();
+
+  const createdAt = createdAtRangeFromQuery(createdFrom, createdTo);
 
   let products = await prisma.product.findMany({
+    where: createdAt ? { createdAt } : undefined,
     include: {
       category: true,
       _count: { select: { variants: true } },
     },
-    orderBy: { id: "desc" },
+    orderBy: { createdAt: "desc" },
   });
   if (search) {
     const q = search.toLowerCase();

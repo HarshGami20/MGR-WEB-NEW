@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, ArrowRight, ClipboardList, Factory, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ListCategoryFilter } from "@/components/list-category-filter";
+import { categoryIdToParam } from "@/lib/list-category-filter";
 
 const PARTNER_STATUS_OPTIONS = ["confirmed", "in_production", "shipped", "delivered"] as const;
 
@@ -50,15 +52,17 @@ function statusBadgeClass(status: string): string {
 export default function PartnerPurchaseOrdersListPage() {
   const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("open");
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const listParams = useMemo(() => {
-    if (statusFilter === "open") return { openOnly: "true" as const, page, limit: 20 };
-    if (statusFilter === "all") return { page, limit: 20 };
-    return { status: statusFilter as UpdatePurchaseOrderStatusBodyStatus, page, limit: 20 };
-  }, [statusFilter, page]);
+    const category = categoryIdToParam(categoryId);
+    if (statusFilter === "open") return { openOnly: "true" as const, page, limit: 20, ...category };
+    if (statusFilter === "all") return { page, limit: 20, ...category };
+    return { status: statusFilter as UpdatePurchaseOrderStatusBodyStatus, page, limit: 20, ...category };
+  }, [statusFilter, page, categoryId]);
 
   const { data, isLoading } = useListPurchaseOrders(listParams as Parameters<typeof useListPurchaseOrders>[0]);
 
@@ -102,26 +106,36 @@ export default function PartnerPurchaseOrdersListPage() {
             {partnerPortalLabel(user)}
           </p>
         </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => {
-            setStatusFilter(v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[220px] rounded-xl">
-            <SelectValue placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="open">Open orders</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="in_production">In production</SelectItem>
-            <SelectItem value="shipped">Shipped</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-            <SelectItem value="all">All statuses</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-3">
+          <ListCategoryFilter
+            value={categoryId}
+            onChange={(next) => {
+              setCategoryId(next);
+              setPage(1);
+            }}
+            triggerClassName="h-10 w-[min(100%,260px)] rounded-xl"
+          />
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[220px] rounded-xl">
+              <SelectValue placeholder="Filter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open orders</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="in_production">In production</SelectItem>
+              <SelectItem value="shipped">Shipped</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Card>
