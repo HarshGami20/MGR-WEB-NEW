@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { listDrivers, createDriver, updateDriver, deleteDriver, type Driver } from "@/lib/driver-api";
 import { useAuth } from "@/lib/auth";
@@ -13,13 +16,34 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { zodFields } from "@/lib/form-validation";
+import { ValidatedInput } from "@/components/validated-input";
 import { Plus, Search, Eye, Pencil, Trash2 } from "lucide-react";
+
+const DRIVER_VEHICLE_MAX = 200;
+const DRIVER_NOTES_MAX = 500;
+
+const driverSchema = z.object({
+  name: zodFields.personName("Name"),
+  mobile: zodFields.mobileOptional(),
+  vehicleInfo: z
+    .string()
+    .trim()
+    .max(DRIVER_VEHICLE_MAX, `Use at most ${DRIVER_VEHICLE_MAX} characters`)
+    .optional(),
+  notes: z
+    .string()
+    .trim()
+    .max(DRIVER_NOTES_MAX, `Use at most ${DRIVER_NOTES_MAX} characters`)
+    .optional(),
+});
+
+type DriverFormValues = z.infer<typeof driverSchema>;
 
 export default function DriversPage() {
   const [, setLocation] = useLocation();
@@ -42,10 +66,16 @@ export default function DriversPage() {
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Driver | null>(null);
-  const [formName, setFormName] = useState("");
-  const [formMobile, setFormMobile] = useState("");
-  const [formVehicle, setFormVehicle] = useState("");
-  const [formNotes, setFormNotes] = useState("");
+
+  const form = useForm<DriverFormValues>({
+    resolver: zodResolver(driverSchema),
+    defaultValues: {
+      name: "",
+      mobile: "",
+      vehicleInfo: "",
+      notes: "",
+    },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["drivers", writeBranchId, search, page],
@@ -61,12 +91,12 @@ export default function DriversPage() {
   });
 
   const saveMut = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (data: DriverFormValues) => {
       const body = {
-        name: formName.trim(),
-        mobile: formMobile.trim() || null,
-        vehicleInfo: formVehicle.trim() || null,
-        notes: formNotes.trim() || null,
+        name: data.name.trim(),
+        mobile: data.mobile?.trim() || null,
+        vehicleInfo: data.vehicleInfo?.trim() || null,
+        notes: data.notes?.trim() || null,
         branchId: writeBranchId,
       };
       if (editing) return updateDriver(editing.id, body);
@@ -92,20 +122,23 @@ export default function DriversPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setFormName("");
-    setFormMobile("");
-    setFormVehicle("");
-    setFormNotes("");
+    form.reset({ name: "", mobile: "", vehicleInfo: "", notes: "" });
     setDialogOpen(true);
   };
 
   const openEdit = (d: Driver) => {
     setEditing(d);
-    setFormName(d.name);
-    setFormMobile(d.mobile ?? "");
-    setFormVehicle(d.vehicleInfo ?? "");
-    setFormNotes(d.notes ?? "");
+    form.reset({
+      name: d.name,
+      mobile: d.mobile ?? "",
+      vehicleInfo: d.vehicleInfo ?? "",
+      notes: d.notes ?? "",
+    });
     setDialogOpen(true);
+  };
+
+  const onSubmit = (data: DriverFormValues) => {
+    saveMut.mutate(data);
   };
 
   const columns = useMemo<ColumnDef<Driver>[]>(
@@ -234,39 +267,80 @@ export default function DriversPage() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit driver" : "Add driver"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Name *</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Mobile</Label>
-              <Input value={formMobile} onChange={(e) => setFormMobile(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Vehicle</Label>
-              <Input
-                value={formVehicle}
-                onChange={(e) => setFormVehicle(e.target.value)}
-                placeholder="e.g. Van MH-12-AB-1234"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name *</FormLabel>
+                    <FormControl>
+                      <ValidatedInput field={field} rule="personName" placeholder="e.g. Rajesh Kumar" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!formName.trim() || saveMut.isPending}
-              onClick={() => saveMut.mutate()}
-            >
-              {saveMut.isPending ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
+              <FormField
+                control={form.control}
+                name="mobile"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mobile</FormLabel>
+                    <FormControl>
+                      <ValidatedInput field={field} rule="mobile" placeholder="10-digit mobile" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="vehicleInfo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Vehicle</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        maxLength={DRIVER_VEHICLE_MAX}
+                        placeholder="e.g. Van MH-12-AB-1234"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={2}
+                        {...field}
+                        value={field.value ?? ""}
+                        maxLength={DRIVER_NOTES_MAX}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={saveMut.isPending}>
+                  {saveMut.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
