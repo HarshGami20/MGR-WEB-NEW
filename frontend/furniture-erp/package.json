@@ -78,6 +78,7 @@
   "dependencies": {
     "firebase": "^12.13.0",
     "pdfmake": "^0.3.8",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "xlsx": "^0.18.5"
   }
 }

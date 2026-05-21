@@ -38,6 +38,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: basePath,
+    optimizeDeps: {
+      include: ["pdfmake/build/pdfmake.js", "pdfmake/build/vfs_fonts.js"],
+    },
     plugins: [
       react(),
       tailwindcss(),

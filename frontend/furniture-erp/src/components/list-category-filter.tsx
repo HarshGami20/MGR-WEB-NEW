@@ -54,7 +54,7 @@ export function ListCategoryFilter({
         <Button
           type="button"
           variant="outline"
-          className={cn(triggerClassName, className , "h-9 w-[min(100%,210px)] justify-between rounded-xl border cursor-pointer border-border/80 bg-card px-3 font-normal shadow-sm hover:bg-card")}
+          className={cn(triggerClassName, className , "h-9 w-[min(100%,210px)] justify-between rounded-lg border cursor-pointer border-border/80 bg-card px-3 font-normal shadow-sm hover:bg-card")}
           aria-label="Filter by category"
         >
           <span className="truncate text-left">{displayLabel}</span>

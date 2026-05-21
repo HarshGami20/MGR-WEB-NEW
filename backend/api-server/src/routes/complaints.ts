@@ -9,6 +9,12 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import {
+  assertActiveUserIdsExist,
+  assertCanUpdateComplaintStatus,
+  normalizeAssigneeUserIds,
+  replaceComplaintAssignees,
+} from "../lib/complaint-assignees";
 import { enrichComplaint } from "../lib/complaint-enrich";
 import {
   assertComplaintReadAccess,
@@ -56,6 +62,7 @@ const CreateComplaintBody = z
     subject: z.string().max(200).optional().nullable(),
     description: z.string().min(1, "Issue description is required"),
     imageUrls: z.array(z.string()).optional(),
+    assigneeUserIds: z.array(z.coerce.number().int().positive()).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.kind === "sales_order") {
@@ -78,6 +85,7 @@ const UpdateComplaintBody = z.object({
   subject: z.string().max(200).optional().nullable(),
   description: z.string().min(1).optional(),
   imageUrls: z.array(z.string()).optional(),
+  assigneeUserIds: z.array(z.coerce.number().int().positive()).optional(),
 });
 
 const UpdateComplaintStatusBody = z.object({
@@ -91,6 +99,74 @@ const CreateComplaintCommentBody = z.object({
 function mergeAnd(where: Prisma.ComplaintWhereInput, clause: Prisma.ComplaintWhereInput) {
   where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause];
 }
+
+/** Pick assignees on complaint forms — complaints create/update without users module read. */
+router.get(
+  "/complaints/assignable-users",
+  requireAuth,
+  requirePermissionAny([
+    { module: "complaints", action: "create" },
+    { module: "complaints", action: "update" },
+  ]),
+  async (req, res): Promise<void> => {
+    const user = (req as { user?: { branchId: number | null; userBranches?: { branchId: number }[] } }).user;
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const branchId = await requireWriteBranchId(req, res, user);
+    if (branchId == null) return;
+
+    const { search } = req.query as Record<string, string>;
+    const limitRaw = (req.query as Record<string, string>).limit;
+    const limitNum = Math.min(2000, Math.max(1, parseInt(limitRaw || "1000", 10) || 1000));
+    const searchTrim = search?.trim() ?? "";
+
+    const branchScope: Prisma.UserWhereInput = {
+      OR: [
+        { role: { name: "Super Admin" } },
+        { userBranches: { some: { branchId } } },
+        {
+          AND: [{ userBranches: { none: {} } }, { branchId }],
+        },
+        {
+          AND: [{ userBranches: { none: {} } }, { branchId: null }],
+        },
+      ],
+    };
+
+    const where: Prisma.UserWhereInput = {
+      isActive: true,
+      AND: [
+        branchScope,
+        ...(searchTrim
+          ? [
+              {
+                OR: [
+                  { name: { contains: searchTrim, mode: "insensitive" } },
+                  { mobile: { contains: searchTrim } },
+                ],
+              } satisfies Prisma.UserWhereInput,
+            ]
+          : []),
+      ],
+    };
+
+    const rows = await prisma.user.findMany({
+      where,
+      take: limitNum,
+      select: {
+        id: true,
+        name: true,
+        mobile: true,
+        role: { select: { name: true } },
+      },
+      orderBy: [{ name: "asc" }],
+    });
+
+    res.json({ data: rows });
+  },
+);
 
 router.post(
   "/complaints/upload-image",
@@ -262,18 +338,30 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     const branchId = order.branchId ?? (await requireWriteBranchId(req, res, authUser));
     if (order.branchId == null && branchId == null) return;
 
-    const created = await prisma.complaint.create({
-      data: {
-        complaintNumber: generateComplaintNumber(),
-        kind: "sales_order",
-        orderId: order.id,
-        productId: parsed.data.productId ?? null,
-        branchId: order.branchId ?? branchId,
-        createdById: authUser.id,
-        subject: parsed.data.subject?.trim() || null,
-        description: parsed.data.description.trim(),
-        imageUrls,
-      },
+    const assigneeIds = normalizeAssigneeUserIds(parsed.data.assigneeUserIds);
+    try {
+      await assertActiveUserIdsExist(assigneeIds);
+    } catch (e: unknown) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.complaint.create({
+        data: {
+          complaintNumber: generateComplaintNumber(),
+          kind: "sales_order",
+          orderId: order.id,
+          productId: parsed.data.productId ?? null,
+          branchId: order.branchId ?? branchId,
+          createdById: authUser.id,
+          subject: parsed.data.subject?.trim() || null,
+          description: parsed.data.description.trim(),
+          imageUrls,
+        },
+      });
+      await replaceComplaintAssignees(tx, row.id, assigneeIds);
+      return row;
     });
 
     emitSafe("COMPLAINT_CREATED", {
@@ -322,18 +410,30 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
   const branchId = po.branchId ?? (partnerScope ? null : await requireWriteBranchId(req, res, authUser));
   if (!partnerScope && po.branchId == null && branchId == null) return;
 
-  const created = await prisma.complaint.create({
-    data: {
-      complaintNumber: generateComplaintNumber(),
-      kind: "purchase_order",
-      purchaseOrderId: po.id,
-      productId: parsed.data.productId ?? null,
-      branchId: po.branchId ?? branchId,
-      createdById: authUser.id,
-      subject: parsed.data.subject?.trim() || null,
-      description: parsed.data.description.trim(),
-      imageUrls,
-    },
+  const assigneeIds = normalizeAssigneeUserIds(parsed.data.assigneeUserIds);
+  try {
+    await assertActiveUserIdsExist(assigneeIds);
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.complaint.create({
+      data: {
+        complaintNumber: generateComplaintNumber(),
+        kind: "purchase_order",
+        purchaseOrderId: po.id,
+        productId: parsed.data.productId ?? null,
+        branchId: po.branchId ?? branchId,
+        createdById: authUser.id,
+        subject: parsed.data.subject?.trim() || null,
+        description: parsed.data.description.trim(),
+        imageUrls,
+      },
+    });
+    await replaceComplaintAssignees(tx, row.id, assigneeIds);
+    return row;
   });
 
   emitSafe("COMPLAINT_CREATED", {
@@ -399,6 +499,25 @@ router.put("/complaints/:id", requireAuth, requirePermission("complaints", "upda
     data.imageUrls = parsed.data.imageUrls.length > 0 ? JSON.stringify(parsed.data.imageUrls) : null;
   }
 
+  if (parsed.data.assigneeUserIds !== undefined) {
+    const assigneeIds = normalizeAssigneeUserIds(parsed.data.assigneeUserIds);
+    try {
+      await assertActiveUserIdsExist(assigneeIds);
+    } catch (e: unknown) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const updated = await prisma.$transaction(async (tx) => {
+      await replaceComplaintAssignees(tx, id, assigneeIds);
+      if (Object.keys(data).length > 0) {
+        return tx.complaint.update({ where: { id }, data });
+      }
+      return tx.complaint.findUniqueOrThrow({ where: { id } });
+    });
+    res.json(await enrichComplaint(updated));
+    return;
+  }
+
   const updated = await prisma.complaint.update({ where: { id }, data });
   res.json(await enrichComplaint(updated));
 });
@@ -432,6 +551,18 @@ router.patch(
       return;
     }
 
+    const authUser = (req as { user?: { id: number; role?: { name?: string | null } | null } }).user;
+    if (!authUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const statusAccess = await assertCanUpdateComplaintStatus(authUser, id);
+    if (!statusAccess.ok) {
+      res.status(statusAccess.status).json({ error: statusAccess.message });
+      return;
+    }
+
     const updated = await prisma.complaint.update({
       where: { id },
       data: {
@@ -440,7 +571,7 @@ router.patch(
       },
     });
 
-    const actorId = (req as { user?: { id: number } }).user?.id;
+    const actorId = authUser.id;
     if (existing.status !== updated.status) {
       emitSafe("COMPLAINT_STATUS_CHANGED", {
         complaintId: updated.id,

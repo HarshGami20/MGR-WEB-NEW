@@ -62,6 +62,12 @@ export type ComplaintComment = {
   user: { id: number; name: string; mobile: string; avatarUrl: string | null };
 };
 
+export type ComplaintAssignee = { id: number; name: string; mobile: string };
+
+export type ComplaintAssignableUser = ComplaintAssignee & {
+  role?: { name: string | null } | null;
+};
+
 export type Complaint = {
   id: number;
   complaintNumber: string;
@@ -83,6 +89,7 @@ export type Complaint = {
   product: ComplaintProduct | null;
   branch: { id: number; name: string; code: string } | null;
   createdBy: { id: number; name: string; mobile: string; avatarUrl: string | null } | null;
+  assignees: ComplaintAssignee[];
   comments: ComplaintComment[];
 };
 
@@ -159,6 +166,19 @@ export async function getComplaint(id: number): Promise<Complaint> {
   return customFetch<Complaint>(`/api/complaints/${id}`);
 }
 
+export async function listComplaintAssignableUsers(
+  branchId: number,
+  params?: { search?: string; limit?: number },
+): Promise<{ data: ComplaintAssignableUser[] }> {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  const suffix = qs.size > 0 ? `?${qs}` : "";
+  return customFetch<{ data: ComplaintAssignableUser[] }>(`/api/complaints/assignable-users${suffix}`, {
+    headers: { "X-Branch-Id": String(branchId) },
+  });
+}
+
 export async function createComplaint(body: {
   kind?: ComplaintKind;
   orderId?: number;
@@ -167,6 +187,7 @@ export async function createComplaint(body: {
   subject?: string | null;
   description: string;
   imageUrls?: string[];
+  assigneeUserIds?: number[];
 }): Promise<Complaint> {
   return customFetch<Complaint>("/api/complaints", {
     method: "POST",
@@ -182,6 +203,7 @@ export async function updateComplaint(
     subject?: string | null;
     description?: string;
     imageUrls?: string[];
+    assigneeUserIds?: number[];
   },
 ): Promise<Complaint> {
   return customFetch<Complaint>(`/api/complaints/${id}`, {

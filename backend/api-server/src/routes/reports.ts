@@ -3,7 +3,51 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { buildOrderExportRows } from "../lib/order-export";
+import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
+
 const router: IRouter = Router();
+
+function parseOrdersExportCreatedAt(query: Record<string, string | undefined>): { gte?: Date; lt?: Date } | undefined {
+  const filter = query.filter?.trim() ?? "all";
+  if (filter === "all") return undefined;
+
+  const yearParam = query.year ? parseInt(String(query.year), 10) : undefined;
+  const monthParam = query.month ? parseInt(String(query.month), 10) : undefined;
+  const hasValidYear = Number.isFinite(yearParam) && (yearParam as number) >= 2000 && (yearParam as number) <= 3000;
+  const hasValidMonth = Number.isFinite(monthParam) && (monthParam as number) >= 1 && (monthParam as number) <= 12;
+
+  if (filter === "year" && hasValidYear) {
+    const y = yearParam as number;
+    return {
+      gte: new Date(Date.UTC(y, 0, 1, 0, 0, 0)),
+      lt: new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0)),
+    };
+  }
+
+  if (filter === "month" && hasValidYear && hasValidMonth) {
+    const y = yearParam as number;
+    const m = monthParam as number;
+    return {
+      gte: new Date(Date.UTC(y, m - 1, 1, 0, 0, 0)),
+      lt: new Date(Date.UTC(y, m, 1, 0, 0, 0)),
+    };
+  }
+
+  if (filter === "custom") {
+    const from = query.startDate?.trim();
+    const to = query.endDate?.trim();
+    const gte = from ? ymdUtcDayStart(from) : undefined;
+    const lte = to ? ymdUtcDayEnd(to) : undefined;
+    if (!gte && !lte) return undefined;
+    const createdAt: { gte?: Date; lt?: Date } = {};
+    if (gte) createdAt.gte = gte;
+    if (lte) createdAt.lt = new Date(lte.getTime() + 1);
+    return createdAt;
+  }
+
+  return undefined;
+}
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
@@ -225,6 +269,26 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     yearly,
     daily,
     categoryWise,
+  });
+});
+
+/** Full order rows for Excel export (filter: all | year | month | custom). */
+router.get("/reports/orders-export", requireAuth, requirePermission("reports", "read"), async (req, res): Promise<void> => {
+  const q = req.query as Record<string, string | undefined>;
+  const branchIdParam = q.branchId ? parseInt(String(q.branchId), 10) : NaN;
+  const branchId = Number.isFinite(branchIdParam) && branchIdParam > 0 ? branchIdParam : null;
+  const categoryIdParam = typeof q.categoryId === "string" ? parseInt(q.categoryId, 10) : NaN;
+  const categoryIds = await resolveCategoryFilterIds(
+    Number.isFinite(categoryIdParam) && categoryIdParam > 0 ? String(categoryIdParam) : undefined,
+  );
+
+  const createdAt = parseOrdersExportCreatedAt(q);
+  const rows = await buildOrderExportRows(createdAt, branchId, categoryIds);
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    count: rows.length,
+    rows,
   });
 });
 

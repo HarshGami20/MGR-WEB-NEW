@@ -1,7 +1,8 @@
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Link, Redirect, useRoute, useLocation } from "wouter";
 import {
   useGetProduct,
+  useGetSettings,
   useDeleteProduct,
   useListProductVariants,
   useDeleteProductVariant,
@@ -140,15 +141,15 @@ function ProductDetailGallery({ urls, editHref, canEdit }: { urls: string[]; edi
   }
 
   return (
-    <DetailCard className="overflow-hidden p-3">
-      <div className="overflow-hidden rounded-xl bg-muted/15">
+    <DetailCard className="overflow-hidden p-0">
+      <div className="relative overflow-hidden rounded-xl rounded-b-none bg-muted/15">
         <div className="flex aspect-[4/3] items-center justify-center">
           {current ? (
-            <img src={current} alt="" className="h-full w-full object-contain p-2" loading="lazy" />
+            <img src={current} alt="" className="h-full w-full object-cover p-0" loading="lazy" />
           ) : null}
         </div>
         {resolved.length > 1 ? (
-          <div className="flex justify-center gap-1.5 py-2.5">
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
             {resolved.map((_, i) => (
               <button
                 key={i}
@@ -165,7 +166,7 @@ function ProductDetailGallery({ urls, editHref, canEdit }: { urls: string[]; edi
         ) : null}
       </div>
       {resolved.length > 1 ? (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5">
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-3 px-3">
           {resolved.map((src, i) => (
             <button
               key={`${src}-${i}`}
@@ -173,7 +174,7 @@ function ProductDetailGallery({ urls, editHref, canEdit }: { urls: string[]; edi
               onClick={() => setActive(i)}
               className={cn(
                 "h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-colors",
-                i === active ? "border-primary ring-1 ring-primary/30" : "border-border/60 opacity-85 hover:opacity-100",
+                i === active ? "border-primary/70 ring-1 ring-primary/30" : "border-border/60 opacity-85 hover:opacity-100",
               )}
             >
               <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -196,10 +197,14 @@ export default function ProductDetail() {
   const [variantDialogOpen, setVariantDialogOpen] = useState(false);
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [descriptionOverflows, setDescriptionOverflows] = useState(false);
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
 
   const { data: product, isLoading, isError } = useGetProduct(productId, {
     query: { enabled: Number.isFinite(productId) && productId > 0 },
   });
+  const { data: settingsData } = useGetSettings();
+  const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
 
   const hasVariantsProduct = (product?.variantCount ?? 0) > 0;
 
@@ -245,6 +250,30 @@ export default function ProductDetail() {
     }
   };
 
+  const descriptionText = product?.description?.trim() ?? "";
+
+  useEffect(() => {
+    setDescriptionExpanded(false);
+    setDescriptionOverflows(false);
+  }, [productId, descriptionText]);
+
+  useLayoutEffect(() => {
+    const el = descriptionRef.current;
+    if (!el || !descriptionText) {
+      setDescriptionOverflows(false);
+      return;
+    }
+    if (descriptionExpanded) return;
+
+    const measure = () => {
+      setDescriptionOverflows(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [descriptionText, descriptionExpanded, productId]);
+
   if (!Number.isFinite(productId) || productId <= 0) {
     return <Redirect to="/products" />;
   }
@@ -279,9 +308,6 @@ export default function ProductDetail() {
     : variantList.length === 0
       ? true
       : variantList.some((v) => v.isActive);
-  const descriptionText = product.description?.trim() ?? "";
-  const descriptionLong = descriptionText.length > 220;
-
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl">
@@ -299,7 +325,7 @@ export default function ProductDetail() {
             </Button>
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="font-serif text-2xl font-bold tracking-tight text-foreground md:text-[1.75rem]">
+            <h1 className="font-inter text-2xl font-bold tracking-tight text-foreground md:text-[1.75rem]">
               {product.name}
             </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -371,7 +397,7 @@ export default function ProductDetail() {
                 <StatInfoRow
                   icon={TrendingUp}
                   label="GST Rate"
-                  value={`${Number(product.gstPercent).toFixed(2)}%`}
+                  value={`${Number(defaultGstPercent).toFixed(2)}% (Settings)`}
                 />
                 <StatInfoRow icon={BadgeCheck} label="Base SKU" value={product.sku} />
                 <StatInfoRow icon={LayoutGrid} label="Category" value={categoryLine || "—"} />
@@ -385,19 +411,20 @@ export default function ProductDetail() {
             <DetailCard className="p-5 md:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <AlignLeft className="h-4 w-4 text-muted-foreground" aria-hidden />
-                <h2 className="font-serif text-lg font-semibold text-foreground">Description</h2>
+                <h2 className="font-inter text-lg font-semibold text-foreground">Description</h2>
               </div>
               {descriptionText ? (
                 <>
                   <p
+                    ref={descriptionRef}
                     className={cn(
                       "text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap",
-                      !descriptionExpanded && descriptionLong && "line-clamp-4",
+                      !descriptionExpanded && "line-clamp-4",
                     )}
                   >
                     {descriptionText}
                   </p>
-                  {descriptionLong ? (
+                  {descriptionOverflows ? (
                     <button
                       type="button"
                       onClick={() => setDescriptionExpanded((v) => !v)}
@@ -421,7 +448,7 @@ export default function ProductDetail() {
               <DetailCard className="p-5 md:p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <Hexagon className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  <h2 className="font-serif text-lg font-semibold text-foreground">Variables</h2>
+                  <h2 className="font-inter text-lg font-semibold text-foreground">Variables</h2>
                 </div>
                 {jsonToAttrs((product as { attributes?: string | null }).attributes).length > 0 ? (
                   <AttrTags json={(product as { attributes?: string | null }).attributes} />
@@ -480,7 +507,7 @@ export default function ProductDetail() {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
                   <div className="flex items-center gap-2">
                     <Hexagon className="h-4 w-4 text-muted-foreground" aria-hidden />
-                    <h2 className="font-serif text-lg font-semibold text-foreground">Variations</h2>
+                    <h2 className="font-inter text-lg font-semibold text-foreground">Variations</h2>
                     <Badge variant="secondary" className="rounded-md font-normal tabular-nums">
                       {variationCount}
                     </Badge>

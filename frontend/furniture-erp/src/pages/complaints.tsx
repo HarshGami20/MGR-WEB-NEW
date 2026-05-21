@@ -14,10 +14,13 @@ import {
   deleteComplaint,
   updateComplaintStatus,
   uploadComplaintImage,
+  listComplaintAssignableUsers,
   type Complaint,
   type ComplaintKind,
   type ComplaintStatus,
 } from "@/lib/complaint-api";
+import { canUpdateComplaintStatus } from "@/lib/complaint-status-access";
+import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +96,7 @@ export default function ComplaintsPage() {
   const [formSubject, setFormSubject] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formImages, setFormImages] = useState<string[]>([]);
+  const [formAssigneeIds, setFormAssigneeIds] = useState<number[]>([]);
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
@@ -144,6 +148,13 @@ export default function ComplaintsPage() {
     { query: { enabled: activeTab === "purchase_order" && dialogOpen } },
   );
 
+  const { data: assignableUsersData } = useQuery({
+    queryKey: ["complaint-assignable-users", writeBranchId],
+    queryFn: () => listComplaintAssignableUsers(writeBranchId!),
+    enabled: dialogOpen && writeBranchId != null && !partnerUser && can("complaints", "add"),
+  });
+  const assignableUsers = assignableUsersData?.data ?? [];
+
   const complaints = complaintsData?.data ?? [];
 
   const selectedOrder = useMemo(() => {
@@ -189,6 +200,7 @@ export default function ComplaintsPage() {
           subject: formSubject.trim() || null,
           description: formDescription.trim(),
           imageUrls: formImages.length > 0 ? formImages : undefined,
+          assigneeUserIds: formAssigneeIds.length > 0 ? formAssigneeIds : undefined,
         });
       }
       return createComplaint({
@@ -198,6 +210,7 @@ export default function ComplaintsPage() {
         subject: formSubject.trim() || null,
         description: formDescription.trim(),
         imageUrls: formImages.length > 0 ? formImages : undefined,
+        assigneeUserIds: formAssigneeIds.length > 0 ? formAssigneeIds : undefined,
       });
     },
     onSuccess: (c) => {
@@ -217,6 +230,7 @@ export default function ComplaintsPage() {
     setFormSubject("");
     setFormDescription("");
     setFormImages([]);
+    setFormAssigneeIds([]);
   };
 
   const openDetailPage = (c: Complaint) => setLocation(`/complaints/${c.id}`);
@@ -333,7 +347,7 @@ export default function ComplaintsPage() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) =>
-          can("complaints", "edit") ? (
+          can("complaints", "edit") && canUpdateComplaintStatus(user, row.original) ? (
             <Select
               value={row.original.status}
               onValueChange={(val) =>
@@ -371,7 +385,7 @@ export default function ComplaintsPage() {
         ),
       },
     ],
-    [can, statusMut],
+    [can, statusMut, user],
   );
 
   const poColumns = useMemo<ColumnDef<Complaint>[]>(
@@ -434,7 +448,7 @@ export default function ComplaintsPage() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) =>
-          can("complaints", "edit") ? (
+          can("complaints", "edit") && canUpdateComplaintStatus(user, row.original) ? (
             <Select
               value={row.original.status}
               onValueChange={(val) =>
@@ -472,7 +486,7 @@ export default function ComplaintsPage() {
         ),
       },
     ],
-    [can, partnerUser, statusMut],
+    [can, partnerUser, statusMut, user],
   );
 
   const columns = isPoTab ? poColumns : salesColumns;
@@ -704,6 +718,28 @@ export default function ComplaintsPage() {
               <Label>Subject</Label>
               <Input value={formSubject} onChange={(e) => setFormSubject(e.target.value)} placeholder="Short title" />
             </div>
+
+            {!partnerUser && can("complaints", "add") ? (
+              <div className="space-y-2">
+                <Label>Assign to (staff)</Label>
+                <AssigneesMultiSelect
+                  options={assignableUsers.map((u) => ({ id: u.id, name: u.name, mobile: u.mobile }))}
+                  value={formAssigneeIds}
+                  onChange={setFormAssigneeIds}
+                  disabled={writeBranchId == null}
+                  placeholder={
+                    writeBranchId == null
+                      ? "Select a branch in the header first"
+                      : assignableUsers.length === 0
+                        ? "No staff available for this branch"
+                        : "Select staff who will handle this complaint…"
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Only assigned staff and Super Admin can change complaint status.
+                </p>
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <Label>Issue / problem description *</Label>

@@ -4,6 +4,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requireProductsCreateOrUpdate } from "../lib/permissions";
 import { requireProductReadAccess } from "../lib/partner-product-scope";
 import { prisma, toNumber } from "../lib/prisma";
+import { getDefaultGstPercent } from "../lib/default-gst";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
@@ -209,6 +210,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
       imageUrl: d.imageUrl,
     });
 
+    const gstPercent = await getDefaultGstPercent();
     const product = await prisma.$transaction(async (tx) => {
       const p = await tx.product.create({
         data: {
@@ -218,7 +220,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
           imageUrl: images.imageUrl,
           imageUrls: images.imageUrls,
           price: String(d.price),
-          gstPercent: String(d.gstPercent),
+          gstPercent: String(gstPercent),
           stockQty,
           lowStockThreshold: d.lowStockThreshold,
           description: d.description ?? null,
@@ -371,10 +373,12 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
       categoryId: d.categoryId ?? null,
       ...(images != null ? { imageUrl: images.imageUrl, imageUrls: images.imageUrls } : {}),
       price: String(d.price),
-      gstPercent: String(d.gstPercent),
       lowStockThreshold: d.lowStockThreshold,
       description: d.description ?? null,
     };
+    if (d.gstPercent !== undefined) {
+      updateData.gstPercent = String(d.gstPercent);
+    }
     if (d.attributes !== undefined && variantCount === 0) {
       updateData.attributes = d.attributes;
     } else if (variantCount > 0) {

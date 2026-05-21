@@ -258,7 +258,7 @@ async function resolveOrderLineItems(
     const productId = Number(item.productId);
     const product = await db.product.findUnique({ where: { id: productId } });
     if (!product) throw new Error(`Product ${productId} not found`);
-    const gstPercent = isGst ? toNumber(product.gstPercent) : 0;
+    const gstPercent = isGst ? defaultGst : 0;
     const breakdown = isGst
       ? breakdownGstInclusiveLine(enteredUnitPrice, qty, gstPercent)
       : breakdownGstExclusiveLine(enteredUnitPrice, qty, gstPercent);

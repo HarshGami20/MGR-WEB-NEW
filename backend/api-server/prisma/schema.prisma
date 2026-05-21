@@ -108,6 +108,7 @@ model User {
   createdOrders  Order[]       @relation("OrderCreatedBy")
   orderAssignees         OrderAssignee[]
   orderDeliveryAssignees OrderDeliveryAssignee[]
+  complaintAssignees     ComplaintAssignee[]
   createdComplaints     Complaint[]         @relation("ComplaintCreatedBy")
   complaintComments     ComplaintComment[]
   paymentFollowUps      PaymentFollowUp[]   @relation("PaymentFollowUpCreatedBy")
@@ -406,6 +407,7 @@ model Complaint {
   product       Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
   branch        Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
   createdBy     User?              @relation("ComplaintCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignees     ComplaintAssignee[]
   comments      ComplaintComment[]
 
   @@index([orderId])
@@ -426,6 +428,19 @@ model ComplaintComment {
 
   @@index([complaintId])
   @@map("complaint_comments")
+}
+
+/** Staff assigned to handle a complaint and update its status. */
+model ComplaintAssignee {
+  complaintId Int @map("complaint_id")
+  userId      Int @map("user_id")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([complaintId, userId])
+  @@index([userId])
+  @@map("complaint_assignees")
 }
 
 model OrderAssignee {

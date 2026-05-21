@@ -156,7 +156,7 @@ export function LineItemRow({
               form.setValue(`items.${index}.productId`, pid, { shouldDirty: true, shouldValidate: true });
               form.setValue(`items.${index}.variantId`, null, { shouldDirty: true, shouldValidate: true });
               const p = products.find((it) => it.id === pid);
-              form.setValue(`items.${index}.gstPercent`, isGstInvoice ? Number(p?.gstPercent ?? defaultGstPercent) : 0, {
+              form.setValue(`items.${index}.gstPercent`, isGstInvoice ? defaultGstPercent : 0, {
                 shouldDirty: true,
               });
             }}

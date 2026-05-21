@@ -55,7 +55,6 @@ const quickProductSchema = z
       .regex(PRODUCT_SKU_REGEX, "Use letters, numbers, hyphens, underscores, or slashes"),
     inventoryMode: z.enum(["simple", "variants"]),
     price: z.coerce.number().min(0).max(MAX_PRODUCT_PRICE),
-    gstPercent: z.coerce.number().min(0).max(100),
     imageUrl: z.string().max(500).optional(),
     variants: z.array(variantRowSchema),
   })
@@ -117,7 +116,6 @@ export function QuickCustomProductDialog({ open, onOpenChange, onCreated }: Prop
       sku: generateCustomSku(),
       inventoryMode: "simple",
       price: 0,
-      gstPercent: 18,
       imageUrl: "",
       variants: [],
     },
@@ -136,7 +134,6 @@ export function QuickCustomProductDialog({ open, onOpenChange, onCreated }: Prop
       sku: generateCustomSku(),
       inventoryMode: "simple",
       price: 0,
-      gstPercent: 18,
       imageUrl: "",
       variants: [],
     });
@@ -162,7 +159,6 @@ export function QuickCustomProductDialog({ open, onOpenChange, onCreated }: Prop
           categoryId: null,
           imageUrl: data.inventoryMode === "simple" ? (data.imageUrl?.trim() || null) : null,
           price: data.inventoryMode === "variants" ? 0 : data.price,
-          gstPercent: data.gstPercent,
           lowStockThreshold: 10,
           description: null,
           inventoryMode: data.inventoryMode,
@@ -267,19 +263,6 @@ export function QuickCustomProductDialog({ open, onOpenChange, onCreated }: Prop
                         Auto
                       </Button>
                     </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="gstPercent"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>GST (%)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min={0} max={100} step="0.01" {...field} />
-                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

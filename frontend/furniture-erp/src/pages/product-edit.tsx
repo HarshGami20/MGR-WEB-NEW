@@ -3,6 +3,7 @@ import { Link, Redirect, useLocation, useRoute } from "wouter";
 import type { UpdateProductBody, UpdateProductVariantBody } from "@/api-client";
 import {
   useGetProduct,
+  useGetSettings,
   useUpdateProduct,
   useListCategories,
   useListProductVariants,
@@ -14,6 +15,7 @@ import {
   getListProductVariantsQueryKey,
 } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +42,7 @@ import {
   productVariantToDraftRow,
   variantImagesToApi,
   productEditSchema,
+  ProductFormSection,
   MAX_PRODUCT_PRICE,
   type ProductEditFormValues,
 } from "@/pages/products-shared";
@@ -97,6 +100,8 @@ export default function ProductEdit() {
     [variantsData],
   );
 
+  const { data: settingsData } = useGetSettings();
+  const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
   const { data: categoriesData, isFetched: categoriesFetched } = useListCategories();
   const categoryRoots = useMemo(
     () => (Array.isArray(categoriesData) ? (categoriesData as CategoryRoot[]) : []) ?? [],
@@ -119,7 +124,6 @@ export default function ProductEdit() {
       sku: "",
       description: "",
       price: 0,
-      gstPercent: 18,
       lowStockThreshold: 10,
       inventoryMode: "simple",
       imageUrls: [],
@@ -199,7 +203,6 @@ export default function ProductEdit() {
       subCategoryId: preserveCategoryEdits ? current.subCategoryId ?? "" : split.subCategoryId,
       description: product.description || "",
       price: hadServerVariants ? 0 : product.price,
-      gstPercent: product.gstPercent,
       lowStockThreshold: product.lowStockThreshold,
       inventoryMode: mode,
       imageUrls: productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null }),
@@ -249,13 +252,12 @@ export default function ProductEdit() {
       sku: data.sku,
       categoryId: leafId,
       price: data.inventoryMode === "variants" ? 0 : data.price,
-      gstPercent: data.gstPercent,
       lowStockThreshold: data.lowStockThreshold,
       description: (data.description && data.description.trim()) || null,
       imageUrls: data.imageUrls,
       imageUrl: data.imageUrls[0] ?? null,
       attributes: data.inventoryMode === "simple" ? attrsToJson(data.attributes) : null,
-    } as UpdateProductBody;
+    } as unknown as UpdateProductBody;
 
     setIsSaving(true);
     try {
@@ -353,42 +355,55 @@ export default function ProductEdit() {
   const busy = isSaving || updateProduct.isPending;
 
   return (
-    <div className="min-h-[calc(100vh-6rem)] bg-[hsl(0_0%_97%)] -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
-      <div className=" max-w-3xl">
-        <div className="flex min-w-0 items-start gap-3 mb-8">
-          <Link href={`/products/${productId}`}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="mt-0.5 shrink-0 rounded-full"
-              aria-label="Back to product"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <div className="min-w-0 space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Edit product</h1>
-            <p className="text-sm text-muted-foreground">{product.name}</p>
+    <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="mx-auto max-w-6xl space-y-6">
+          <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="flex min-w-0 items-start gap-3">
+              <Link href={`/products/${productId}`}>
+                <Button type="button" variant="ghost" size="icon" className="mt-0.5 shrink-0 rounded-full">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Edit product</h1>
+                  <Badge variant="secondary" className="font-normal">
+                    #{productId}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground truncate" title={product.name}>
+                  {product.name}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link href={`/products/${productId}`}>
+                <Button type="button" variant="outline" className="rounded-xl px-5" disabled={busy}>
+                  Cancel
+                </Button>
+              </Link>
+              <Button type="submit" className="rounded-xl px-6 shadow-sm" disabled={busy}>
+                {busy ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-8">
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-              <p className="text-sm font-semibold text-foreground">Product details</p>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="space-y-6 lg:col-span-8">
+            <ProductFormSection title="Product details" description="Name, category, SKU, and description.">
               <FormField
                 control={form.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="font-semibold">Product name *</FormLabel>
+                    <FormLabel>Product name *</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="e.g. Milano 3-Seater Sofa"
                         maxLength={200}
                         autoComplete="off"
-                        className="h-11 rounded-lg border-border/80 bg-white"
+                        className="rounded-xl"
                         {...field}
                       />
                     </FormControl>
@@ -434,13 +449,13 @@ export default function ProductEdit() {
                 name="sku"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="font-semibold">SKU *</FormLabel>
+                    <FormLabel>SKU *</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="e.g. LR-SOF-001"
                         maxLength={80}
                         autoComplete="off"
-                        className="h-11 rounded-lg border-border/80 bg-white font-mono text-sm"
+                        className="rounded-xl font-mono text-sm"
                         {...field}
                       />
                     </FormControl>
@@ -454,12 +469,12 @@ export default function ProductEdit() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="font-semibold">Description (optional)</FormLabel>
+                    <FormLabel>Description (optional)</FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Brief product description"
                         maxLength={5000}
-                        className="min-h-[100px] rounded-lg border-border/80 bg-white resize-none"
+                        className="min-h-[100px] rounded-xl resize-y"
                         {...field}
                         value={field.value || ""}
                       />
@@ -468,10 +483,9 @@ export default function ProductEdit() {
                   </FormItem>
                 )}
               />
-            </div>
+            </ProductFormSection>
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-              <p className="text-sm font-semibold text-foreground">Inventory type</p>
+            <ProductFormSection title="Inventory type" description="Single SKU or multiple variants.">
               <FormField
                 control={form.control}
                 name="inventoryMode"
@@ -536,119 +550,20 @@ export default function ProductEdit() {
                   </FormItem>
                 )}
               />
-            </div>
+            </ProductFormSection>
 
-            <div className="rounded-xl border border-border/60 bg-white p-5 space-y-2">
-              <p className="text-sm font-semibold text-foreground">Product photos</p>
-              <p className="text-xs text-muted-foreground">Add one or more images. The first photo is the main thumbnail.</p>
-              <FormField
-                control={form.control}
-                name="imageUrls"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <ProductImagesField value={field.value ?? []} onChange={field.onChange} label="Catalog photos" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {inventoryMode === "simple" && (
-              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Product variables</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Size, colour, fabric, and other specs for this single SKU (optional).
-                  </p>
-                </div>
+            {inventoryMode === "simple" ? (
+              <ProductFormSection
+                title="Product variables"
+                description="Size, colour, fabric, and other specs (optional)."
+              >
                 <AttributesEditorBlock control={form.control} namePrefix="attributes" />
-              </div>
-            )}
+              </ProductFormSection>
+            ) : null}
 
-            {inventoryMode === "simple" && (
-              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-                <p className="text-sm font-semibold text-foreground">Pricing</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="price"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Base price (₹)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            min={0}
-                            max={MAX_PRODUCT_PRICE}
-                            className="h-10 rounded-lg"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="gstPercent"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>GST (%)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            min={0}
-                            max={100}
-                            className="h-10 rounded-lg"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="lowStockThreshold"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Low stock threshold</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          step={1}
-                          min={0}
-                          max={999_999_999}
-                          className="h-10 rounded-lg max-w-[200px]"
-                          {...field}
-                        />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">
-                        Quantity updates come from Inventory; this threshold is for alerts.
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            )}
-
-            {inventoryMode === "variants" && (
-              <div className="rounded-xl border border-border/60 bg-white p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Variants</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Edit existing rows or add new ones. Save applies all changes.</p>
-                  </div>
+            {inventoryMode === "variants" ? (
+              <ProductFormSection title="Variants" description="Edit existing rows or add new ones.">
+                <div className="flex justify-end">
                   <Button
                     type="button"
                     variant="outline"
@@ -664,38 +579,6 @@ export default function ProductEdit() {
                     <Plus className="h-4 w-4" />
                     Add variant
                   </Button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 border-b border-border/60 pb-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="gstPercent"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>GST (%)</FormLabel>
-                        <FormControl>
-                          <Input type="number" inputMode="decimal" step="0.01" min={0} max={100} className="h-10 rounded-lg" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="lowStockThreshold"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Product-level threshold (reference)</FormLabel>
-                        <FormControl>
-                          <Input type="number" inputMode="numeric" step={1} min={0} max={999_999_999} className="h-10 rounded-lg" {...field} />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">
-                          Each variant has its own threshold. Quantity updates come from Inventory.
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
 
                 {variantFields.length === 0 ? (
@@ -816,22 +699,126 @@ export default function ProductEdit() {
                     ))}
                   </div>
                 )}
-              </div>
-            )}
+              </ProductFormSection>
+            ) : null}
 
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit" className="h-11 rounded-xl font-semibold" disabled={busy}>
-                {busy ? "Saving…" : "Save changes"}
-              </Button>
-              <Link href={`/products/${productId}`}>
-                <Button type="button" variant="outline" className="h-11 rounded-xl" disabled={busy}>
-                  Cancel
-                </Button>
-              </Link>
             </div>
-          </form>
-        </Form>
-      </div>
+
+            <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
+              <ProductFormSection title="Product photos" description="First image is the main thumbnail.">
+                <FormField
+                  control={form.control}
+                  name="imageUrls"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <ProductImagesField value={field.value ?? []} onChange={field.onChange} label="Catalog photos" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </ProductFormSection>
+
+              {inventoryMode === "simple" ? (
+                <ProductFormSection title="Pricing & stock" description="Base price and low-stock alert level.">
+                  <div className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="price"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Base price (₹)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              min={0}
+                              max={MAX_PRODUCT_PRICE}
+                              className="rounded-xl"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="lowStockThreshold"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Low stock threshold</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              inputMode="numeric"
+                              step={1}
+                              min={0}
+                              max={999_999_999}
+                              className="rounded-xl"
+                              {...field}
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">
+                            Quantity updates come from Inventory.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </ProductFormSection>
+              ) : (
+                <ProductFormSection title="Stock alerts" description="Default threshold for new variants.">
+                  <FormField
+                    control={form.control}
+                    name="lowStockThreshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Product-level threshold</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            step={1}
+                            min={0}
+                            max={999_999_999}
+                            className="rounded-xl"
+                            {...field}
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">Each variant can override this.</p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </ProductFormSection>
+              )}
+
+              <ProductFormSection title="GST" description="Applied on orders and invoices.">
+                <p className="text-sm text-muted-foreground">
+                  Default rate: <span className="font-medium text-foreground tabular-nums">{defaultGstPercent}%</span>
+                  {" "}
+                  (change in Settings)
+                </p>
+              </ProductFormSection>
+            </aside>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Link href={`/products/${productId}`} className="w-fit">
+              <Button type="button" variant="outline" className="w-fit rounded-xl px-6 sm:w-auto" disabled={busy}>
+                Cancel
+              </Button>
+            </Link>
+            <Button type="submit" className="w-full rounded-xl px-8 shadow-sm sm:w-auto" disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 }

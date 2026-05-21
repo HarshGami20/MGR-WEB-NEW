@@ -700,7 +700,7 @@ export default function DeliveriesPage() {
                 <div className="flex flex-wrap flex-1 items-end gap-3">
                   <ListDateRangeFilter
                     context="deliveries"
-                    className="max-w-md "
+                    className="max-w-md bg-white"
                     value={bookedDateRange}
                     onChange={setBookedDateRange}
                     // variant="default"

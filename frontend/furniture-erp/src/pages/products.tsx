@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useListProducts, useDeleteProduct, getListProductsQueryKey, useListProductVariants } from "@/api-client";
+import { useListProducts, useDeleteProduct, useGetSettings, getListProductsQueryKey, useListProductVariants } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +68,8 @@ export default function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { can } = usePermissions();
+  const { data: settingsData } = useGetSettings();
+  const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
 
   const { data: productsData, isLoading } = useListProducts({
     search: search || undefined,
@@ -135,10 +137,10 @@ export default function Products() {
         cell: ({ row }) => formatInr(Number(row.original.price ?? 0)),
       },
       {
-        accessorKey: "gstPercent",
+        id: "gst",
         header: "GST",
         meta: { headerClassName: "text-right", cellClassName: "text-right tabular-nums text-muted-foreground" },
-        cell: ({ row }) => `${Number(row.original.gstPercent ?? 0)}%`,
+        cell: () => `${Number(defaultGstPercent)}%`,
       },
       {
         accessorKey: "stockQty",
@@ -204,82 +206,87 @@ export default function Products() {
         },
       },
     ],
-    [can, deleteProduct],
-  );
-
-  const paginationFooter = (
-    <DataTablePaginationFooter
-      page={page}
-      total={total}
-      limit={limit}
-      onPageChange={setPage}
-      itemLabel="products"
-    />
+    [can, deleteProduct, defaultGstPercent],
   );
 
   return (
-    <div className="min-h-[calc(100vh-6rem)] bg-background -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
-      <div className="mx-auto ">
-        <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
-          <div className="border-b border-border/60 px-6 py-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">Products</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Manage your product catalog and variants</p>
-            </div>
-            {can("products", "add") && (
-              <Link href="/products/new">
-                <Button className="rounded-xl gap-2 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90">
-                  <Plus className="h-4 w-4" />
-                  Add Product
-                </Button>
-              </Link>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-4 px-6 py-4 border-b border-border/60 bg-muted/20">
-            <div className="flex flex-col lg:flex-row flex-wrap gap-4 lg:items-center lg:justify-between">
-              <div className="relative flex-1 min-w-[200px] max-w-[500px]">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                <Input
-                  placeholder="Search products..."
-                  className="h-11 rounded-xl border-border/80 bg-background pl-10"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
-                />
-              </div>
-
-              <div className="flex flex-1 flex-wrap items-center gap-4">
-                <ListDateRangeFilter
-                  context="products"
-                  value={dateRange}
-                  onChange={(next) => {
-                    setDateRange(next);
-                    setPage(1);
-                  }}
-                />
-                <ListCategoryFilter
-                  value={categoryId}
-                  onChange={(next) => {
-                    setCategoryId(next);
-                    setPage(1);
-                  }}
-                />
-
-                <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-background px-4 h-11">
-                  <Switch id="low-stock-only" checked={lowStock} onCheckedChange={(v) => { setLowStock(v); setPage(1); }} />
-                  <Label htmlFor="low-stock-only" className="text-sm font-medium cursor-pointer">
-                    Low Stock Only
-                  </Label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <DataTable columns={columns} data={items} isLoading={isLoading} emptyMessage="No products found." footer={paginationFooter} />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Products</h2>
+          <p className="text-muted-foreground">Manage your product catalog and variants</p>
         </div>
+        {can("products", "add") ? (
+          <Button asChild>
+            <Link href="/products/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
+        <div className="flex flex-1 flex-wrap gap-4 items-center">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search products..."
+              className="pl-8"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <ListDateRangeFilter
+            context="products"
+            value={dateRange}
+            onChange={(next) => {
+              setDateRange(next);
+              setPage(1);
+            }}
+          />
+          <ListCategoryFilter
+            value={categoryId}
+            onChange={(next) => {
+              setCategoryId(next);
+              setPage(1);
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <Switch
+              id="low-stock-only"
+              checked={lowStock}
+              onCheckedChange={(v) => {
+                setLowStock(v);
+                setPage(1);
+              }}
+            />
+            <Label htmlFor="low-stock-only" className="text-sm font-medium cursor-pointer whitespace-nowrap">
+              Low stock only
+            </Label>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-card rounded-lg border shadow-sm">
+        <DataTable
+          columns={columns}
+          data={items}
+          isLoading={isLoading}
+          emptyMessage="No products found."
+          footer={
+            <DataTablePaginationFooter
+              page={page}
+              total={total}
+              limit={limit}
+              onPageChange={setPage}
+              itemLabel="products"
+            />
+          }
+        />
       </div>
     </div>
   );

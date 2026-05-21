@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ListCategoryFilter } from "@/components/list-category-filter";
+import { OrdersExportDialog } from "@/components/orders-export-dialog";
 import { formatInr } from "@/lib/format-currency";
 
 type MonthlyRevenue = {
@@ -173,15 +174,18 @@ export default function ReportsPage() {
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-background -mx-4 -mt-4 px-4 py-8 md:-mx-8 md:px-8 md:py-10">
       <div className="mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Revenue Reports</h2>
           <p className="text-muted-foreground">Revenue, received and due analysis by month/day with category breakdown.</p>
         </div>
-        <Button  onClick={exportMonthlyCsv}>
-          <Download className="mr-2 h-4 w-4" />
-          Export Report
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <OrdersExportDialog categoryId={categoryId} />
+          {/* <Button onClick={exportMonthlyCsv}>
+            <Download className="mr-2 h-4 w-4" />
+            Export revenue CSV
+          </Button> */}
+        </div>
       </div>
         
 

@@ -1,4 +1,5 @@
 import type { ComplaintKind, ComplaintStatus, Prisma } from "@prisma/client";
+import { loadComplaintAssignees } from "./complaint-assignees";
 import { prisma, toNumber } from "./prisma";
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
@@ -165,9 +166,12 @@ export async function enrichComplaint(complaint: {
     }
   }
 
+  const assignees = await loadComplaintAssignees(complaint.id);
+
   return {
     ...complaint,
     imageUrls: safeJsonParse<string[]>(complaint.imageUrls, []),
+    assignees,
     order,
     purchaseOrder,
     product,

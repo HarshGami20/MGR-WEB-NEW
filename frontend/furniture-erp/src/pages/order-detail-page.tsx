@@ -4,6 +4,7 @@ import {
   getListPaymentsQueryKey,
   useCreatePayment,
   useGetOrder,
+  useGetSettings,
   useListPayments,
   useUpdateOrder,
 } from "@/api-client";
@@ -11,11 +12,11 @@ import {
   ArrowLeft,
   Calendar,
   CalendarClock,
-  ChevronLeft,
-  ChevronRight,
   IndianRupee,
   MapPin,
   Package,
+  FileDown,
+  MessageCircle,
   PencilLine,
   Plus,
 } from "lucide-react";
@@ -34,13 +35,22 @@ import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  OrderImageGalleryDialog,
+  type GallerySlide,
+} from "@/components/order-image-gallery-dialog";
 import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
 import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { cn } from "@/lib/utils";
+import {
+  downloadOrderQuotationPdf,
+  openWhatsAppForOrder,
+  type OrderQuotationInput,
+  type QuotationCompanySettings,
+} from "@/lib/order-quotation-pdf";
 
 type OrderLineItemRow = {
   id: number;
@@ -56,6 +66,53 @@ type OrderLineItemRow = {
   totalPrice: number;
   gstPercent?: number;  
 };
+
+function buildQuotationFromOrder(order: {
+  orderNumber: string;
+  createdAt: string;
+  customerName: string;
+  customerMobile?: string | null;
+  customerAddress?: string | null;
+  isGst: boolean;
+  totalAmount: number;
+  paidAmount?: number;
+  items?: OrderLineItemRow[];
+}, orderAny: Record<string, unknown>): OrderQuotationInput {
+  const deliveryDate = orderAny.deliveryDate as string | null | undefined;
+  return {
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    customerName: order.customerName,
+    customerMobile: order.customerMobile,
+    customerAddress: order.customerAddress,
+    customerPincode: (orderAny.customerPincode as string | null) ?? null,
+    customerGstNumber: (orderAny.customerGstNumber as string | null) ?? null,
+    isGst: !!order.isGst,
+    items: (order.items ?? []).map((item) => {
+      const row = item as OrderLineItemRow;
+      return {
+        label: row.isCustom
+          ? row.customName ?? "Custom item"
+          : row.product?.name ?? `Product #${row.productId}`,
+        description: row.description,
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+        totalPrice: Number(item.totalPrice),
+        gstPercent: (item as { gstPercent?: number }).gstPercent,
+        imageUrls: orderLineImageUrls(row),
+      };
+    }),
+    subtotal: Number(orderAny.subtotal ?? 0),
+    taxAmount: Number(orderAny.taxAmount ?? 0),
+    totalAmount: Number(order.totalAmount),
+    paidAmount: Number(order.paidAmount ?? 0),
+    photoComments: (Array.isArray(orderAny.photoComments) ? orderAny.photoComments : []) as Array<{
+      imageUrl?: string;
+      comment?: string;
+    }>,
+    deliveryDate: deliveryDate ? String(deliveryDate).slice(0, 10) : null,
+  };
+}
 
 function orderLineImageUrls(item: OrderLineItemRow): string[] {
   const raw = item.isCustom
@@ -202,6 +259,7 @@ export default function OrderDetailPage() {
   const { data: order, isLoading, isError } = useGetOrder(orderId, {
     query: { enabled: Number.isFinite(orderId) && orderId > 0 },
   });
+  const { data: settingsData } = useGetSettings();
 
   const [status, setStatus] = useState("order_received");
   const [deliveryStatus, setDeliveryStatus] = useState("pending");
@@ -214,15 +272,23 @@ export default function OrderDetailPage() {
   const [showStaffCommentForm, setShowStaffCommentForm] = useState(false);
   const [newDeliveryComment, setNewDeliveryComment] = useState("");
   const [showDeliveryCommentForm, setShowDeliveryCommentForm] = useState(false);
-  const [imageGallery, setImageGallery] = useState<{ images: string[]; index: number } | null>(null);
+  const [imageGallery, setImageGallery] = useState<{ slides: GallerySlide[]; index: number } | null>(null);
+  const [quotationPdfLoading, setQuotationPdfLoading] = useState(false);
 
-  const openImageGallery = (images: string[], startIndex = 0) => {
-    const valid = images.filter((u): u is string => Boolean(u));
+  const openImageGallery = (slides: GallerySlide[], startIndex = 0) => {
+    const valid = slides.filter((s) => Boolean(s.src?.trim()));
     if (!valid.length) return;
     setImageGallery({
-      images: valid,
+      slides: valid,
       index: Math.min(Math.max(0, startIndex), valid.length - 1),
     });
+  };
+
+  const openUrlGallery = (urls: string[], startIndex = 0) => {
+    openImageGallery(
+      urls.filter((u): u is string => Boolean(u)).map((src) => ({ src })),
+      startIndex,
+    );
   };
 
   const refreshOrderDetail = useCallback(
@@ -296,6 +362,12 @@ export default function OrderDetailPage() {
   const payments = paymentsData?.data ?? [];
   const challanImages: string[] = Array.isArray(orderAny.challanImages) ? orderAny.challanImages : [];
   const photoComments = Array.isArray(orderAny.photoComments) ? orderAny.photoComments : [];
+  const sitePhotoSlides: GallerySlide[] = photoComments
+    .filter((p: { imageUrl?: string }) => Boolean(p.imageUrl?.trim()))
+    .map((p: { imageUrl: string; comment?: string }) => ({
+      src: p.imageUrl,
+      caption: p.comment?.trim() || null,
+    }));
   const staffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
   const deliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
   const deliverySlot = DELIVERY_SLOTS_ENABLED
@@ -369,6 +441,39 @@ export default function OrderDetailPage() {
 
   const itemCount = order.items?.length ?? 0;
 
+  const quotationCompany: QuotationCompanySettings = {
+    companyName: settingsData?.companyName,
+    address: settingsData?.address,
+    phone: settingsData?.phone,
+    email: settingsData?.email,
+    gstNumber: settingsData?.gstNumber,
+  };
+
+  const quotationInput = buildQuotationFromOrder(order, orderAny as Record<string, unknown>);
+
+  const handleDownloadQuotation = async () => {
+    setQuotationPdfLoading(true);
+    try {
+      await downloadOrderQuotationPdf(quotationInput, quotationCompany);
+      toast({ title: "Quotation PDF downloaded" });
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Try again.";
+      console.error("Quotation PDF failed:", e);
+      toast({
+        title: "Could not generate quotation",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setQuotationPdfLoading(false);
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    openWhatsAppForOrder(quotationInput, quotationCompany);
+  };
+
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -407,6 +512,27 @@ export default function OrderDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-xl border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+              onClick={handleWhatsAppShare}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              WhatsApp
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-xl"
+              disabled={quotationPdfLoading}
+              onClick={() => void handleDownloadQuotation()}
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              {quotationPdfLoading ? "Generating…" : "Quotation PDF"}
+            </Button>
             <Link href={`/orders/${order.id}/edit`}>
               <Button type="button" variant="outline" size="sm" className="rounded-xl">
                 <PencilLine className="h-4 w-4 mr-2" />
@@ -496,7 +622,12 @@ export default function OrderDetailPage() {
                                     <button
                                       type="button"
                                       className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                      onClick={() => openImageGallery(lineImages, 0)}
+                                      onClick={() =>
+                                        openUrlGallery(
+                                          lineImages,
+                                          0,
+                                        )
+                                      }
                                       aria-label={
                                         lineImages.length > 1
                                           ? `View ${lineImages.length} product images`
@@ -593,7 +724,7 @@ export default function OrderDetailPage() {
                       src={url}
                       alt={`Challan ${index + 1}`}
                       className="h-24 w-24 rounded-md object-cover border cursor-zoom-in hover:opacity-90 transition-opacity"
-                      onClick={() => openImageGallery(challanImages, index)}
+                      onClick={() => openUrlGallery(challanImages, index)}
                     />
                   ))}
                 </div>
@@ -601,19 +732,44 @@ export default function OrderDetailPage() {
               {photoComments.length > 0 ? (
                 <div className="space-y-3 pt-2 border-t border-border/50">
                   <h3 className="text-sm font-medium">Photos and comments</h3>
-                  {photoComments.map((entry: { imageUrl?: string; comment?: string }, index: number) => (
-                    <div key={index} className="rounded-md border p-3 space-y-2">
-                      {entry.imageUrl ? (
-                        <img
-                          src={entry.imageUrl}
-                          alt={`Photo ${index + 1}`}
-                          className="h-24 w-24 rounded-md object-cover border cursor-zoom-in hover:opacity-90 transition-opacity"
-                          onClick={() => openImageGallery([entry.imageUrl!], 0)}
-                        />
-                      ) : null}
-                      <p className="text-sm">{entry.comment || "No comment"}</p>
-                    </div>
-                  ))}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {photoComments.map((entry: { imageUrl?: string; comment?: string }, index: number) => (
+                        <div
+                          key={index}
+                          className="overflow-hidden rounded-lg border border-border/60 bg-muted/10"
+                        >
+                          {entry.imageUrl ? (
+                            <button
+                              type="button"
+                              className="relative block aspect-square w-full cursor-zoom-in overflow-hidden bg-muted/20 hover:opacity-95 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              onClick={() =>
+                                openImageGallery(
+                                  sitePhotoSlides,
+                                  sitePhotoSlides.findIndex((s) => s.src === entry.imageUrl),
+                                )
+                              }
+                              aria-label={`View site photo ${index + 1}`}
+                            >
+                              <img
+                                src={entry.imageUrl}
+                                alt={`Site photo ${index + 1}`}
+                                className="h-full w-full object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <div className="flex aspect-square items-center justify-center bg-muted/20 text-xs text-muted-foreground">
+                              No photo
+                            </div>
+                          )}
+                          <p
+                            className="line-clamp-3 border-t border-border/50 px-2.5 py-2 pb-0 text-xs leading-snug text-foreground/90"
+                            title={entry.comment?.trim() || undefined}
+                          >
+                            {entry.comment?.trim() || "No comment"}
+                          </p>
+                        </div>
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </DetailSection>
@@ -1056,56 +1212,15 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      <Dialog open={!!imageGallery} onOpenChange={(open) => { if (!open) setImageGallery(null); }}>
-        <DialogContent className="max-w-4xl border-none bg-black/90 p-0 shadow-none sm:max-w-4xl">
-          {imageGallery ? (
-            <div className="relative flex min-h-[50vh] items-center justify-center px-12 py-8">
-              {imageGallery.images.length > 1 ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white disabled:opacity-30"
-                    disabled={imageGallery.index <= 0}
-                    onClick={() =>
-                      setImageGallery((g) =>
-                        g && g.index > 0 ? { ...g, index: g.index - 1 } : g,
-                      )
-                    }
-                    aria-label="Previous image"
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white disabled:opacity-30"
-                    disabled={imageGallery.index >= imageGallery.images.length - 1}
-                    onClick={() =>
-                      setImageGallery((g) =>
-                        g && g.index < g.images.length - 1 ? { ...g, index: g.index + 1 } : g,
-                      )
-                    }
-                    aria-label="Next image"
-                  >
-                    <ChevronRight className="h-6 w-6" />
-                  </Button>
-                  <p className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
-                    {imageGallery.index + 1} / {imageGallery.images.length}
-                  </p>
-                </>
-              ) : null}
-              <img
-                src={imageGallery.images[imageGallery.index]}
-                alt={`Image ${imageGallery.index + 1} of ${imageGallery.images.length}`}
-                className="max-h-[80vh] w-full rounded-md object-contain"
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <OrderImageGalleryDialog
+        open={!!imageGallery}
+        slides={imageGallery?.slides ?? []}
+        index={imageGallery?.index ?? 0}
+        onIndexChange={(next) =>
+          setImageGallery((g) => (g ? { ...g, index: next } : g))
+        }
+        onClose={() => setImageGallery(null)}
+      />
     </div>
   );
 }

@@ -58,7 +58,8 @@ export const CreateProductBody = z
     imageUrl: OptionalImageUrl,
     imageUrls: z.array(z.string()).optional(),
     price: z.coerce.number().min(0, "Price must be ≥ 0"),
-    gstPercent: z.coerce.number().min(0).max(100),
+    /** Omitted — server applies Settings → Default GST Rate (%). */
+    gstPercent: z.coerce.number().min(0).max(100).optional(),
     lowStockThreshold: z.coerce.number().int().min(0),
     description: z.union([z.string(), z.null()]).optional(),
     inventoryMode: z.enum(["simple", "variants"]).optional().default("simple"),
@@ -83,7 +84,8 @@ export const UpdateProductBody = z.object({
   imageUrl: OptionalImageUrl,
   imageUrls: z.array(z.string()).optional(),
   price: z.coerce.number().min(0, "Price must be ≥ 0"),
-  gstPercent: z.coerce.number().min(0).max(100),
+  /** Omitted — existing product GST is kept; use Settings default only on create. */
+  gstPercent: z.coerce.number().min(0).max(100).optional(),
   lowStockThreshold: z.coerce.number().int().min(0),
   description: z.union([z.string(), z.null()]).optional(),
   /** When the product has no variants, updates on-hand quantity. */

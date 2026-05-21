@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateProductVariant,
@@ -111,10 +111,6 @@ const baseProductFormFields = {
     .number({ invalid_type_error: "Enter a valid price" })
     .min(0, "Price must be ≥ 0")
     .max(MAX_PRODUCT_PRICE, "Price is too large"),
-  gstPercent: z.coerce
-    .number({ invalid_type_error: "Enter a valid GST %" })
-    .min(0, "GST must be ≥ 0")
-    .max(100, "GST cannot exceed 100%"),
   lowStockThreshold: z.coerce
     .number({ invalid_type_error: "Enter a valid threshold" })
     .int("Use a whole number")
@@ -302,6 +298,27 @@ export const productEditSchema = productEditObjectSchema.superRefine((data, ctx)
 
 export type ProductNewFormValues = z.infer<typeof productNewObjectSchema>;
 export type ProductEditFormValues = z.infer<typeof productEditObjectSchema>;
+
+/** Matches order form section styling (`FormSection` on order-form-page). */
+export function ProductFormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {description ? <p className="text-xs text-muted-foreground mt-0.5">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function productVariantToDraftRow(v: ProductVariant): VariantDraftWithPersistedId {
   return {

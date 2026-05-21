@@ -19,7 +19,7 @@ function formatInrDetail(amount: number) {
     maximumFractionDigits: 2,
   }).format(amount);
 }
-import { getPdfMake } from "@/lib/pdfmake-client";
+import { downloadPdfDocument } from "@/lib/pdfmake-client";
 import { cn } from "@/lib/utils";
 
 type Quotation3Fold = {
@@ -224,8 +224,7 @@ export default function CurtainCalculatorPage() {
       ],
       styles: pdfStyles,
     };
-    const pdfMake = await getPdfMake();
-    pdfMake.createPdf(docDefinition).download("MGR_CASA_3Fold.pdf");
+    await downloadPdfDocument(docDefinition, "MGR_CASA_3Fold.pdf");
   };
 
   const calculateRoman = useCallback(() => {
@@ -300,8 +299,7 @@ export default function CurtainCalculatorPage() {
       ],
       styles: pdfStyles,
     };
-    const pdfMake = await getPdfMake();
-    pdfMake.createPdf(docDefinition).download("MGR_CASA_Roman.pdf");
+    await downloadPdfDocument(docDefinition, "MGR_CASA_Roman.pdf");
   };
 
   return (
