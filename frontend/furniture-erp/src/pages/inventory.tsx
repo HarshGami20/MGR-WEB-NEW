@@ -419,12 +419,12 @@ export default function Inventory() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] overflow-hidden">
+        <DialogContent className="sm:max-w-[425px] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Adjust Inventory</DialogTitle>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="min-w-0 w-full space-y-4 overflow-x-hidden">
               
               <ProductVariantSelect
                 products={productOptions as Product[]}

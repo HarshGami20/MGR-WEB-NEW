@@ -8,6 +8,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Fits inside inventory dialog (425px) and order forms; long labels ellipsis. */
+const PICKER_MAX_W_CLASS = "w-full max-w-[360px]";
+
+function EllipsisText({
+  children,
+  className,
+  title,
+}: {
+  children: string;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <span
+      title={title ?? children}
+      className={cn("block min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap", className)}
+    >
+      {children}
+    </span>
+  );
+}
+
 type Props = {
   products: Product[];
   productId: number;
@@ -61,84 +83,96 @@ export default function ProductVariantSelect({
     : "Select product";
 
   return (
-    <div className="w-full min-w-0 max-w-full space-y-3 overflow-hidden">
-      <div className="space-y-2 min-w-0 max-w-full">
+    <div className={cn(PICKER_MAX_W_CLASS, "min-w-0 overflow-hidden")}>
+      <div className="space-y-2 min-w-0 overflow-hidden">
         <label className="text-sm font-medium leading-none">Product</label>
-        <div className="min-w-0 max-w-full">
-          <Popover open={open} onOpenChange={setOpen} modal={false}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={open}
-                title={selectedProduct ? selectedProductLabel : undefined}
-                className="h-auto min-h-10 w-full min-w-0 max-w-full justify-between gap-2 py-2 font-normal"
-              >
-                <span className="min-w-0 flex-1 truncate text-left">{selectedProductLabel}</span>
-                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="z-[100] w-[var(--radix-popover-trigger-width)] max-w-[min(100vw-2rem,420px)] p-0 pointer-events-auto overflow-hidden"
-              align="start"
-              collisionPadding={12}
-              onOpenAutoFocus={(e) => e.preventDefault()}
+        <Popover open={open} onOpenChange={setOpen} modal={false}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className={cn(
+                PICKER_MAX_W_CLASS,
+                "h-auto min-h-10 min-w-0 overflow-hidden py-2 pl-3 pr-2 font-normal",
+                "flex items-center justify-between gap-2",
+              )}
             >
-              <Command className="max-h-[min(320px,50vh)] overflow-hidden">
-                <CommandInput placeholder="Search product by name or SKU..." />
-                <CommandList
-                  className="max-h-[min(280px,45vh)] overflow-x-hidden overflow-y-auto overscroll-contain"
-                  onWheel={(e) => e.stopPropagation()}
-                >
-                  <CommandEmpty>No product found.</CommandEmpty>
-                  <CommandGroup className="overflow-hidden p-1">
-                    {products.map((p) => (
+              <EllipsisText className="flex-1 text-left">{selectedProductLabel}</EllipsisText>
+              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className={cn(
+              PICKER_MAX_W_CLASS,
+              "z-[100] min-w-0 p-0 overflow-hidden",
+              "max-w-[min(360px,calc(100vw-2rem))]",
+            )}
+            align="start"
+            sideOffset={4}
+            collisionPadding={16}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <Command className="w-full min-w-0 max-w-full overflow-hidden">
+              <CommandInput placeholder="Search product by name or SKU..." className="w-full" />
+              <CommandList
+                className="max-h-[min(260px,40vh)] w-full min-w-0 max-w-full overflow-x-hidden overflow-y-auto overscroll-contain"
+                onWheel={(e) => e.stopPropagation()}
+              >
+                <CommandEmpty>No product found.</CommandEmpty>
+                <CommandGroup className="w-full min-w-0 max-w-full overflow-hidden p-1">
+                  {products.map((p) => {
+                    const rowTitle = `${p.name} (${p.sku})`;
+                    return (
                       <CommandItem
                         key={p.id}
                         value={`${p.name} ${p.sku}`}
                         keywords={[p.name, p.sku, String(p.id)]}
-                        title={`${p.name} (${p.sku})`}
-                        className="min-w-0 max-w-full overflow-hidden"
+                        title={rowTitle}
+                        className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2"
                         onSelect={() => applyProduct(p.id)}
                         onMouseDown={(e) => e.preventDefault()}
                       >
-                        <Check className={cn("mr-2 h-4 w-4 shrink-0", Number(productId) === p.id ? "opacity-100" : "opacity-0")} />
+                        <Check
+                          className={cn(
+                            "h-4 w-4 shrink-0",
+                            Number(productId) === p.id ? "opacity-100" : "opacity-0",
+                          )}
+                        />
                         <div className="min-w-0 flex-1 overflow-hidden">
-                          <div className="truncate">{p.name}</div>
-                          <div className="truncate text-xs text-muted-foreground font-mono">{p.sku}</div>
+                          <EllipsisText>{p.name}</EllipsisText>
+                          <EllipsisText className="text-xs text-muted-foreground font-mono">{p.sku}</EllipsisText>
                         </div>
                       </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {hasVariants ? (
-        <div className="space-y-2 min-w-0 max-w-full">
+        <div className={cn("mt-3 space-y-2 min-w-0 overflow-hidden", PICKER_MAX_W_CLASS)}>
           <label className="text-sm font-medium leading-none">Variant</label>
           <Select
             value={variantId != null ? String(variantId) : ""}
             onValueChange={(val) => applyVariant(val ? parseInt(val, 10) : null)}
           >
-            <SelectTrigger className="w-full min-w-0 max-w-full">
-              <SelectValue
-                className="truncate"
-                placeholder={variantsLoading ? "Loading variants..." : "Select variant"}
-              />
+            <SelectTrigger className={cn(PICKER_MAX_W_CLASS, "min-w-0 overflow-hidden [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate")}>
+              <SelectValue placeholder={variantsLoading ? "Loading variants..." : "Select variant"} />
             </SelectTrigger>
-            <SelectContent className="max-w-[min(100vw-2rem,420px)]">
-              {variants.map((v: any) => (
-                <SelectItem key={v.id} value={String(v.id)} className="min-w-0">
-                  <span className="block truncate">
-                    {v.name} ({v.sku}) · ₹{Number(v.price ?? selectedProduct?.price ?? 0).toLocaleString("en-IN")}
-                  </span>
-                </SelectItem>
-              ))}
+            <SelectContent className={cn(PICKER_MAX_W_CLASS, "max-w-[min(360px,calc(100vw-2rem))]")}>
+              {variants.map((v) => {
+                const label = `${v.name} (${v.sku}) · ₹${Number(v.price ?? selectedProduct?.price ?? 0).toLocaleString("en-IN")}`;
+                return (
+                  <SelectItem key={v.id} value={String(v.id)} title={label} className="min-w-0 max-w-full">
+                    <EllipsisText>{label}</EllipsisText>
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -146,4 +180,3 @@ export default function ProductVariantSelect({
     </div>
   );
 }
-
