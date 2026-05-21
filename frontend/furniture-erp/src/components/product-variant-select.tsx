@@ -56,30 +56,57 @@ export default function ProductVariantSelect({
     onPriceChange(Number(selectedVariant?.price ?? selectedProduct?.price ?? 0));
   };
 
+  const selectedProductLabel = selectedProduct
+    ? `${selectedProduct.name} (${selectedProduct.sku})`
+    : "Select product";
+
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
+    <div className="w-full min-w-0 max-w-full space-y-3 overflow-hidden">
+      <div className="space-y-2 min-w-0 max-w-full">
         <label className="text-sm font-medium leading-none">Product</label>
-        <div>
-          <Popover open={open} onOpenChange={setOpen}>
+        <div className="min-w-0 max-w-full">
+          <Popover open={open} onOpenChange={setOpen} modal={false}>
             <PopoverTrigger asChild>
-              <Button type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
-                {selectedProduct ? `${selectedProduct.name} (${selectedProduct.sku})` : "Select product"}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={open}
+                title={selectedProduct ? selectedProductLabel : undefined}
+                className="h-auto min-h-10 w-full min-w-0 max-w-full justify-between gap-2 py-2 font-normal"
+              >
+                <span className="min-w-0 flex-1 truncate text-left">{selectedProductLabel}</span>
+                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[420px] p-0" align="start">
-              <Command>
+            <PopoverContent
+              className="z-[100] w-[var(--radix-popover-trigger-width)] max-w-[min(100vw-2rem,420px)] p-0 pointer-events-auto overflow-hidden"
+              align="start"
+              collisionPadding={12}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <Command className="max-h-[min(320px,50vh)] overflow-hidden">
                 <CommandInput placeholder="Search product by name or SKU..." />
-                <CommandList>
+                <CommandList
+                  className="max-h-[min(280px,45vh)] overflow-x-hidden overflow-y-auto overscroll-contain"
+                  onWheel={(e) => e.stopPropagation()}
+                >
                   <CommandEmpty>No product found.</CommandEmpty>
-                  <CommandGroup>
+                  <CommandGroup className="overflow-hidden p-1">
                     {products.map((p) => (
-                      <CommandItem key={p.id} value={`${p.name} ${p.sku}`} onSelect={() => applyProduct(p.id)}>
-                        <Check className={cn("mr-2 h-4 w-4", Number(productId) === p.id ? "opacity-100" : "opacity-0")} />
-                        <div >
-                        <div className="truncate">{p.name}</div>
-                        <div className="ml-0 text-xs text-muted-foreground font-mono">{p.sku}</div>
+                      <CommandItem
+                        key={p.id}
+                        value={`${p.name} ${p.sku}`}
+                        keywords={[p.name, p.sku, String(p.id)]}
+                        title={`${p.name} (${p.sku})`}
+                        className="min-w-0 max-w-full overflow-hidden"
+                        onSelect={() => applyProduct(p.id)}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        <Check className={cn("mr-2 h-4 w-4 shrink-0", Number(productId) === p.id ? "opacity-100" : "opacity-0")} />
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <div className="truncate">{p.name}</div>
+                          <div className="truncate text-xs text-muted-foreground font-mono">{p.sku}</div>
                         </div>
                       </CommandItem>
                     ))}
@@ -92,19 +119,24 @@ export default function ProductVariantSelect({
       </div>
 
       {hasVariants ? (
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0 max-w-full">
           <label className="text-sm font-medium leading-none">Variant</label>
           <Select
             value={variantId != null ? String(variantId) : ""}
             onValueChange={(val) => applyVariant(val ? parseInt(val, 10) : null)}
           >
-            <SelectTrigger>
-              <SelectValue placeholder={variantsLoading ? "Loading variants..." : "Select variant"} />
+            <SelectTrigger className="w-full min-w-0 max-w-full">
+              <SelectValue
+                className="truncate"
+                placeholder={variantsLoading ? "Loading variants..." : "Select variant"}
+              />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-w-[min(100vw-2rem,420px)]">
               {variants.map((v: any) => (
-                <SelectItem key={v.id} value={String(v.id)}>
-                  {v.name} ({v.sku}) - Rs {Number(v.price ?? selectedProduct?.price ?? 0)}
+                <SelectItem key={v.id} value={String(v.id)} className="min-w-0">
+                  <span className="block truncate">
+                    {v.name} ({v.sku}) · ₹{Number(v.price ?? selectedProduct?.price ?? 0).toLocaleString("en-IN")}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>

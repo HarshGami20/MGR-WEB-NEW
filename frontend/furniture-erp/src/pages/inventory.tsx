@@ -19,9 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw, ChevronsUpDown, Check } from "lucide-react";
+import ProductVariantSelect from "@/components/product-variant-select";
+import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw } from "lucide-react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -46,7 +45,6 @@ type AdjustFormValues = z.infer<typeof adjustSchema>;
 export default function Inventory() {
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [filterType, setFilterType] = useState<"all" | "in" | "out" | "adjustment">("all");
   const [filterSource, setFilterSource] = useState<"all" | "manual" | "order" | "product" | "variant" | "other">("all");
   const [logDateRange, setLogDateRange] = useState<DateRangeValue>({});
@@ -106,9 +104,9 @@ export default function Inventory() {
   });
 
   const selectedProductId = Number(form.watch("productId") ?? 0);
-  const selectedVariantId = Number(form.watch("variantId") ?? 0);
+  const selectedVariantId = form.watch("variantId");
 
-  const { data: variantsData, isLoading: variantsLoading } = useListProductVariants(
+  const { data: variantsData } = useListProductVariants(
     selectedProductId > 0 ? selectedProductId : (undefined as any),
     { query: { enabled: selectedProductId > 0 } }
   );
@@ -421,104 +419,36 @@ export default function Inventory() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Adjust Inventory</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               
-              <FormField
-                control={form.control}
-                name="productId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Product</FormLabel>
-                    <FormControl>
-                      <Popover open={productPickerOpen} onOpenChange={setProductPickerOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={productPickerOpen}
-                            className="w-full justify-between font-normal"
-                          >
-                            {field.value && field.value > 0
-                              ? (() => {
-                                  const selected = productOptions.find((p) => p.id === Number(field.value));
-                                  return selected ? `${selected.name} (${selected.sku})` : "Select product";
-                                })()
-                              : "Select product"}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[360px] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search product by name or SKU..." />
-                            <CommandList>
-                              <CommandEmpty>No product found.</CommandEmpty>
-                              <CommandGroup>
-                                {productOptions.map((p) => (
-                                  <CommandItem
-                                    key={p.id}
-                                    value={`${p.name} ${p.sku}`}
-                                    onSelect={() => {
-                                      field.onChange(p.id);
-                                      form.setValue("variantId", null);
-                                      setProductPickerOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        Number(field.value) === p.id ? "opacity-100" : "opacity-0",
-                                      )}
-                                    />
-                                    <span className="truncate">{p.name}</span>
-                                    <span className="ml-2 text-xs text-muted-foreground font-mono">{p.sku}</span>
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+              <ProductVariantSelect
+                products={productOptions as Product[]}
+                productId={selectedProductId}
+                variantId={selectedVariantId}
+                onProductChange={(pid) => {
+                  form.setValue("productId", pid, { shouldDirty: true, shouldValidate: true });
+                  form.setValue("variantId", null, { shouldDirty: true, shouldValidate: true });
+                }}
+                onVariantChange={(vid) =>
+                  form.setValue("variantId", vid, { shouldDirty: true, shouldValidate: true })
+                }
+                onPriceChange={() => {}}
               />
-
-              {hasVariants && (
-                <FormField
-                  control={form.control}
-                  name="variantId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Variant</FormLabel>
-                      <Select
-                        value={field.value != null ? String(field.value) : ""}
-                        onValueChange={(val) => field.onChange(val ? parseInt(val, 10) : null)}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={variantsLoading ? "Loading variants..." : "Select variant"} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {variants.map((v: any) => (
-                            <SelectItem key={v.id} value={String(v.id)}>
-                              {v.name} ({v.sku}) · Stock {v.stockQty}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+              {form.formState.errors.productId?.message ? (
+                <p className="text-sm font-medium text-destructive">
+                  {form.formState.errors.productId.message}
+                </p>
+              ) : null}
+              {form.formState.errors.variantId?.message ? (
+                <p className="text-sm font-medium text-destructive">
+                  {form.formState.errors.variantId.message}
+                </p>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
