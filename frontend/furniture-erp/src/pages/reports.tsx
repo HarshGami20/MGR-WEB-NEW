@@ -65,6 +65,21 @@ type RevenueSummaryResponse = {
   categoryWise: CategoryRevenue[];
 };
 
+/** e.g. 2026-05-20 → 20 May 2026 (en-IN) */
+function formatReportDateYmd(ymd: string): string {
+  try {
+    const raw = String(ymd).trim();
+    const d = raw.includes("T") ? new Date(raw) : new Date(`${raw.slice(0, 10)}T00:00:00`);
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(d);
+  } catch {
+    return ymd;
+  }
+}
+
 function toCsvLine(values: unknown[]): string {
   return values.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",");
 }
@@ -144,7 +159,14 @@ export default function ReportsPage() {
       downloadCsv(
         `revenue-daily-${selectedYear}-${selectedMonth.padStart(2, "0")}.csv`,
         ["Date", "Day", "Revenue", "Received", "Due", "Orders"],
-        (data?.daily ?? []).map((d) => [d.date, d.day, d.revenue.toFixed(2), d.received.toFixed(2), d.due.toFixed(2), d.orders]),
+        (data?.daily ?? []).map((d) => [
+          formatReportDateYmd(d.date),
+          d.day,
+          d.revenue.toFixed(2),
+          d.received.toFixed(2),
+          d.due.toFixed(2),
+          d.orders,
+        ]),
       );
       return;
     }
@@ -393,7 +415,9 @@ export default function ReportsPage() {
                   {dailyMode
                     ? (data.daily ?? []).map((d) => (
                         <TableRow key={d.date}>
-                          <TableCell className="font-medium whitespace-nowrap">{d.date}</TableCell>
+                          <TableCell className="font-medium whitespace-nowrap">
+                            {formatReportDateYmd(d.date)}
+                          </TableCell>
                           <TableCell>{d.day}</TableCell>
                           <TableCell className="text-right font-medium">{formatInr(d.revenue)}</TableCell>
                           <TableCell className="text-right text-green-700 dark:text-green-400">{formatInr(d.received)}</TableCell>

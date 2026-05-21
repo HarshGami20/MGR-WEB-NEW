@@ -107,6 +107,7 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/inventory": "inventory",
   "/orders": "orders",
   "/deliveries": "deliveries",
+  "/drivers": "deliveries",
   "/invoices": "invoices",
   "/payments": "payments",
   "/reports": "reports",

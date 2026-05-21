@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { format, addDays } from "date-fns";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useListBranches, useListOrders, type Branch } from "@/api-client";
@@ -62,7 +62,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GitBranch, Plus, Pencil, Trash2 } from "lucide-react";
+import { listDrivers } from "@/lib/driver-api";
+import { GitBranch, Plus, Pencil, Trash2, Truck, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Match backend: JS getUTCDay() — 0 Sun … 6 Sat */
@@ -285,6 +286,17 @@ export default function DeliveriesPage() {
     { query: { enabled: writeBranchId != null && canViewOrders } },
   );
   const deliveryOrders = (ordersData?.data ?? []) as DeliveryOrderRow[];
+
+  const { data: driversData } = useQuery({
+    queryKey: ["drivers", writeBranchId],
+    queryFn: () =>
+      listDrivers({ branchId: writeBranchId!, limit: 200, isActive: true }),
+    enabled: writeBranchId != null && can("deliveries", "view"),
+  });
+  const activeDrivers = useMemo(
+    () => (driversData?.data ?? []).map((d) => ({ id: d.id, name: d.name })),
+    [driversData?.data],
+  );
   const todaySlotCapacity = rows
     .filter((s) => slotYmd(s.slotDate) === todayYmd)
     .reduce((sum, s) => sum + s.maxOrders, 0);
@@ -653,17 +665,17 @@ export default function DeliveriesPage() {
     <div className="space-y-6 p-1">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Delivery slots</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Delivery Management</h2>
           <p className="text-muted-foreground text-sm max-w-2xl">
             Manage time windows, capacity, and optional pincode rules for this branch.
           </p>
         </div>
-        {can("deliveries", "add") ? (
+        {/* {can("deliveries", "add") ? (
           <Button onClick={() => openAddSlots("single")}>
             <Plus className="mr-2 h-4 w-4" />
             Add slot
           </Button>
-        ) : null}
+        ) : null} */}
       </div>
     {/* 
       <DeliveryProgressKpi
@@ -675,6 +687,7 @@ export default function DeliveriesPage() {
       <Tabs defaultValue="booked" className="space-y-4">
         <TabsList>
           <TabsTrigger value="booked">Booked deliveries</TabsTrigger>
+          <TabsTrigger value="drivers">Drivers</TabsTrigger>
           {DELIVERY_SLOTS_ENABLED ? (
             <TabsTrigger value="slots">Delivery slots</TabsTrigger>
           ) : null}
@@ -735,7 +748,77 @@ export default function DeliveriesPage() {
                   toYmd={bookedRange.toYmd}
                   loading={ordersLoading}
                   canUpdateStatus={canUpdateDeliveryForOrder}
+                  drivers={activeDrivers}
+                  canAssignDriver={can("deliveries", "edit")}
                 />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="drivers">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  Drivers
+                </CardTitle>
+                <CardDescription>
+                  Assign drivers on booked deliveries. Open a driver to see all deliveries and record payments.
+                </CardDescription>
+              </div>
+              {can("deliveries", "add") ? (
+                <Link href="/drivers">
+                  <Button variant="outline" size="sm" className="rounded-xl">
+                    Manage drivers
+                  </Button>
+                </Link>
+              ) : null}
+            </CardHeader>
+            <CardContent>
+              {(driversData?.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  No drivers yet.{" "}
+                  {can("deliveries", "add") ? (
+                    <Link href="/drivers" className="text-primary hover:underline">
+                      Add a driver
+                    </Link>
+                  ) : null}
+                </p>
+              ) : (
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Driver</TableHead>
+                        <TableHead>Mobile</TableHead>
+                        <TableHead className="text-right">Deliveries</TableHead>
+                        <TableHead className="text-right">Payments</TableHead>
+                        <TableHead className="w-[60px]" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(driversData?.data ?? []).map((d) => (
+                        <TableRow key={d.id}>
+                          <TableCell className="font-medium">{d.name}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {d.mobile || "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{d.deliveryCount}</TableCell>
+                          <TableCell className="text-right tabular-nums">{d.paymentCount}</TableCell>
+                          <TableCell className="text-right">
+                            <Link href={`/drivers/${d.id}`}>
+                              <Button variant="ghost" size="icon" aria-label={`View ${d.name}`}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -745,7 +828,7 @@ export default function DeliveriesPage() {
         <TabsContent value="slots">
           <Card>
             <CardHeader>
-              <CardTitle>Delivery slots</CardTitle>
+              <CardTitle>Delivery Management</CardTitle>
               <CardDescription>
                 Manage time windows, capacity, and optional pincode rules for this branch.
                 {/* {range.from} → {range.to} · Branch #{writeBranchId}

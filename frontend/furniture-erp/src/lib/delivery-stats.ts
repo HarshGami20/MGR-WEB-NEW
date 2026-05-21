@@ -6,6 +6,9 @@ export type DeliveryOrderRow = {
   status: string;
   deliveryStatus?: string | null;
   deliveryDate?: string | null;
+  deliveryCharge?: number;
+  driver?: { id: number; name: string; mobile?: string | null } | null;
+  driverId?: number | null;
   deliveryAssignees?: Array<{ id: number; name?: string; mobile?: string }>;
   deliverySlotId?: number | null;
   deliverySlot?: {

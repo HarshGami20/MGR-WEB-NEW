@@ -78,12 +78,13 @@ const staffNavSections: StaffSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
-      { label: "Complaints", href: "/complaints", icon: Headphones },
-      { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
       { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
       { label: "Products", href: "/products", icon: Package },
-      // { label: "Categories", href: "/categories", icon: Tags },
       { label: "Inventory", href: "/inventory", icon: Archive },
+      { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
+      { label: "Drivers", href: "/drivers", icon: Truck },
+      // { label: "Categories", href: "/categories", icon: Tags },
+      { label: "Complaints", href: "/complaints", icon: Headphones },
     ],
   },
 

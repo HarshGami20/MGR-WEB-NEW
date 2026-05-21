@@ -41,6 +41,7 @@ import {
   loadDeliveryAssigneesForOrder,
   replaceOrderDeliveryAssignees,
 } from "../lib/order-delivery-assignees";
+import { parseDeliveryCharge, resolveDriverIdForOrder } from "../lib/drivers";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -57,6 +58,7 @@ const ORDER_STATUSES = new Set([
 const PatchOrderDeliveryBody = z.object({
   deliveryStatus: z.enum(["pending", "out_for_delivery", "delivered"]).optional(),
   deliverySlotId: z.union([z.number().int().positive(), z.null()]).optional(),
+  driverId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
 });
 
 /** Out for delivery only when main order is ready_to_ship; Delivered only after Out for delivery. */
@@ -345,6 +347,15 @@ async function enrichOrder(order: any) {
     if (ds) deliverySlot = ds;
   }
   const deliveryAssignees = await loadDeliveryAssigneesForOrder(order.id);
+  const eo = order as { driverId?: number | null; deliveryCharge?: unknown };
+  let driver: { id: number; name: string; mobile: string | null; vehicleInfo: string | null } | null = null;
+  if (eo.driverId) {
+    const d = await prisma.driver.findUnique({
+      where: { id: eo.driverId },
+      select: { id: true, name: true, mobile: true, vehicleInfo: true },
+    });
+    if (d) driver = d;
+  }
   return {
     ...order,
     status: normalizeMainOrderStatus(order.status ?? "order_received"),
@@ -352,6 +363,8 @@ async function enrichOrder(order: any) {
     deliveryStatus: normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus),
     advanceAmount: toNumber(order.advanceAmount ?? 0),
     deliveryDate: order.deliveryDate ?? null,
+    deliveryCharge: toNumber((order as { deliveryCharge?: unknown }).deliveryCharge ?? 0),
+    driver,
     addressLat: order.addressLat != null ? toNumber(order.addressLat) : null,
     addressLng: order.addressLng != null ? toNumber(order.addressLng) : null,
     subtotal: toNumber(order.subtotal),
@@ -591,7 +604,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     taxAmount += itemTax;
   }
 
-  const totalAmount = subtotal + taxAmount;
+  const deliveryCharge = parseDeliveryCharge(orderData.deliveryCharge);
+  const totalAmount = subtotal + taxAmount + deliveryCharge;
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
   const requestedStatusRaw = typeof orderData.status === "string" ? orderData.status : "order_received";
@@ -611,9 +625,11 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     ? normalizeAssigneeUserIds(inputDeliveryAssigneeUserIds)
     : [];
 
+  let resolvedDriverId: number | null = null;
   try {
     await assertActiveUserIdsExist(assigneeIdsFromBody);
     await assertActiveUserIdsExist(deliveryAssigneeIdsFromBody);
+    resolvedDriverId = await resolveDriverIdForOrder(orderData.driverId, branchId);
   } catch (e: unknown) {
     res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
     return;
@@ -665,8 +681,10 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           orderNumber,
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
+          deliveryCharge: String(deliveryCharge),
           totalAmount: String(totalAmount),
           paidAmount: String(safeAdvanceAmount),
+          driverId: resolvedDriverId,
           challanImages: JSON.stringify(Array.isArray(orderData.challanImages) ? orderData.challanImages : []),
           photoComments: JSON.stringify(Array.isArray(orderData.photoComments) ? orderData.photoComments : []),
           staffComments: JSON.stringify(Array.isArray(orderData.staffComments) ? orderData.staffComments : []),
@@ -901,7 +919,11 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     taxAmount += itemTax;
   }
 
-  const totalAmount = subtotal + taxAmount;
+  const nextDeliveryCharge =
+    payload.deliveryCharge !== undefined
+      ? parseDeliveryCharge(payload.deliveryCharge)
+      : toNumber((existingOrder as { deliveryCharge?: unknown }).deliveryCharge ?? 0);
+  const totalAmount = subtotal + taxAmount + nextDeliveryCharge;
   const currentPaidAmount = toNumber(existingOrder.paidAmount);
   const paymentStatus = normalizePaymentStatus(totalAmount, currentPaidAmount, payload.paymentStatus);
 
@@ -916,6 +938,16 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     nextQtyByProduct.set(item.productId, (nextQtyByProduct.get(item.productId) ?? 0) + item.quantity);
   }
   const productIds = new Set<number>([...previousQtyByProduct.keys(), ...nextQtyByProduct.keys()]);
+
+  let nextDriverId: number | null = (existingOrder as { driverId?: number | null }).driverId ?? null;
+  if (payload.driverId !== undefined) {
+    try {
+      nextDriverId = await resolveDriverIdForOrder(payload.driverId, nextOrderBranchId);
+    } catch (e: unknown) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+  }
 
   let order;
   try {
@@ -985,6 +1017,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         assigneeUserIds: payloadAssigneeUserIds,
         deliveryAssigneeUserIds: payloadDeliveryAssigneeUserIds,
         assignedToId: payloadAssignedToIdField,
+        driverId: _payloadDriverId,
+        deliveryCharge: _payloadDeliveryCharge,
         ...orderFields
       } = payload;
       const eo = existingOrder as any;
@@ -1124,7 +1158,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           paymentStatus,
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
+          deliveryCharge: String(nextDeliveryCharge),
           totalAmount: String(totalAmount),
+          ...(payload.driverId !== undefined ? { driverId: nextDriverId } : {}),
           challanImages: JSON.stringify(normalizedChallanImages),
           photoComments: JSON.stringify(normalizedPhotoComments),
           staffComments: JSON.stringify(normalizedStaffComments),
@@ -1262,11 +1298,12 @@ router.patch(
     }
     const wantsStatus = parsed.data.deliveryStatus !== undefined;
     const wantsSlot = DELIVERY_SLOTS_ENABLED && parsed.data.deliverySlotId !== undefined;
-    if (!wantsStatus && !wantsSlot) {
+    const wantsDriver = parsed.data.driverId !== undefined;
+    if (!wantsStatus && !wantsSlot && !wantsDriver) {
       res.status(400).json({
         error: DELIVERY_SLOTS_ENABLED
-          ? "Provide deliveryStatus and/or deliverySlotId"
-          : "Provide deliveryStatus",
+          ? "Provide deliveryStatus, deliverySlotId, and/or driverId"
+          : "Provide deliveryStatus and/or driverId",
       });
       return;
     }
@@ -1303,6 +1340,16 @@ router.patch(
     const eo = existing as any;
     const deliveryDate = existing.deliveryDate;
     const pincode = eo.customerPincode ?? null;
+
+    let nextDriverId: number | null = eo.driverId ?? null;
+    if (wantsDriver) {
+      try {
+        nextDriverId = await resolveDriverIdForOrder(parsed.data.driverId, branchId);
+      } catch (e: unknown) {
+        res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+        return;
+      }
+    }
 
     try {
       const updated = await prisma.$transaction(async (tx) => {
@@ -1343,6 +1390,7 @@ router.patch(
               ? { deliverySlotId: nextSlotId }
               : {}),
             ...(parsed.data.deliveryStatus !== undefined ? { deliveryStatus: nextDel } : {}),
+            ...(wantsDriver ? { driverId: nextDriverId } : {}),
           },
         });
       });

@@ -39,6 +39,8 @@ import ReportsPage from "@/pages/reports";
 import CurtainCalculatorPage from "@/pages/curtain-calculator";
 import NotificationsPage from "@/pages/notifications";
 import DeliveriesPage from "@/pages/deliveries";
+import DriversPage from "@/pages/drivers";
+import DriverDetailPage from "@/pages/driver-detail-page";
 import ComplaintsPage from "@/pages/complaints";
 import ComplaintDetailPage from "@/pages/complaint-detail-page";
 
@@ -155,6 +157,12 @@ function Router() {
       </Route>
       <Route path="/deliveries">
         <ProtectedRoute viewModule="deliveries" component={DeliveriesPage} />
+      </Route>
+      <Route path="/drivers">
+        <ProtectedRoute viewModule="deliveries" component={DriversPage} />
+      </Route>
+      <Route path="/drivers/:id">
+        <ProtectedRoute viewModule="deliveries" component={DriverDetailPage} />
       </Route>
       <Route path="/complaints">
         <ProtectedRoute viewModule="complaints" component={ComplaintsPage} />

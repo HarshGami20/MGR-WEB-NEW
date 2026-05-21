@@ -39,6 +39,8 @@ export function DeliveryScheduleList({
   toYmd,
   loading,
   canUpdateStatus = true,
+  drivers = [],
+  canAssignDriver = true,
 }: {
   orders: DeliveryOrderRow[];
   slots?: DeliverySlotRow[];
@@ -49,6 +51,8 @@ export function DeliveryScheduleList({
   loading?: boolean;
   /** When false or a function returns false, delivery status is read-only for that row. */
   canUpdateStatus?: boolean | ((order: DeliveryOrderRow) => boolean);
+  drivers?: Array<{ id: number; name: string }>;
+  canAssignDriver?: boolean;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -78,12 +82,20 @@ export function DeliveryScheduleList({
   );
 
   const patchDelivery = useMutation({
-    mutationFn: (vars: { orderId: number; deliveryStatus: DeliveryStatusValue }) =>
-      patchOrderDelivery(vars.orderId, branchId, { deliveryStatus: vars.deliveryStatus }),
+    mutationFn: (vars: {
+      orderId: number;
+      deliveryStatus?: DeliveryStatusValue;
+      driverId?: number | null;
+    }) =>
+      patchOrderDelivery(vars.orderId, branchId, {
+        ...(vars.deliveryStatus !== undefined ? { deliveryStatus: vars.deliveryStatus } : {}),
+        ...(vars.driverId !== undefined ? { driverId: vars.driverId } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
       queryClient.invalidateQueries({ queryKey: ["deliverySlots"] });
-      toast({ title: "Delivery status updated" });
+      queryClient.invalidateQueries({ queryKey: ["drivers"] });
+      toast({ title: "Delivery updated" });
     },
     onError: (e: Error) =>
       toast({ title: "Delivery update failed", description: e.message, variant: "destructive" }),
@@ -111,6 +123,7 @@ export function DeliveryScheduleList({
     const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === order.id;
     const canUpdate =
       typeof canUpdateStatus === "function" ? canUpdateStatus(order) : canUpdateStatus;
+    const driverId = order.driver?.id ?? order.driverId ?? null;
 
     return (
       <li
@@ -125,9 +138,40 @@ export function DeliveryScheduleList({
           {order.customerMobile ? (
             <p className="text-xs text-muted-foreground mt-0.5">{order.customerMobile}</p>
           ) : null}
+          {(order.deliveryCharge ?? 0) > 0 ? (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Delivery charge: ₹{Number(order.deliveryCharge).toLocaleString()}
+            </p>
+          ) : null}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex  items-center gap-2 shrink-0">
+          {canAssignDriver && drivers.length > 0 ? (
+            <Select
+              value={driverId != null ? String(driverId) : "none"}
+              disabled={rowPending}
+              onValueChange={(val) =>
+                patchDelivery.mutate({
+                  orderId: order.id,
+                  driverId: val === "none" ? null : parseInt(val, 10),
+                })
+              }
+            >
+              <SelectTrigger className="h-8 min-w-[130px] text-xs">
+                <SelectValue placeholder="Assign driver" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No driver</SelectItem>
+                {drivers.map((d) => (
+                  <SelectItem key={d.id} value={String(d.id)}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : order.driver?.name ? (
+            <span className="text-xs text-muted-foreground px-2">{order.driver.name}</span>
+          ) : null}
           {canUpdate ? (
             <Select
               value={del}

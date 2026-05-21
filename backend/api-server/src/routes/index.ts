@@ -21,6 +21,8 @@ import attributeCatalogRouter from "./attributeCatalog";
 import reportsRouter from "./reports";
 import notificationsRouter from "./notifications";
 import deliverySlotsRouter from "./deliverySlots";
+import driversRouter from "./drivers";
+import driverPaymentsRouter from "./driverPayments";
 import complaintsRouter from "./complaints";
 
 const router: IRouter = Router();
@@ -34,6 +36,8 @@ router.use(productsRouter);
 router.use(inventoryRouter);
 router.use(ordersRouter);
 router.use(deliverySlotsRouter);
+router.use(driversRouter);
+router.use(driverPaymentsRouter);
 router.use(invoicesRouter);
 router.use(paymentsRouter);
 router.use(paymentFollowUpsRouter);

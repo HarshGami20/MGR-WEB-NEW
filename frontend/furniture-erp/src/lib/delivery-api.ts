@@ -147,7 +147,11 @@ export async function deleteDeliverySlot(branchId: number, id: number): Promise<
 export async function patchOrderDelivery(
   orderId: number,
   branchId: number | null | undefined,
-  body: { deliveryStatus?: "pending" | "out_for_delivery" | "delivered"; deliverySlotId?: number | null },
+  body: {
+    deliveryStatus?: "pending" | "out_for_delivery" | "delivered";
+    deliverySlotId?: number | null;
+    driverId?: number | null;
+  },
 ): Promise<unknown> {
   const r = await fetch(`/api/orders/${orderId}/delivery`, {
     method: "PATCH",

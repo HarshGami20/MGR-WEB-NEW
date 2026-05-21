@@ -942,6 +942,12 @@ export default function OrderDetailPage() {
                     <Separator />
                   </>
                 ) : null}
+                {Number(orderAny.deliveryCharge ?? 0) > 0 ? (
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-muted-foreground">Delivery charge</span>
+                    <span className="tabular-nums">₹{Number(orderAny.deliveryCharge).toLocaleString()}</span>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                     <IndianRupee className="h-4 w-4" />
@@ -1079,9 +1085,33 @@ export default function OrderDetailPage() {
               </div>
             </DetailSection>
 
-            <DetailSection title="Delivery status" description="Separate from main order status">
+            <DetailSection title="Delivery status" description="Driver, charge, and logistics status">
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
+                {orderAny.driver?.name ? (
+                  <p className="text-sm">
+                    Driver:{" "}
+                    <Link
+                      href={`/drivers/${orderAny.driver.id}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {orderAny.driver.name}
+                    </Link>
+                    {orderAny.driver.mobile ? (
+                      <span className="text-muted-foreground"> · {orderAny.driver.mobile}</span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No driver assigned</p>
+                )}
+                {Number(orderAny.deliveryCharge ?? 0) > 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Delivery charge:{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      ₹{Number(orderAny.deliveryCharge).toLocaleString()}
+                    </span>
+                  </p>
+                ) : null}
                 {deliveryAssignees.length > 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Delivery assignees:{" "}

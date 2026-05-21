@@ -34,6 +34,7 @@ import { lineItemFormSchema, lineItemToApiPayload, apiItemToFormValues } from "@
 import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
+import { listDrivers } from "@/lib/driver-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
@@ -62,6 +63,8 @@ const orderSchema = z.object({
   assigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryAssigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryDate: z.string().nullable().optional(),
+  deliveryCharge: z.coerce.number().min(0).optional().default(0),
+  driverId: z.union([z.coerce.number().int().positive(), z.null()]).optional().nullable(),
   challanImages: z
     .array(
       z.object({
@@ -283,6 +286,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       assigneeUserIds: [] as number[],
       deliveryAssigneeUserIds: [] as number[],
       deliveryDate: null,
+      deliveryCharge: 0,
+      driverId: null as number | null,
       challanImages: [{ imageUrl: "" }],
       photoComments: [{ imageUrl: "", comment: "" }],
       staffCommentsText: "",
@@ -344,6 +349,13 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     [assignableUsersData?.data],
   );
 
+  const { data: driversData } = useQuery({
+    queryKey: ["drivers", writeBranchId, "order-form"],
+    queryFn: () => listDrivers({ branchId: writeBranchId!, limit: 200, isActive: true }),
+    enabled: writeBranchId != null,
+  });
+  const driverOptions = driversData?.data ?? [];
+
   useEffect(() => {
     if (isEdit || writeBranchId == null) return;
     if (assignableUsers.length === 0) return;
@@ -398,6 +410,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             .filter((x: number) => Number.isFinite(x))
         : [],
       deliveryDate: orderAny.deliveryDate ? String(orderAny.deliveryDate).slice(0, 10) : null,
+      deliveryCharge: Number(orderAny.deliveryCharge ?? 0),
+      driverId: orderAny.driver?.id ?? orderAny.driverId ?? null,
       challanImages: Array.isArray(orderAny.challanImages) && orderAny.challanImages.length > 0
         ? [{ imageUrl: String(orderAny.challanImages[0] || "") }]
         : [{ imageUrl: "" }],
@@ -506,6 +520,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         (id) => Number.isFinite(id) && id > 0,
       ),
       deliveryDate: data.deliveryDate || null,
+      deliveryCharge: Number(data.deliveryCharge ?? 0),
+      driverId: data.driverId ?? null,
       challanImages: data.challanImages.map((x) => x.imageUrl).filter(Boolean),
       photoComments: data.photoComments
         .filter((entry) => entry.imageUrl || entry.comment)
@@ -814,9 +830,50 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
             <FormSection
               title="Delivery"
-              description="Delivery date and staff who can update delivery status."
+              description="Delivery charge, driver, date, and staff who can update delivery status."
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={form.control} name="deliveryCharge" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Delivery charge (₹)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={field.value ?? 0}
+                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Added to order total (before payments).</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="driverId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Driver</FormLabel>
+                    <Select
+                      value={field.value != null ? String(field.value) : "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v, 10))}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select driver" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No driver assigned</SelectItem>
+                        {driverOptions.map((d) => (
+                          <SelectItem key={d.id} value={String(d.id)}>
+                            {d.name}
+                            {d.mobile ? ` · ${d.mobile}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Date of delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
