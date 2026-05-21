@@ -26,19 +26,19 @@
   --color-primary-dim: hsl(var(--primary-dim));
   --color-primary-deep: hsl(var(--primary-deep));
 
-  /* Brand scale — base #301934 (midnight violet) */
-  --color-brand: #301934;
-  --color-brand-50: hsl(292 32% 97%);
-  --color-brand-100: hsl(292 26% 92%);
-  --color-brand-200: hsl(292 24% 84%);
-  --color-brand-300: hsl(291 22% 70%);
-  --color-brand-400: hsl(288 32% 45%);
-  --color-brand-500: #301934;
-  --color-brand-600: hsl(291 34% 26%);
-  --color-brand-700: hsl(291 34% 20%);
-  --color-brand-800: hsl(289 35% 14%);
-  --color-brand-900: hsl(289 35% 9%);
-  --color-brand-950: hsl(289 38% 6%);
+  /* Brand scale — hue 223, aligned with --primary / --primary-dim / --primary-deep */
+  --color-brand: hsl(var(--primary));
+  --color-brand-50: hsl(223 100% 97%);
+  --color-brand-100: hsl(223 96% 94%);
+  --color-brand-200: hsl(223 94% 88%);
+  --color-brand-300: hsl(223 90% 78%);
+  --color-brand-400: hsl(223 85% 62%);
+  --color-brand-500: hsl(var(--primary));
+  --color-brand-600: hsl(var(--primary-dim));
+  --color-brand-700: hsl(223 74% 38%);
+  --color-brand-800: hsl(var(--primary-deep));
+  --color-brand-900: hsl(223 68% 22%);
+  --color-brand-950: hsl(223 65% 15%);
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));

@@ -543,7 +543,7 @@ function StaffDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  usersData.data.map((u) => (
+                  usersData.data.slice(0, 3).map((u) => (
                     <tr key={u.id} className="border-t border-border/60 hover:bg-muted/20 transition-colors">
                       <td className="py-3 pl-4 pr-2">
                         <div className="flex items-center gap-3 min-w-[180px]">
