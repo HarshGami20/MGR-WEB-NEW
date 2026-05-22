@@ -4,8 +4,10 @@ import { logger } from "./lib/logger";
 import { attachSocketIo } from "./realtime/socket-server";
 import { startNotificationReminderScheduler } from "./jobs/notification-reminders";
 import { registerNotificationEventListeners } from "./listeners/notification-listeners";
+import { registerWhatsAppEventListeners } from "./listeners/whatsapp-listeners";
 
 registerNotificationEventListeners();
+registerWhatsAppEventListeners();
 startNotificationReminderScheduler();
 
 const rawPort = process.env["PORT"];

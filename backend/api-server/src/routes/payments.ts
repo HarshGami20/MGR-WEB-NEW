@@ -143,6 +143,7 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     orderId: parsed.data.orderId,
     paymentId: payment.id,
     amount: payment.amount,
+    recordedById: actor?.id ?? null,
   });
 
   res.status(201).json({

@@ -16,6 +16,11 @@ import {
 import type { Prisma } from "@prisma/client";
 import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
+import { assigneeIdsKey, orderHasNonWorkflowFieldChanges } from "../lib/order-update-detect";
+import {
+  findNewStaffComments,
+  parseStaffCommentsJson,
+} from "../lib/order-staff-comments";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
 import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
@@ -828,6 +833,17 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   const existingOrder = await prisma.order.findUnique({ where: { id } });
   if (!existingOrder) { res.status(404).json({ error: "Order not found" }); return; }
 
+  const prevAssigneeRows = await prisma.orderAssignee.findMany({
+    where: { orderId: id },
+    select: { userId: true },
+  });
+  const prevAssigneeKey =
+    prevAssigneeRows.length > 0
+      ? assigneeIdsKey(prevAssigneeRows.map((r) => r.userId))
+      : existingOrder.assignedToId != null
+        ? String(existingOrder.assignedToId)
+        : "";
+
   const user = (req as {
     id: number;
     branchId: number | null;
@@ -1246,7 +1262,41 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       nextDeliveryStatus: nextDel,
       changedById: actorId,
     });
-  } 
+  }
+
+  const nextAssigneeRows = await prisma.orderAssignee.findMany({
+    where: { orderId: id },
+    select: { userId: true },
+  });
+  const nextAssigneeKey =
+    nextAssigneeRows.length > 0
+      ? assigneeIdsKey(nextAssigneeRows.map((r) => r.userId))
+      : order.assignedToId != null
+        ? String(order.assignedToId)
+        : "";
+  const assigneesChanged = prevAssigneeKey !== nextAssigneeKey;
+  if (orderHasNonWorkflowFieldChanges(existingOrder, order) || assigneesChanged) {
+    emitSafe("ORDER_UPDATED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      updatedById: actorId,
+    });
+  }
+
+  const prevStaffComments = parseStaffCommentsJson(existingOrder.staffComments);
+  const nextStaffComments = parseStaffCommentsJson(order.staffComments);
+  for (const row of findNewStaffComments(prevStaffComments, nextStaffComments)) {
+    const preview = row.comment.slice(0, 240);
+    emitSafe("ORDER_STAFF_COMMENT_ADDED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      commentPreview: preview,
+      commentByName: row.authorName?.trim() || "Staff",
+      addedById: actorId,
+    });
+  }
 
   res.json(await enrichOrder(order));
 });
