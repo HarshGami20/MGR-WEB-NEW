@@ -25,6 +25,8 @@ import {
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
 import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { collectOrderUploadUrls } from "../lib/collect-order-upload-urls";
+import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
 import {
   assertOrderAccessibleBySalesScope,
   assignmentScopeWhere,
@@ -224,14 +226,27 @@ async function replaceOrderAssignees(tx: Prisma.TransactionClient, orderId: numb
 
 /** Payments and invoices reference orders without DB cascade — remove them before deleting the order. */
 async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
-  const existing = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
+  const existing = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      challanImages: true,
+      photoComments: true,
+      items: { select: { customImageUrl: true, customImageUrls: true } },
+      complaints: { select: { imageUrls: true } },
+    },
+  });
   if (!existing) return false;
+
+  const uploadUrls = collectOrderUploadUrls(existing);
 
   await prisma.$transaction(async (tx) => {
     await tx.payment.deleteMany({ where: { orderId } });
     await tx.invoice.deleteMany({ where: { orderId } });
     await tx.order.delete({ where: { id: orderId } });
   });
+
+  deleteUploadFilesByUrl(uploadUrls);
 
   return true;
 }

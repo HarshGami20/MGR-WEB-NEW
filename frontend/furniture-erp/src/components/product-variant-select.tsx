@@ -38,6 +38,8 @@ type Props = {
   onProductChange: (productId: number) => void;
   onVariantChange: (variantId: number | null) => void;
   onPriceChange: (price: number) => void;
+  /** `inline` = product and variant side by side (e.g. order line items). Default stacks vertically. */
+  layout?: "stacked" | "inline";
 };
 
 export default function ProductVariantSelect({
@@ -47,6 +49,7 @@ export default function ProductVariantSelect({
   onProductChange,
   onVariantChange,
   onPriceChange,
+  layout = "stacked",
 }: Props) {
   const [open, setOpen] = useState(false);
   const { data: variantsData, isLoading: variantsLoading } = useListProductVariants(
@@ -83,9 +86,21 @@ export default function ProductVariantSelect({
     ? `${selectedProduct.name} (${selectedProduct.sku})`
     : "Select product";
 
+  const isInline = layout === "inline";
+  const fieldWidth = isInline ? "w-full" : PICKER_MAX_W_CLASS;
+
   return (
-    <div className={cn(PICKER_MAX_W_CLASS, "min-w-0 overflow-hidden")}>
-      <div className="space-y-2 min-w-0 overflow-hidden">
+    <div className={cn(isInline ? "w-full min-w-0" : PICKER_MAX_W_CLASS, "min-w-0 overflow-hidden")}>
+      <div
+        className={cn(
+          isInline && hasVariants
+            ? "grid grid-cols-1 sm:grid-cols-2 gap-3 items-end"
+            : isInline
+              ? "w-full"
+              : "space-y-2 min-w-0 overflow-hidden",
+        )}
+      >
+        <div className="space-y-2 min-w-0 overflow-hidden">
         <label className="text-sm font-medium leading-none">Product</label>
         <Popover open={open} onOpenChange={setOpen} modal={false}>
           <PopoverTrigger asChild>
@@ -95,7 +110,7 @@ export default function ProductVariantSelect({
               role="combobox"
               aria-expanded={open}
               className={cn(
-                PICKER_MAX_W_CLASS,
+                fieldWidth,
                 "h-auto min-h-10 min-w-0 overflow-hidden py-2 pl-3 pr-2 font-normal",
                 "flex items-center justify-between gap-2",
               )}
@@ -106,9 +121,9 @@ export default function ProductVariantSelect({
           </PopoverTrigger>
           <PopoverContent
             className={cn(
-              PICKER_MAX_W_CLASS,
+              fieldWidth,
               "z-[100] min-w-0 p-0 overflow-hidden",
-              "max-w-[min(360px,calc(100vw-2rem))]",
+              isInline ? "max-w-[min(480px,calc(100vw-2rem))]" : "max-w-[min(360px,calc(100vw-2rem))]",
             )}
             align="start"
             sideOffset={4}
@@ -153,19 +168,25 @@ export default function ProductVariantSelect({
             </Command>
           </PopoverContent>
         </Popover>
-      </div>
+        </div>
 
       {hasVariants ? (
-        <div className={cn("mt-3 space-y-2 min-w-0 overflow-hidden", PICKER_MAX_W_CLASS)}>
+        <div
+          className={cn(
+            "space-y-2 min-w-0 overflow-hidden",
+            !isInline && cn("mt-3", PICKER_MAX_W_CLASS),
+            isInline && fieldWidth,
+          )}
+        >
           <label className="text-sm font-medium leading-none">Variant</label>
           <Select
             value={variantId != null ? String(variantId) : ""}
             onValueChange={(val) => applyVariant(val ? parseInt(val, 10) : null)}
           >
-            <SelectTrigger className={cn(PICKER_MAX_W_CLASS, "min-w-0 overflow-hidden [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate")}>
+            <SelectTrigger className={cn(fieldWidth, "min-w-0 overflow-hidden mb-0.5 [&>span]:min-w-0 [&>span]:flex-1 [&>span]:truncate")}>
               <SelectValue placeholder={variantsLoading ? "Loading variants..." : "Select variant"} />
             </SelectTrigger>
-            <SelectContent className={cn(PICKER_MAX_W_CLASS, "max-w-[min(360px,calc(100vw-2rem))]")}>
+            <SelectContent className={cn(fieldWidth, isInline ? "max-w-[min(480px,calc(100vw-2rem))]" : "max-w-[min(360px,calc(100vw-2rem))]")}>
               {variants.map((v) => {
                 const label = `${v.name} (${v.sku}) · ${formatInr(Number(v.price ?? selectedProduct?.price ?? 0))}`;
                 return (
@@ -178,6 +199,7 @@ export default function ProductVariantSelect({
           </Select>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

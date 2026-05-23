@@ -12,6 +12,7 @@ import {
   useListSuppliers,
   useListManufacturers,
   getListUsersQueryKey,
+  getListRolesQueryKey,
 } from "@/api-client";
 import { useBranch } from "@/lib/branch-context";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -77,9 +78,13 @@ export default function Users() {
     branchId: selectedBranchId ?? undefined,
     page,
     limit: 10,
+  }, {
+    query: { staleTime: 0 },
   });
 
-  const { data: rolesData } = useListRoles();
+  const { data: rolesData } = useListRoles({
+    query: { staleTime: 0 },
+  });
   const { data: branchesData } = useListBranches({ isActive: true, limit: 100 });
   const { data: suppliersData } = useListSuppliers({ limit: 200 });
   const { data: manufacturersData } = useListManufacturers({ limit: 200 });
@@ -161,14 +166,24 @@ export default function Users() {
     setIsDialogOpen(true);
   };
 
-  const openEditDialog = (user: any) => {
-    setEditingId(user.id);
+  const openEditDialog = (user: { id?: number; roleId?: number | null; role?: { id?: number } | null; [key: string]: unknown }) => {
+    const userId = Number(user.id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      toast({
+        title: "Cannot edit user",
+        description: "User id is missing. Refresh the users list and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const resolvedRoleId = Number(user.roleId ?? user.role?.id);
+    setEditingId(userId);
     form.reset({
-      name: user.name,
-      mobile: user.mobile,
-      email: user.email || "",
+      name: String(user.name ?? ""),
+      mobile: String(user.mobile ?? ""),
+      email: (user.email as string) || "",
       password: "",
-      roleId: user.roleId ?? 0,
+      roleId: Number.isFinite(resolvedRoleId) && resolvedRoleId > 0 ? resolvedRoleId : 0,
       branchIds: (() => {
         if (Array.isArray(user.branchIds) && user.branchIds.length > 0) return user.branchIds;
         const fromBranches = (user.branches as { id: number }[] | undefined)?.map((b) => b.id).filter(Boolean);
@@ -193,6 +208,14 @@ export default function Users() {
       ordersListScope: data.isSales ? data.ordersListScope ?? "all" : null,
     };
     if (editingId) {
+      const roleExists = roleRows.some((r) => r.id === payload.roleId);
+      if (!roleExists) {
+        form.setError("roleId", {
+          message: "Selected role is no longer valid. Refresh the page and try again.",
+        });
+        void queryClient.invalidateQueries({ queryKey: getListRolesQueryKey() });
+        return;
+      }
       const updateData: Record<string, unknown> = { ...payload };
       if (!updateData.password) delete updateData.password;
       updateUser.mutate({ id: editingId, data: updateData as any });

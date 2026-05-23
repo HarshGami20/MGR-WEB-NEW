@@ -6,10 +6,18 @@ import { prisma, toNumber } from "./prisma";
 export type ProductExportRow = Record<string, string | number>;
 export type VariantExportRow = Record<string, string | number>;
 
-function categoryPath(category: { name: string; parentId: number | null } | null, parentName?: string): string {
-  if (!category) return "";
-  if (parentName) return `${parentName} · ${category.name}`;
-  return category.name;
+function splitCategoryLabels(
+  category: { name: string; parentId: number | null } | null,
+  parentById: Map<number, string>,
+): { category: string; subCategory: string } {
+  if (!category) return { category: "", subCategory: "" };
+  if (category.parentId) {
+    return {
+      category: parentById.get(category.parentId) ?? "",
+      subCategory: category.name,
+    };
+  }
+  return { category: category.name, subCategory: "" };
 }
 
 function parseAttributes(raw: string | null | undefined): string {
@@ -89,13 +97,14 @@ export async function buildProductExportRows(options: {
 
   for (const p of products) {
     const cat = p.category;
-    const path = categoryPath(cat, cat?.parentId ? parentById.get(cat.parentId) : undefined);
+    const { category: categoryLabel, subCategory } = splitCategoryLabels(cat, parentById);
     const hasVariants = p._count.variants > 0;
 
     productRows.push({
       SKU: p.sku,
       Name: p.name,
-      Category: path,
+      Category: categoryLabel,
+      "Sub Category": subCategory,
       Description: p.description ?? "",
       "Price (₹)": toNumber(p.price),
       "GST %": toNumber(p.gstPercent),
@@ -112,6 +121,8 @@ export async function buildProductExportRows(options: {
       variantRows.push({
         "Product SKU": p.sku,
         "Product Name": p.name,
+        Category: categoryLabel,
+        "Sub Category": subCategory,
         "Variant Name": v.name,
         "Variant SKU": v.sku,
         "Price (₹)": v.price != null ? toNumber(v.price) : "",

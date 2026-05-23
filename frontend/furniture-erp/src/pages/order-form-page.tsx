@@ -614,7 +614,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </Badge>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground">Customer, line items, delivery slot, payment, and proof photos.</p>
+                {/* <p className="text-sm text-muted-foreground">Customer, line items, delivery slot, payment, and proof photos.</p> */}
                 {lastUpdatedLabel ? <p className="text-xs text-muted-foreground">Last updated {lastUpdatedLabel}</p> : null}
               </div>
             </div>

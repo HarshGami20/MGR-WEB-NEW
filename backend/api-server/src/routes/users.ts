@@ -1,5 +1,5 @@
 import { Router, IRouter } from "express";
-import { CreateUserBody, UpdateUserBody, GetUserParams, ResetUserPasswordBody, DeleteUserBody } from "../zod";
+import { CreateUserBody, UpdateUserBody, ResetUserPasswordBody, DeleteUserBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { comparePassword, hashPassword } from "../lib/auth";
@@ -9,6 +9,40 @@ import { salesUserFieldsFromBody } from "../lib/sales-order-scope";
 import { assignedBranchIds } from "../lib/user-branches";
 
 const router: IRouter = Router();
+
+const USER_SCALAR_KEYS = [
+  "name",
+  "mobile",
+  "email",
+  "avatarUrl",
+  "roleId",
+  "supplierId",
+  "manufacturerId",
+  "isActive",
+] as const;
+
+function parseUserIdParam(raw: unknown): number | null {
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  const id = parseInt(String(s), 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function pickUserScalarFields(source: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of USER_SCALAR_KEYS) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  return out;
+}
+
+function mapUserUpdateError(e: unknown): { status: number; error: string } {
+  const code = e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
+  if (code === "P2025") return { status: 404, error: "User not found" };
+  if (code === "P2002") return { status: 409, error: "Mobile number is already in use" };
+  if (code === "P2003") return { status: 400, error: "Invalid role, branch, supplier, or manufacturer" };
+  const msg = e instanceof Error ? e.message : "Could not update user";
+  return { status: 400, error: msg };
+}
 
 async function isSuperAdminRoleId(roleId: unknown): Promise<boolean> {
   const id = typeof roleId === "number" ? roleId : roleId != null && roleId !== "" ? parseInt(String(roleId), 10) : NaN;
@@ -49,18 +83,17 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   const offset = (pageNum - 1) * limitNum;
 
   let allUsers = await prisma.user.findMany({
-    skip: offset,
-    take: limitNum,
     include: {
       userBranches: { select: { branchId: true } },
       role: { select: { name: true } },
     },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
   });
 
   if (search) {
-    allUsers = allUsers.filter(u =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.mobile.includes(search)
+    const q = search.toLowerCase();
+    allUsers = allUsers.filter(
+      (u) => u.name.toLowerCase().includes(q) || u.mobile.includes(search),
     );
   }
   if (roleId) allUsers = allUsers.filter(u => u.roleId === parseInt(roleId, 10));
@@ -72,6 +105,9 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
     });
   }
   if (isActive !== undefined) allUsers = allUsers.filter(u => u.isActive === (isActive === "true"));
+
+  const total = allUsers.length;
+  allUsers = allUsers.slice(offset, offset + limitNum);
 
   const rolesMap: Record<number, any> = {};
   const roles = await prisma.role.findMany();
@@ -107,7 +143,7 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
     };
   });
 
-  res.json({ data, total: data.length, page: pageNum, limit: limitNum });
+  res.json({ data, total, page: pageNum, limit: limitNum });
 });
 
 router.post("/users", requireAuth, requirePermission("users", "create"), async (req, res): Promise<void> => {
@@ -170,9 +206,9 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
 });
 
 router.get("/users/:id", requireAuth, requirePermission("users", "read"), async (req, res): Promise<void> => {
-  const params = GetUserParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const publicUser = await loadUserPublicById(params.data.id);
+  const id = parseUserIdParam(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
+  const publicUser = await loadUserPublicById(id);
   if (!publicUser) { res.status(404).json({ error: "User not found" }); return; }
   let role: (NonNullable<Awaited<ReturnType<typeof prisma.role.findUnique>>> & { permissions: unknown }) | null = null;
   if (publicUser.roleId) {
@@ -183,8 +219,11 @@ router.get("/users/:id", requireAuth, requirePermission("users", "read"), async 
 });
 
 router.put("/users/:id", requireAuth, requirePermission("users", "update"), async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
+  const id = parseUserIdParam(req.params.id);
+  if (id == null) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
   const parsed = UpdateUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -194,12 +233,42 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
     return;
   }
 
-  const body = parsed.data as any;
-  const { password, branchIds: bidRaw, branchId: legacyBid, ...rest } = body;
-  const nextRoleId = rest.roleId !== undefined ? rest.roleId : existing.roleId;
-  const superAdmin = await isSuperAdminRoleId(nextRoleId);
+  const body = parsed.data as Record<string, unknown>;
+  const password = body.password;
+  const bidRaw = body.branchIds;
+  const legacyBid = body.branchId;
+  const rest = { ...body };
+  delete rest.password;
+  delete rest.branchIds;
+  delete rest.branchId;
+  delete rest.userBranches;
+  delete rest.role;
+  delete rest.branch;
+  delete rest.branches;
+  delete rest.supplier;
+  delete rest.manufacturer;
 
-  let branchIdsUpdate = bidRaw !== undefined ? normalizeBranchIds(bidRaw, legacyBid ?? rest.branchId) : null;
+  const scalarRest = pickUserScalarFields(rest);
+  if (scalarRest.email === "") scalarRest.email = null;
+
+  const nextRoleId = scalarRest.roleId !== undefined ? scalarRest.roleId : existing.roleId;
+  if (nextRoleId != null && nextRoleId !== "") {
+    const roleIdNum = typeof nextRoleId === "number" ? nextRoleId : parseInt(String(nextRoleId), 10);
+    if (!Number.isFinite(roleIdNum) || roleIdNum <= 0) {
+      res.status(400).json({ error: "Invalid role selected" });
+      return;
+    }
+    const roleRow = await prisma.role.findUnique({ where: { id: roleIdNum }, select: { id: true } });
+    if (!roleRow) {
+      res.status(400).json({ error: "Invalid role selected. Refresh the page and try again." });
+      return;
+    }
+    scalarRest.roleId = roleIdNum;
+  }
+
+  const superAdmin = await isSuperAdminRoleId(scalarRest.roleId ?? existing.roleId);
+
+  let branchIdsUpdate = bidRaw !== undefined ? normalizeBranchIds(bidRaw, legacyBid) : null;
   if (superAdmin) {
     branchIdsUpdate = [];
   }
@@ -212,16 +281,13 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
     }
   }
 
-  const updateData: Record<string, unknown> = { ...rest };
+  const updateData: Record<string, unknown> = { ...scalarRest };
   if (rest.isSales !== undefined || rest.ordersListScope !== undefined) {
-    Object.assign(updateData, salesUserFieldsFromBody(rest as Record<string, unknown>));
+    Object.assign(updateData, salesUserFieldsFromBody(rest));
   }
-  if (password) {
+  if (password && typeof password === "string") {
     updateData.passwordHash = await hashPassword(password);
   }
-  delete updateData.branchId;
-  delete updateData.branchIds;
-  delete updateData.userBranches;
 
   if (superAdmin) {
     updateData.branchId = null;
@@ -247,8 +313,9 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
         }
       }
     });
-  } catch {
-    res.status(404).json({ error: "User not found" });
+  } catch (e: unknown) {
+    const mapped = mapUserUpdateError(e);
+    res.status(mapped.status).json({ error: mapped.error });
     return;
   }
 
@@ -257,9 +324,8 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
 });
 
 router.delete("/users/:id", requireAuth, requirePermission("users", "delete"), async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  if (!Number.isFinite(id) || id <= 0) {
+  const id = parseUserIdParam(req.params.id);
+  if (id == null) {
     res.status(400).json({ error: "Invalid user id" });
     return;
   }
@@ -301,8 +367,8 @@ router.delete("/users/:id", requireAuth, requirePermission("users", "delete"), a
 });
 
 router.patch("/users/:id/toggle-active", requireAuth, requirePermission("users", "update"), async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
+  const id = parseUserIdParam(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) { res.status(404).json({ error: "User not found" }); return; }
   const user = await prisma.user.update({ where: { id }, data: { isActive: !existing.isActive } });
@@ -310,8 +376,8 @@ router.patch("/users/:id/toggle-active", requireAuth, requirePermission("users",
 });
 
 router.post("/users/:id/reset-password", requireAuth, requirePermission("users", "update"), async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
+  const id = parseUserIdParam(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
   const parsed = ResetUserPasswordBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const passwordHash = await hashPassword(parsed.data.newPassword);

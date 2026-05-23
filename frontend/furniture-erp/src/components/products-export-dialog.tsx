@@ -111,7 +111,7 @@ export function ProductsExportDialog({
         <DialogHeader>
           <DialogTitle>Export Products to Excel</DialogTitle>
           <DialogDescription>
-            Downloads product catalog and variant stock in Excel (.xlsx). Uses your current filters below.
+            Downloads an Excel workbook with Products (category, sub category) and a Variants sheet for variant SKUs and stock. Uses your filters below.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

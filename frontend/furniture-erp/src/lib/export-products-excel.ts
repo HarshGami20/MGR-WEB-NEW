@@ -16,14 +16,35 @@ export function productsExportQueryString(filter: ProductsExportFilter): string 
   return s ? `?${s}` : "";
 }
 
+const VARIANT_SHEET_HEADERS: Record<string, string> = {
+  "Product SKU": "",
+  "Product Name": "",
+  Category: "",
+  "Sub Category": "",
+  "Variant Name": "",
+  "Variant SKU": "",
+  "Price (₹)": "",
+  "Stock Qty": "",
+  "Low Stock Threshold": "",
+  Active: "",
+  "Low Stock": "",
+  Attributes: "",
+  "Created At": "",
+};
+
 export function downloadProductsExcel(
   products: Record<string, string | number>[],
   variants: Record<string, string | number>[],
   filter: ProductsExportFilter,
 ): void {
+  const hasVariantProducts = products.some((r) => r["Has Variants"] === "Yes");
   const sheets = [{ name: "Products", rows: products, wideColumns: ["Description", "Attributes"] }];
-  if (variants.length > 0) {
-    sheets.push({ name: "Variants", rows: variants, wideColumns: ["Attributes"] });
+  if (variants.length > 0 || hasVariantProducts) {
+    sheets.push({
+      name: "Variants",
+      rows: variants.length > 0 ? variants : [VARIANT_SHEET_HEADERS],
+      wideColumns: ["Attributes"],
+    });
   }
   downloadExcelWorkbook(sheets, exportDateFilename("products", filter));
 }

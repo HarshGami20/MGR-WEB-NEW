@@ -1,10 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 
-export type CategoryNode = { id: number; parentId: number | null };
+export type CategoryNode = { id: number; parentId: number | null; name: string };
 
 export async function loadCategoryNodes(): Promise<CategoryNode[]> {
-  return prisma.category.findMany({ select: { id: true, parentId: true } });
+  return prisma.category.findMany({ select: { id: true, parentId: true, name: true } });
 }
 
 /** Parent category filter includes direct children. */
