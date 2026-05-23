@@ -1920,6 +1920,76 @@ export const useCreateAttributeKey = <TError = ErrorType<unknown>,
     }
 
 /**
+ * @summary Delete an attribute key and its value options
+ */
+export const getDeleteAttributeKeyUrl = (keyId: number,) => {
+
+
+
+
+  return `/api/attribute-catalog/keys/${keyId}`
+}
+
+export const deleteAttributeKey = async (keyId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteAttributeKeyUrl(keyId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteAttributeKeyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAttributeKey>>, TError,{keyId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAttributeKey>>, TError,{keyId: number}, TContext> => {
+
+const mutationKey = ['deleteAttributeKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAttributeKey>>, {keyId: number}> = (props) => {
+          const {keyId} = props ?? {};
+
+          return  deleteAttributeKey(keyId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAttributeKeyMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAttributeKey>>>
+
+    export type DeleteAttributeKeyMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete an attribute key and its value options
+ */
+export const useDeleteAttributeKey = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAttributeKey>>, TError,{keyId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAttributeKey>>,
+        TError,
+        {keyId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAttributeKeyMutationOptions(options), queryClient);
+    }
+
+/**
  * @summary Add a value option for an attribute key
  */
 export const getCreateAttributeOptionUrl = (keyId: number,) => {

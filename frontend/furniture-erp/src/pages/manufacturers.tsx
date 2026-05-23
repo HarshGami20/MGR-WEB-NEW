@@ -214,7 +214,7 @@ export default function Manufacturers() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Company Name</FormLabel>
+                    <FormLabel>Company Name*</FormLabel>
                     <FormControl>
                       <ValidatedInput field={field} rule="companyName" placeholder="e.g. Premium Wood Works" />
                     </FormControl>

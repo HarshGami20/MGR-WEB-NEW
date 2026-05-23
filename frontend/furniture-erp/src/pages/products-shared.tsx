@@ -7,6 +7,7 @@ import {
   getGetProductQueryKey,
   useListAttributeCatalog,
   useCreateAttributeKey,
+  useDeleteAttributeKey,
   getListAttributeCatalogQueryKey,
 } from "@/api-client";
 import type { CreateProductVariantBody, ProductVariant, UpdateProductVariantBody } from "@/api-client";
@@ -16,7 +17,17 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, ChevronRight, Settings2 } from "lucide-react";
+import { Plus, X, ChevronRight, Settings2, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { usePermissions } from "@/lib/permissions";
 import { z } from "zod";
 import { useForm, useFieldArray, Control, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -395,6 +406,8 @@ export function attributesPlainLine(json: string | null | undefined): string {
 export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { control: Control<any>; namePrefix?: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { can } = usePermissions();
+  const canDeleteAttributes = can("products", "delete");
   const { data: catalog } = useListAttributeCatalog();
   const keys = catalog?.keys ?? [];
 
@@ -406,8 +419,21 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
     },
   });
 
+  const deleteKey = useDeleteAttributeKey({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListAttributeCatalogQueryKey() });
+        toast({ title: "Attribute type deleted" });
+        setKeyToDelete(null);
+      },
+      onError: (e: unknown) =>
+        toast({ title: "Could not delete", description: String(e), variant: "destructive" }),
+    },
+  });
+
   const [manageTypesOpen, setManageTypesOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [keyToDelete, setKeyToDelete] = useState<{ id: number; name: string } | null>(null);
 
   const { fields, append, remove } = useFieldArray({ control, name: namePrefix as never });
 
@@ -521,23 +547,95 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
             </SheetTitle>
             <SheetDescription>Add reusable attribute types. They appear in every variant attribute picker.</SheetDescription>
           </SheetHeader>
-          <div className="mt-6 space-y-3">
-            <Label className="text-sm font-medium">New attribute type</Label>
-            <p className="text-xs text-muted-foreground -mt-1">Examples: Color, Size, Material, Finish.</p>
-            <div className="flex gap-2">
-              <Input
-                value={newKeyName}
-                onChange={(e) => setNewKeyName(e.target.value)}
-                placeholder="e.g. Color"
-                className="h-10"
-              />
-              <Button type="button" onClick={addAttributeType} disabled={createKey.isPending}>
-                Add
-              </Button>
+          <div className="mt-6 space-y-6">
+            {keys.length > 0 ? (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Existing types</Label>
+                <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+                  {keys.map((k) => (
+                    <li key={k.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{k.name}</p>
+                        {k.values.length > 0 ? (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {k.values.length} saved value{k.values.length === 1 ? "" : "s"}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No saved values yet</p>
+                        )}
+                      </div>
+                      {canDeleteAttributes ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                          aria-label={`Delete ${k.name}`}
+                          disabled={deleteKey.isPending}
+                          onClick={() => setKeyToDelete({ id: k.id, name: k.name })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No attribute types yet. Add one below.</p>
+            )}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">New attribute type</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Examples: Color, Size, Material, Finish.</p>
+              <div className="flex gap-2">
+                <Input
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  placeholder="e.g. Color"
+                  className="h-10"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addAttributeType();
+                    }
+                  }}
+                />
+                <Button type="button" onClick={addAttributeType} disabled={createKey.isPending}>
+                  Add
+                </Button>
+              </div>
             </div>
           </div>
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={!!keyToDelete} onOpenChange={(open) => !open && setKeyToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete attribute type?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {keyToDelete ? (
+                <>
+                  Remove <span className="font-medium text-foreground">{keyToDelete.name}</span> from the catalog.
+                  Saved value suggestions for this type will be removed. Existing product variants keep their stored
+                  attribute data.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteKey.isPending}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteKey.isPending || !keyToDelete}
+              onClick={() => keyToDelete && deleteKey.mutate({ keyId: keyToDelete.id })}
+            >
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

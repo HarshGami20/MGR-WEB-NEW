@@ -53,6 +53,21 @@ router.post("/attribute-catalog/keys", requireAuth, requirePermission("products"
   }
 });
 
+router.delete("/attribute-catalog/keys/:keyId", requireAuth, requirePermission("products", "delete"), async (req, res): Promise<void> => {
+  const keyId = parseInt(String(req.params.keyId), 10);
+  if (Number.isNaN(keyId)) {
+    res.status(400).json({ error: "Invalid keyId" });
+    return;
+  }
+  const key = await prisma.attributeKey.findUnique({ where: { id: keyId } });
+  if (!key) {
+    res.status(404).json({ error: "Attribute key not found" });
+    return;
+  }
+  await prisma.attributeKey.delete({ where: { id: keyId } });
+  res.status(200).json({ ok: true });
+});
+
 router.post("/attribute-catalog/keys/:keyId/options", requireAuth, requirePermission("products", "create"), async (req, res): Promise<void> => {
   const keyId = parseInt(String(req.params.keyId), 10);
   if (Number.isNaN(keyId)) {

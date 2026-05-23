@@ -445,6 +445,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttributeKeyWithValues"
 
+  /attribute-catalog/keys/{keyId}:
+    delete:
+      operationId: deleteAttributeKey
+      tags: [attributeCatalog]
+      summary: Delete an attribute key and its value options
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+        "404":
+          description: Key not found
+
   /attribute-catalog/keys/{keyId}/options:
     post:
       operationId: createAttributeOption

@@ -216,7 +216,7 @@ export default function Suppliers() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Company Name</FormLabel>
+                    <FormLabel>Company Name*</FormLabel>
                     <FormControl>
                       <ValidatedInput field={field} rule="companyName" placeholder="e.g. ABC Furniture Pvt Ltd" />
                     </FormControl>
