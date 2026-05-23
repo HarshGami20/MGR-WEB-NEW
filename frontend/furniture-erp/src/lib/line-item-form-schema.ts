@@ -18,7 +18,7 @@ export const lineItemFormSchema = z
   .object({
     isCustom: z.boolean().default(false),
     productId: z.union([z.coerce.number(), z.null()]).optional(),
-    variantId: z.coerce.number().optional().nullable(),
+    variantId: z.number().int().positive().nullable().optional(),
     customName: z.string().optional().default(""),
     customSize: z.string().optional().default(""),
     customColour: attributeTextField("Colour"),

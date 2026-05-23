@@ -71,7 +71,9 @@ export function buildOrderFormValues(order: OrderFormSource) {
       : [],
     deliveryDate: order.deliveryDate ? String(order.deliveryDate).slice(0, 10) : null,
     deliveryCharge: Number(order.deliveryCharge ?? 0),
-    driverId: order.driver?.id ?? order.driverId ?? null,
+    driverId:
+      order.driver?.id ??
+      (typeof order.driverId === "number" && order.driverId > 0 ? order.driverId : null),
     challanImages:
       Array.isArray(order.challanImages) && order.challanImages.length > 0
         ? [{ imageUrl: String(order.challanImages[0] || "") }]

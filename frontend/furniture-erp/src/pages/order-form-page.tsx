@@ -69,7 +69,7 @@ const orderSchema = z.object({
   deliveryAssigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryDate: z.string().nullable().optional(),
   deliveryCharge: z.coerce.number().min(0).optional().default(0),
-  driverId: z.union([z.coerce.number().int().positive(), z.null()]).optional().nullable(),
+  driverId: z.number().int().positive().nullable().optional(),
   challanImages: z
     .array(
       z.object({
@@ -257,10 +257,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     { query: { enabled: writeBranchId != null } },
   );
   const { data: order, isLoading: orderLoading, isError: orderError } = useGetOrder(orderId, {
-    query: { enabled: isEdit && Number.isFinite(orderId) && orderId > 0 },
+    query: {
+      enabled: isEdit && Number.isFinite(orderId) && orderId > 0,
+      refetchOnWindowFocus: false,
+    },
   });
 
   const [uploading, setUploading] = useState(false);
+  const [editFormHydrated, setEditFormHydrated] = useState(false);
+  const editHydratedForOrderRef = useRef<number | null>(null);
 
   const createOrder = useCreateOrder({
     mutation: {
@@ -277,11 +282,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         }),
     },
   });
-
-  const editFormValues = useMemo(() => {
-    if (!isEdit || !order?.id) return undefined;
-    return buildOrderFormValues(order as Parameters<typeof buildOrderFormValues>[0]) as OrderFormValues;
-  }, [isEdit, order]);
 
   const updateOrder = useUpdateOrder({
     mutation: {
@@ -306,8 +306,28 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     resolver: zodResolver(orderSchema),
     mode: "onBlur",
     defaultValues: ORDER_FORM_DEFAULTS,
-    values: editFormValues,
   });
+
+  const { reset } = form;
+
+  useEffect(() => {
+    if (!isEdit) {
+      editHydratedForOrderRef.current = null;
+      setEditFormHydrated(false);
+      return;
+    }
+    if (!order?.id || order.id !== orderId) {
+      editHydratedForOrderRef.current = null;
+      setEditFormHydrated(false);
+      return;
+    }
+    if (editHydratedForOrderRef.current === order.id) return;
+    editHydratedForOrderRef.current = order.id;
+    reset(buildOrderFormValues(order as Parameters<typeof buildOrderFormValues>[0]) as OrderFormValues, {
+      keepDefaultValues: false,
+    });
+    setEditFormHydrated(true);
+  }, [isEdit, orderId, order, reset]);
 
   const deliveryDateWatch = form.watch("deliveryDate");
 
@@ -327,6 +347,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   });
   const slotOptions = slotOptionsRaw ?? EMPTY_AVAIL_SLOTS;
   const { setValue, getValues } = form;
+
   const freeSlotIds = useMemo(
     () => slotOptions.filter((s) => s.remaining > 0).map((s) => s.id),
     [slotOptions],
@@ -546,7 +567,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   if (isEdit && (!Number.isFinite(orderId) || orderId <= 0)) return <Redirect to="/orders" />;
   if (!isEdit && !can("orders", "add")) return <Redirect to="/orders" />;
   if (isEdit && !can("orders", "edit")) return <Redirect to={`/orders/${orderId}`} />;
-  if (isEdit && orderLoading) return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
+  if (isEdit && (orderLoading || !order || !editFormHydrated)) {
+    return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
+  }
   if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
 
   return (
@@ -633,6 +656,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <FormItem>
                       <FormLabel>GST Invoice</FormLabel>
                       <Select
+                        key={`gst-invoice-${field.value ? "yes" : "no"}`}
                         value={field.value ? "gst" : "non_gst"}
                         onValueChange={(v) => {
                           const isGst = v === "gst";
@@ -818,7 +842,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   <FormItem>
                     <FormLabel>Driver</FormLabel>
                     <Select
-                      value={field.value != null ? String(field.value) : "none"}
+                      key={`driver-${field.value ?? "none"}`}
+                      value={field.value != null && field.value > 0 ? String(field.value) : "none"}
                       onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v, 10))}
                     >
                       <FormControl>

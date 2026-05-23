@@ -424,6 +424,8 @@ async function enrichOrder(order: any) {
   }
   return {
     ...order,
+    driverId: eo.driverId ?? null,
+    isGst: Boolean(order.isGst),
     status: normalizeMainOrderStatus(order.status ?? "order_received"),
     paymentStatus: order.paymentStatus ?? "due",
     deliveryStatus: normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus),

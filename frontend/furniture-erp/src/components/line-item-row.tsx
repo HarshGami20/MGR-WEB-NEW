@@ -149,6 +149,7 @@ export function LineItemRow({
       ) : (
         <>
           <ProductVariantSelect
+            key={`line-${index}-product-${productId}-variant-${variantId ?? "none"}`}
             layout="inline"
             products={products}
             productId={productId}
