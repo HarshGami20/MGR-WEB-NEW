@@ -144,6 +144,20 @@ export type PurchaseOrderUpdatedPayload = {
   updatedById?: number | null;
 };
 
+export type InventoryUpdatedPayload = {
+  productId: number;
+  variantId: number | null;
+  productName: string;
+  productSku: string;
+  variantName: string | null;
+  adjustmentType: "in" | "out" | "adjustment";
+  quantity: number;
+  newStockQty: number;
+  notes: string | null;
+  branchId: number | null;
+  updatedById?: number | null;
+};
+
 /** Typed domain events → notification listeners (decouple HTTP routes from delivery). */
 class AppEventsBus extends EventEmitter {
   constructor() {

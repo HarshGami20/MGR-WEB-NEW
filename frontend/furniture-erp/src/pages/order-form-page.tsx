@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { usePermissions } from "@/lib/permissions";
 import { LineItemRow } from "@/components/line-item-row";
 import { lineItemFormSchema, lineItemToApiPayload, apiItemToFormValues } from "@/lib/line-item-form-schema";
 import { defaultCatalogLineItem } from "@/lib/custom-line-item";
@@ -206,6 +207,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
   const writeBranchId =
@@ -581,6 +583,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   }, [isEdit, order]);
 
   if (isEdit && (!Number.isFinite(orderId) || orderId <= 0)) return <Redirect to="/orders" />;
+  if (!isEdit && !can("orders", "add")) return <Redirect to="/orders" />;
+  if (isEdit && !can("orders", "edit")) return <Redirect to={`/orders/${orderId}`} />;
   if (isEdit && orderLoading) return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
   if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
 

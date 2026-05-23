@@ -1,8 +1,8 @@
 import { Router, IRouter } from "express";
-import { CreateUserBody, UpdateUserBody, GetUserParams, ResetUserPasswordBody } from "../zod";
+import { CreateUserBody, UpdateUserBody, GetUserParams, ResetUserPasswordBody, DeleteUserBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
-import { hashPassword } from "../lib/auth";
+import { comparePassword, hashPassword } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
 import { salesUserFieldsFromBody } from "../lib/sales-order-scope";
@@ -259,6 +259,42 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
 router.delete("/users/:id", requireAuth, requirePermission("users", "delete"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
+
+  const parsed = DeleteUserBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Your password is required to delete a user" });
+    return;
+  }
+
+  const actorId = (req as { user?: { id: number } }).user?.id;
+  if (!actorId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (actorId === id) {
+    res.status(400).json({ error: "You cannot delete your own account" });
+    return;
+  }
+
+  const actor = await prisma.user.findUnique({
+    where: { id: actorId },
+    select: { passwordHash: true },
+  });
+  if (!actor) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const passwordOk = await comparePassword(parsed.data.password, actor.passwordHash);
+  if (!passwordOk) {
+    res.status(403).json({ error: "Incorrect password" });
+    return;
+  }
+
   const user = await prisma.user.delete({ where: { id } }).catch(() => null);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   res.json({ success: true });

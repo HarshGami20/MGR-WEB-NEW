@@ -31,6 +31,9 @@ import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
+import { InventoryExportDialog } from "@/components/inventory-export-dialog";
+import { usePermissions } from "@/lib/permissions";
+import { formatIndianDateTime } from "@/lib/format-datetime";
 
 const adjustSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
@@ -53,6 +56,7 @@ export default function Inventory() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { can } = usePermissions();
   const { selectedBranchId } = useBranch();
 
   const listLogsParams = useMemo(
@@ -188,7 +192,7 @@ export default function Inventory() {
         header: "Date",
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-sm text-muted-foreground">
-            {new Date(row.original.createdAt).toLocaleString()}
+            {formatIndianDateTime(row.original.createdAt)}
           </span>
         ),
       },
@@ -304,10 +308,15 @@ export default function Inventory() {
           <h2 className="text-2xl font-bold tracking-tight">Inventory</h2>
           <p className="text-muted-foreground">Manage stock levels and track movements</p>
         </div>
-        <Button onClick={() => openAdjustDialog()}>
-          <Plus className="mr-2 h-4 w-4" />
-          Adjust Stock
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {can("inventory", "view") ? (
+            <InventoryExportDialog categoryId={categoryId} movementType={filterType} />
+          ) : null}
+          <Button onClick={() => openAdjustDialog()}>
+            <Plus className="mr-2 h-4 w-4" />
+            Adjust Stock
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">

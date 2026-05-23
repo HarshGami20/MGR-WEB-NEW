@@ -32,7 +32,6 @@ import {
   ArrowLeft,
   Calendar,
   Upload,
-  User,
   Package,
   MessageSquare,
   Users,
@@ -95,29 +94,6 @@ function DetailSection({
       </div>
       {children}
     </section>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  icon,
-  mono,
-}: {
-  label: string;
-  value: ReactNode;
-  icon?: ReactNode;
-  mono?: boolean;
-}) {
-  if (value == null || value === "" || value === "—") return null;
-  return (
-    <div className="flex gap-3 py-2.5 border-b border-border/50 last:border-0 last:pb-0">
-      {icon ? <span className="text-muted-foreground shrink-0 mt-0.5">{icon}</span> : null}
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={cn("text-sm text-foreground mt-0.5 break-words", mono && "font-mono")}>{value}</p>
-      </div>
-    </div>
   );
 }
 
@@ -315,55 +291,85 @@ export default function ComplaintDetailPage() {
             >
               {isPoComplaint ? (
                 purchaseOrder ? (
-                  <div className="rounded-lg border bg-muted/10 px-3 py-1">
-                    <InfoRow
-                      label="PO number"
-                      value={
+                  <div className="rounded-lg border bg-muted/10 px-3 py-2.5">
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">PO number</p>
                         <Link
                           href={`/purchase-orders/${purchaseOrder.id}`}
-                          className="text-primary hover:underline font-mono"
+                          className="font-mono font-medium text-primary hover:underline"
                         >
                           {purchaseOrder.poNumber}
                         </Link>
-                      }
-                      mono
-                    />
-                    <InfoRow label="Type" value={purchaseOrder.type} />
-                    <InfoRow label="PO status" value={purchaseOrder.status.replace(/_/g, " ")} />
-                    {purchaseOrder.branch?.name ? (
-                      <InfoRow label="Branch" value={purchaseOrder.branch.name} />
-                    ) : null}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Type</p>
+                        <p className="font-medium text-foreground">{purchaseOrder.type}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">PO status</p>
+                        <p className="font-medium text-foreground capitalize">
+                          {purchaseOrder.status.replace(/_/g, " ")}
+                        </p>
+                      </div>
+                      {purchaseOrder.branch?.name ? (
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted-foreground">Branch</p>
+                          <p className="font-medium text-foreground">{purchaseOrder.branch.name}</p>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">Purchase order not found</p>
                 )
               ) : order ? (
-                <div className="rounded-lg border bg-muted/10 px-3 py-1">
-                  <InfoRow label="Customer" value={order.customerName} icon={<User className="h-4 w-4" />} />
-                  <InfoRow label="Mobile" value={order.customerMobile ?? "—"} />
-                  <InfoRow label="Address" value={order.customerAddress ?? "—"} />
-                  <InfoRow
-                    label="Order"
-                    value={
-                      <Link href={`/orders/${order.id}`} className="text-primary hover:underline font-mono">
+                <div className="rounded-lg border bg-muted/10 px-3 py-2.5">
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
+                    {order.customerName ? (
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Name</p>
+                        <p className="font-medium text-foreground">{order.customerName}</p>
+                      </div>
+                    ) : null}
+                    {order.customerMobile ? (
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Mobile</p>
+                        <p className="font-mono text-foreground">{order.customerMobile}</p>
+                      </div>
+                    ) : null}
+                    {order.customerAddress ? (
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Address</p>
+                        <p className="text-foreground leading-snug">{order.customerAddress}</p>
+                      </div>
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Order</p>
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="font-mono font-medium text-primary hover:underline"
+                      >
                         {order.orderNumber}
                       </Link>
-                    }
-                    mono
-                  />
-                  <InfoRow label="Order status" value={order.status.replace(/_/g, " ")} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Order status</p>
+                      <p className="font-medium text-foreground capitalize">{order.status.replace(/_/g, " ")}</p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Order not found</p>
               )}
               {complaint.createdBy?.name ? (
-                <p className="text-xs text-muted-foreground pt-1">
+                <p className="text-xs text-muted-foreground">
                   Registered by <span className="font-medium text-foreground">{complaint.createdBy.name}</span>
                 </p>
               ) : null}
             </DetailSection>
 
-            {complaint.product ? (
+            {/* {complaint.product ? (
               <DetailSection title="Product" description="Specific item this complaint refers to">
                 <div className="flex gap-4 items-start">
                   {complaint.product.imageUrl ? (
@@ -389,90 +395,90 @@ export default function ComplaintDetailPage() {
                   {isPoComplaint ? "All items on this purchase order" : "All items on this order"}
                 </p>
               </DetailSection>
-            )}
+            )} */}
 
-            {(isPoComplaint && purchaseOrder?.items && purchaseOrder.items.length > 0) ||
-            (!isPoComplaint && order?.items && order.items.length > 0) ? (
-              <DetailSection title="Line items" description="Products on the linked document">
-                <div className="rounded-lg border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Unit (₹)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(isPoComplaint ? purchaseOrder!.items : order!.items).map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            {"isCustom" in item && item.isCustom
-                              ? item.customName ?? "Custom item"
-                              : item.product?.name ?? `Product #${item.productId}`}
-                          </TableCell>
-                          <TableCell className="text-right">{item.quantity}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {item.unitPrice.toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+
+          <div className="lg:col-span-6">
+            <DetailSection title="Complaint status" description="Workflow state">
+              {mayChangeStatus ? (
+                <Select
+                  value={complaint.status}
+                  onValueChange={(v) => statusMut.mutate(v as ComplaintStatus)}
+                  disabled={statusMut.isPending}
+                >
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="space-y-2">
+                  {getComplaintStatusBadge(complaint.status)}
+                  {mayEditContent && !isSuperAdminUser(user) ? (
+                    <p className="text-xs text-muted-foreground">
+                      Only complaint assignees or Super Admin can change status.
+                    </p>
+                  ) : null}
                 </div>
+              )}
+              {complaint.resolvedAt ? (
+                <p className="text-xs text-muted-foreground">
+                  Resolved {formatCommentDateTime(complaint.resolvedAt)}
+                </p>
+              ) : null}
+            </DetailSection>
+            </div>
+            <div className="lg:col-span-6">
+            {!partnerUser ? (
+              <DetailSection
+                title="Assigned staff"
+                description="Only assignees and Super Admin can update status"
+              >
+                {mayEditAssignees ? (
+                  branchIdForAssignees != null ? (
+                    <AssigneesMultiSelect
+                      options={assignableUsers.map((u) => ({
+                        id: u.id,
+                        name: u.name,
+                        mobile: u.mobile,
+                      }))}
+                      value={assigneeIds}
+                      onChange={(ids) => assigneesMut.mutate(ids)}
+                      disabled={assigneesMut.isPending}
+                      placeholder={
+                        assignableUsers.length === 0
+                          ? "No staff available for this branch"
+                          : "Select staff to handle this complaint…"
+                      }
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Select a branch in the header to assign staff.
+                    </p>
+                  )
+                ) : assigneeLabel ? (
+                  <p className="text-sm">
+                    <Users className="inline h-4 w-4 mr-1.5 text-muted-foreground" />
+                    {assigneeLabel}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No staff assigned yet.</p>
+                )}
+              </DetailSection>
+            ) : assigneeLabel ? (
+              <DetailSection title="Assigned staff">
+                <p className="text-sm">{assigneeLabel}</p>
               </DetailSection>
             ) : null}
+            </div>
+          </div>
 
-            <DetailSection
-              title="Issue photos"
-              description={`${complaint.imageUrls.length} photo${complaint.imageUrls.length === 1 ? "" : "s"}`}
-            >
-              <input
-                id="complaint-detail-photo-input"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                disabled={uploading || !mayEditContent}
-                onChange={(e) => {
-                  void handleImageUpload(e.target.files?.[0]);
-                  e.target.value = "";
-                }}
-              />
-              {complaint.imageUrls.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {complaint.imageUrls.map((url, idx) => (
-                    <button
-                      key={url}
-                      type="button"
-                      className="aspect-square overflow-hidden rounded-xl border bg-muted/20 hover:opacity-90 transition-opacity"
-                      onClick={() => setGalleryIndex(idx)}
-                    >
-                      <img
-                        src={resolvedProductImageUrl(url)}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No photos attached yet.</p>
-              )}
-              {mayEditContent && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  disabled={uploading}
-                  onClick={() => document.getElementById("complaint-detail-photo-input")?.click()}
-                >
-                  <Upload className="mr-1.5 h-3.5 w-3.5" />
-                  {uploading ? "Uploading…" : "Add photo"}
-                </Button>
-              )}
-            </DetailSection>
+           
 
             <DetailSection
               title="Comments"
@@ -520,80 +526,88 @@ export default function ComplaintDetailPage() {
           </div>
 
           <div className="space-y-6 lg:col-span-4">
-            <DetailSection title="Complaint status" description="Workflow state">
-              {mayChangeStatus ? (
-                <Select
-                  value={complaint.status}
-                  onValueChange={(v) => statusMut.mutate(v as ComplaintStatus)}
-                  disabled={statusMut.isPending}
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="space-y-2">
-                  {getComplaintStatusBadge(complaint.status)}
-                  {mayEditContent && !isSuperAdminUser(user) ? (
-                    <p className="text-xs text-muted-foreground">
-                      Only complaint assignees or Super Admin can change status.
-                    </p>
-                  ) : null}
-                </div>
-              )}
-              {complaint.resolvedAt ? (
-                <p className="text-xs text-muted-foreground">
-                  Resolved {formatCommentDateTime(complaint.resolvedAt)}
-                </p>
-              ) : null}
-            </DetailSection>
 
-            {!partnerUser ? (
-              <DetailSection
-                title="Assigned staff"
-                description="Only assignees and Super Admin can update status"
-              >
-                {mayEditAssignees ? (
-                  branchIdForAssignees != null ? (
-                    <AssigneesMultiSelect
-                      options={assignableUsers.map((u) => ({
-                        id: u.id,
-                        name: u.name,
-                        mobile: u.mobile,
-                      }))}
-                      value={assigneeIds}
-                      onChange={(ids) => assigneesMut.mutate(ids)}
-                      disabled={assigneesMut.isPending}
-                      placeholder={
-                        assignableUsers.length === 0
-                          ? "No staff available for this branch"
-                          : "Select staff to handle this complaint…"
-                      }
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Select a branch in the header to assign staff.
-                    </p>
-                  )
-                ) : assigneeLabel ? (
-                  <p className="text-sm">
-                    <Users className="inline h-4 w-4 mr-1.5 text-muted-foreground" />
-                    {assigneeLabel}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No staff assigned yet.</p>
-                )}
-              </DetailSection>
-            ) : assigneeLabel ? (
-              <DetailSection title="Assigned staff">
-                <p className="text-sm">{assigneeLabel}</p>
+          {(isPoComplaint && purchaseOrder?.items && purchaseOrder.items.length > 0) ||
+            (!isPoComplaint && order?.items && order.items.length > 0) ? (
+              <DetailSection title="Line items" description="Products on the linked document">
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Unit (₹)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(isPoComplaint ? purchaseOrder!.items : order!.items).map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            {"isCustom" in item && item.isCustom
+                              ? item.customName ?? "Custom item"
+                              : item.product?.name ?? `Product #${item.productId}`}
+                          </TableCell>
+                          <TableCell className="text-right">{item.quantity}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {item.unitPrice.toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </DetailSection>
             ) : null}
+
+
+            <DetailSection title="Issue photos" description="Photos of the issue">
+              <input
+                id="complaint-detail-photo-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                disabled={uploading || !mayEditContent}
+                onChange={(e) => {
+                  void handleImageUpload(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              {complaint.imageUrls.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {complaint.imageUrls.map((url, idx) => (
+                    <button
+                      key={url}
+                      type="button"
+                      className="aspect-square overflow-hidden rounded-xl border bg-muted/20 hover:opacity-90 transition-opacity"
+                      onClick={() => setGalleryIndex(idx)}
+                    >
+                      <img
+                        src={resolvedProductImageUrl(url)}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No photos attached yet.</p>
+              )}
+              {mayEditContent && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  disabled={uploading}
+                  onClick={() => document.getElementById("complaint-detail-photo-input")?.click()}
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  {uploading ? "Uploading…" : "Add photo"}
+                </Button>
+              )}
+            </DetailSection>
+
           </div>
         </div>
       </div>

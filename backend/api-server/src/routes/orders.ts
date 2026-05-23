@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router, IRouter } from "express";
 import { z } from "zod";
 import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams } from "../zod";
@@ -170,8 +171,30 @@ function normalizePaymentStatus(totalAmount: number, paidAmount: number, request
   return "partially_paid";
 }
 
-function generateOrderNumber() {
-  return `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+const ORDER_NUMBER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const ORDER_NUMBER_LENGTH = 5;
+
+const ORDER_NUMBER_PREFIX = "ORD-";
+
+function randomOrderNumberCandidate(): string {
+  const bytes = randomBytes(ORDER_NUMBER_LENGTH);
+  let suffix = "";
+  for (let i = 0; i < ORDER_NUMBER_LENGTH; i++) {
+    suffix += ORDER_NUMBER_CHARS[bytes[i]! % ORDER_NUMBER_CHARS.length];
+  }
+  return `${ORDER_NUMBER_PREFIX}${suffix}`;
+}
+
+async function generateOrderNumber(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const orderNumber = randomOrderNumberCandidate();
+    const existing = await prisma.order.findUnique({
+      where: { orderNumber },
+      select: { id: true },
+    });
+    if (!existing) return orderNumber;
+  }
+  throw new Error("Failed to generate a unique order number");
 }
 
 function normalizeAssigneeUserIds(raw: unknown): number[] {
@@ -618,7 +641,13 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const status = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : "order_received";
   const requestedPaymentStatus = typeof orderData.paymentStatus === "string" ? orderData.paymentStatus : undefined;
   const paymentStatus = normalizePaymentStatus(totalAmount, safeAdvanceAmount, requestedPaymentStatus);
-  const orderNumber = generateOrderNumber();
+  let orderNumber: string;
+  try {
+    orderNumber = await generateOrderNumber();
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
+  }
 
   const assigneeIdsFromBody = Array.isArray(inputAssigneeUserIds)
     ? normalizeAssigneeUserIds(inputAssigneeUserIds)

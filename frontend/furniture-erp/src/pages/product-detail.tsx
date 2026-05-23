@@ -50,10 +50,10 @@ function formatVariantPrice(v: { price?: number | null }, basePrice: number): st
 }
 
 function formatPriceCompact(amount: number): string {
-  if (amount >= 1000) {
-    const k = amount / 1000;
-    return k % 1 === 0 ? `₹${k}k` : `₹${k.toFixed(1)}k`;
-  }
+  // if (amount >= 1000) {
+  //   const k = amount / 1000;
+  //   return k % 1 === 0 ? `₹${k}k` : `₹${k.toFixed(1)}k`;
+  // }
   return formatInr(amount);
 }
 

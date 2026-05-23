@@ -116,6 +116,7 @@ model User {
   paymentFollowUps      PaymentFollowUp[]   @relation("PaymentFollowUpCreatedBy")
   paymentsRecorded      Payment[]           @relation("PaymentCreatedBy")
   driverPaymentsRecorded DriverPayment[]    @relation("DriverPaymentCreatedBy")
+  createdPurchaseOrders  PurchaseOrder[]    @relation("PurchaseOrderCreatedBy")
 
   notificationsSent       Notification[]           @relation("NotificationSender")
   notificationRecipients  NotificationRecipient[]
@@ -636,11 +637,13 @@ model PurchaseOrder {
   /** JSON array: { comment, authorName?, createdAt } */
   staffComments    String?  @map("staff_comments")
   branchId         Int?     @map("branch_id")
+  createdById      Int?     @map("created_by_id")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   supplier     Supplier?           @relation(fields: [supplierId], references: [id])
   manufacturer Manufacturer?       @relation(fields: [manufacturerId], references: [id])
   branch       Branch?             @relation(fields: [branchId], references: [id])
+  createdBy    User?               @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   items        PurchaseOrderItem[]
   complaints   Complaint[]
 

@@ -32,6 +32,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { usePermissions } from "@/lib/permissions";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
@@ -246,6 +247,10 @@ export default function OrderDetailPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const canEditOrders = can("orders", "edit");
+  const canEditDeliveries = can("deliveries", "edit");
+  const canAddPayments = can("payments", "add");
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
   const headerBranchId =
@@ -382,7 +387,8 @@ export default function OrderDetailPage() {
         | undefined)
     : null;
   const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
-  const canUpdateDelivery = canUpdateOrderDeliveryStatus(orderAny, user);
+  const canUpdateDelivery =
+    (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(orderAny, user);
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -533,12 +539,14 @@ export default function OrderDetailPage() {
               <FileDown className="h-4 w-4 mr-2" />
               {quotationPdfLoading ? "Generating…" : "Quotation PDF"}
             </Button>
-            <Link href={`/orders/${order.id}/edit`}>
-              <Button type="button" variant="outline" size="sm" className="rounded-xl">
-                <PencilLine className="h-4 w-4 mr-2" />
-                Edit order
-              </Button>
-            </Link>
+            {canEditOrders ? (
+              <Link href={`/orders/${order.id}/edit`}>
+                <Button type="button" variant="outline" size="sm" className="rounded-xl">
+                  <PencilLine className="h-4 w-4 mr-2" />
+                  Edit order
+                </Button>
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -778,7 +786,7 @@ export default function OrderDetailPage() {
               title="Staff comments"
               description="Internal notes visible to staff"
               action={
-                !showStaffCommentForm ? (
+                canEditOrders && !showStaffCommentForm ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowStaffCommentForm(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add
@@ -803,7 +811,7 @@ export default function OrderDetailPage() {
                   )}
                 </div>
               )}
-              {showStaffCommentForm ? (
+              {canEditOrders && showStaffCommentForm ? (
                 <div className="space-y-2 pt-2 border-t border-border/50">
                   <Textarea
                     value={newStaffComment}
@@ -843,7 +851,7 @@ export default function OrderDetailPage() {
               title="Delivery notes"
               description="Driver instructions, gate codes, reschedule notes"
               action={
-                !showDeliveryCommentForm ? (
+                canEditOrders && !showDeliveryCommentForm ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowDeliveryCommentForm(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add
@@ -868,7 +876,7 @@ export default function OrderDetailPage() {
                   )}
                 </div>
               )}
-              {showDeliveryCommentForm ? (
+              {canEditOrders && showDeliveryCommentForm ? (
                 <div className="space-y-2 pt-2 border-t border-border/50">
                   <Textarea
                     value={newDeliveryComment}
@@ -971,6 +979,7 @@ export default function OrderDetailPage() {
               </div>
             </DetailSection>
 
+            {canAddPayments ? (
             <DetailSection title="Record payment" description="Add payments against this order">
               <div className="space-y-3">
                 <div
@@ -1084,6 +1093,7 @@ export default function OrderDetailPage() {
                 </p>
               </div>
             </DetailSection>
+            ) : null}
 
             <DetailSection title="Delivery status" description="Driver, charge, and logistics status">
               <div className="space-y-3">
@@ -1199,44 +1209,57 @@ export default function OrderDetailPage() {
             </DetailSection>
 
             <DetailSection title="Order status" description="Manufacturing progress and payment status">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Order status</p>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="order_received">Order Received</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                      <SelectItem value="complete">Complete</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {canEditOrders ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Order status</p>
+                    <Select value={status} onValueChange={setStatus}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="order_received">Order Received</SelectItem>
+                        <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                        <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
+                        <SelectItem value="complete">Complete</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Payment status</p>
+                    <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="due">Due</SelectItem>
+                        <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full rounded-xl"
+                    onClick={applyStatusUpdate}
+                    disabled={updateOrder.isPending}
+                  >
+                    Update status
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Payment status</p>
-                  <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="due">Due</SelectItem>
-                      <SelectItem value="partially_paid">Partially Paid</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                    </SelectContent>
-                  </Select>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">Order status</span>
+                    {getStatusBadge(order.status)}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">Payment status</span>
+                    <span className="font-medium">{formatPaymentStatusLabel(orderAny.paymentStatus)}</span>
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  className="w-full rounded-xl"
-                  onClick={applyStatusUpdate}
-                  disabled={updateOrder.isPending}
-                >
-                  Update status
-                </Button>
-              </div>
+              )}
             </DetailSection>
           </aside>
         </div>

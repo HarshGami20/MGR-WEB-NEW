@@ -12,6 +12,9 @@ export const CreateUserBody = permissiveObject;
 export const UpdateUserBody = permissiveObject;
 export const GetUserParams = permissiveObject;
 export const ResetUserPasswordBody = permissiveObject;
+export const DeleteUserBody = z.object({
+  password: z.string().min(1, "Password is required"),
+});
 
 export const CreateSupplierBody = permissiveObject;
 export const GetSupplierParams = permissiveObject;

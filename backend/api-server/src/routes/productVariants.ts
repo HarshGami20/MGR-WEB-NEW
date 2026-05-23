@@ -7,6 +7,7 @@ import { prisma, toNumber } from "../lib/prisma";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import { emitInventoryUpdated } from "../lib/inventory-events";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 
 const router: IRouter = Router();
@@ -188,6 +189,16 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
           notes: `Stock changed via variant update (${variant.name})`,
           branchId: writeBranchId,
         },
+      });
+      await emitInventoryUpdated({
+        productId,
+        variantId,
+        type: delta >= 0 ? "in" : "out",
+        quantity: Math.abs(delta),
+        newStockQty: d.stockQty,
+        notes: `Stock changed via variant update (${variant.name})`,
+        branchId: writeBranchId,
+        updatedById: (req as { user?: { id: number } }).user?.id,
       });
     }
     if (d.attributes !== undefined) {

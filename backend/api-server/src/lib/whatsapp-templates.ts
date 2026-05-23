@@ -211,3 +211,153 @@ export function templateOrderCommentAdded(input: {
     ],
   };
 }
+
+function poButton(purchaseOrderId: number): WhatsAppTemplateComponent {
+  return {
+    type: "button",
+    sub_type: "url",
+    index: "0",
+    parameters: [{ type: "text", text: String(purchaseOrderId) }],
+  };
+}
+
+function poPartnerTypeLabel(type: string): string {
+  return type === "manufacturer" ? "Manufacturer" : "Supplier";
+}
+
+/** Purchase order created */
+export function templatePurchaseOrderCreated(input: {
+  recipientName: string;
+  createdByName: string;
+  purchaseOrderId: number;
+  poNumber: string;
+  branchName: string;
+  partnerName: string;
+  partnerType: string;
+  totalAmount: string;
+}): WhatsAppTemplateMessage {
+  const detail = `${input.poNumber} | ${poPartnerTypeLabel(input.partnerType)}: ${input.partnerName} | ₹${input.totalAmount}`;
+  return {
+    name: process.env["WHATSAPP_TEMPLATE_PO_CREATED"]?.trim() || "mgr_po_created_guj",
+    language: { code: process.env["WHATSAPP_TEMPLATE_PO_CREATED_LANG"]?.trim() || "gu" },
+    components: [
+      {
+        type: "body",
+        parameters: [
+          bodyParam("recipient_name", input.recipientName),
+          bodyParam("created_by_name", input.createdByName),
+          bodyParam("branch_name", input.branchName),
+          bodyParam("partner_name", input.partnerName),
+          bodyParam("po_id", detail),
+        ],
+      },
+      poButton(input.purchaseOrderId),
+    ],
+  };
+}
+
+/** Purchase order updated */
+export function templatePurchaseOrderUpdated(input: {
+  recipientName: string;
+  updatedByName: string;
+  purchaseOrderId: number;
+  poNumber: string;
+  branchName: string;
+  partnerName: string;
+}): WhatsAppTemplateMessage {
+  const detail = `${input.poNumber} | ${input.partnerName}`;
+  return {
+    name: process.env["WHATSAPP_TEMPLATE_PO_UPDATED"]?.trim() || "mgr_po_updated_guj",
+    language: { code: process.env["WHATSAPP_TEMPLATE_PO_UPDATED_LANG"]?.trim() || "gu" },
+    components: [
+      {
+        type: "body",
+        parameters: [
+          bodyParam("recipient_name", input.recipientName),
+          bodyParam("updated_by_name", input.updatedByName),
+          bodyParam("branch_name", input.branchName),
+          bodyParam("partner_name", input.partnerName),
+          bodyParam("po_id", detail),
+        ],
+      },
+      poButton(input.purchaseOrderId),
+    ],
+  };
+}
+
+/** Purchase order status changed */
+export function templatePurchaseOrderStatusChanged(input: {
+  recipientName: string;
+  changedByName: string;
+  purchaseOrderId: number;
+  poNumber: string;
+  branchName: string;
+  partnerName: string;
+  nextStatus: string;
+}): WhatsAppTemplateMessage {
+  return {
+    name: process.env["WHATSAPP_TEMPLATE_PO_STATUS"]?.trim() || "mgr_po_status_guj",
+    language: { code: process.env["WHATSAPP_TEMPLATE_PO_STATUS_LANG"]?.trim() || "gu" },
+    components: [
+      {
+        type: "body",
+        parameters: [
+          bodyParam("recipient_name", input.recipientName),
+          bodyParam("branch_name", input.branchName),
+          bodyParam("po_id", `${input.poNumber} (#${input.purchaseOrderId})`),
+          bodyParam("po_status", humanizeToken(input.nextStatus)),
+          bodyParam("partner_name", input.partnerName),
+          bodyParam("changed_by_name", input.changedByName),
+        ],
+      },
+      poButton(input.purchaseOrderId),
+    ],
+  };
+}
+
+function productButton(productId: number): WhatsAppTemplateComponent {
+  return {
+    type: "button",
+    sub_type: "url",
+    index: "0",
+    parameters: [{ type: "text", text: String(productId) }],
+  };
+}
+
+function humanizeAdjustmentType(type: string): string {
+  if (type === "in") return "Stock In";
+  if (type === "out") return "Stock Out";
+  return "Stock Adjustment";
+}
+
+/** Inventory / stock updated */
+export function templateInventoryUpdated(input: {
+  recipientName: string;
+  updatedByName: string;
+  productId: number;
+  branchName: string;
+  inventoryDetail: string;
+  adjustmentType: string;
+  newStockQty: string;
+  notesPreview: string;
+}): WhatsAppTemplateMessage {
+  return {
+    name: process.env["WHATSAPP_TEMPLATE_INVENTORY_UPDATED"]?.trim() || "mgr_inventory_updated_guj",
+    language: { code: process.env["WHATSAPP_TEMPLATE_INVENTORY_UPDATED_LANG"]?.trim() || "gu" },
+    components: [
+      {
+        type: "body",
+        parameters: [
+          bodyParam("recipient_name", input.recipientName),
+          bodyParam("updated_by_name", input.updatedByName),
+          bodyParam("branch_name", input.branchName),
+          bodyParam("inventory_detail", input.inventoryDetail),
+          bodyParam("adjustment_type", humanizeAdjustmentType(input.adjustmentType)),
+          bodyParam("new_stock_qty", input.newStockQty),
+          bodyParam("notes_preview", input.notesPreview),
+        ],
+      },
+      productButton(input.productId),
+    ],
+  };
+}

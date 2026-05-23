@@ -38,6 +38,8 @@ import { categoryIdToParam } from "@/lib/list-category-filter";
 import { getSalesOrderScopeConfig } from "@/lib/sales-order-scope";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
+import { usePermissions } from "@/lib/permissions";
+import { OrdersExportDialog } from "@/components/orders-export-dialog";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -59,6 +61,11 @@ export default function Orders() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const canAddOrders = can("orders", "add");
+  const canEditOrders = can("orders", "edit");
+  const canDeleteOrders = can("orders", "delete");
+  const canEditDeliveries = can("deliveries", "edit");
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
   const headerBranchId =
@@ -291,34 +298,38 @@ export default function Orders() {
 
   const columns = useMemo<ColumnDef<(typeof orders)[number]>[]>(
     () => [
-      {
-        id: "select",
-        header: () => (
-          <Checkbox
-            checked={allSelectedOnPage ? true : selectedCount > 0 ? "indeterminate" : false}
-            onCheckedChange={(v) => toggleSelectAllOnPage(Boolean(v))}
-            aria-label="Select all orders on this page"
-          />
-        ),
-        meta: { headerClassName: "w-[44px]", cellClassName: "w-[44px]" },
-        cell: ({ row }) => {
-          const id = row.original.id as number;
-          const checked = selectedOrderIds.includes(id);
-          return (
-            <Checkbox
-              checked={checked}
-              onCheckedChange={(v) => {
-                if (v) {
-                  setSelectedOrderIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-                } else {
-                  setSelectedOrderIds((prev) => prev.filter((x) => x !== id));
-                }
-              }}
-              aria-label={`Select order ${row.original.orderNumber}`}
-            />
-          );
-        },
-      },
+      ...(canDeleteOrders
+        ? [
+            {
+              id: "select",
+              header: () => (
+                <Checkbox
+                  checked={allSelectedOnPage ? true : selectedCount > 0 ? "indeterminate" : false}
+                  onCheckedChange={(v) => toggleSelectAllOnPage(Boolean(v))}
+                  aria-label="Select all orders on this page"
+                />
+              ),
+              meta: { headerClassName: "w-[44px]", cellClassName: "w-[44px]" },
+              cell: ({ row }: { row: { original: (typeof orders)[number] } }) => {
+                const id = row.original.id as number;
+                const checked = selectedOrderIds.includes(id);
+                return (
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => {
+                      if (v) {
+                        setSelectedOrderIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+                      } else {
+                        setSelectedOrderIds((prev) => prev.filter((x) => x !== id));
+                      }
+                    }}
+                    aria-label={`Select order ${row.original.orderNumber}`}
+                  />
+                );
+              },
+            } as ColumnDef<(typeof orders)[number]>,
+          ]
+        : []),
       {
         accessorKey: "orderNumber",
         header: "Order #",
@@ -377,25 +388,28 @@ export default function Orders() {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-                <Select
-                  value={String(row.original.status) === "delivered" ? "complete" : String(row.original.status)}
-                  onValueChange={(val: any) =>
-                    updateStatus.mutate({ id: row.original.id, data: { status: val } })
-                  }
-                >
-            <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
-              {getStatusBadge(row.original.status)}
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="order_received">Order Received</SelectItem>
-              <SelectItem value="manufacturing">Manufacturing</SelectItem>
-              <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-              <SelectItem value="complete">Complete</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        ),
+        cell: ({ row }) =>
+          canEditOrders ? (
+            <Select
+              value={String(row.original.status) === "delivered" ? "complete" : String(row.original.status)}
+              onValueChange={(val: any) =>
+                updateStatus.mutate({ id: row.original.id, data: { status: val } })
+              }
+            >
+              <SelectTrigger className="h-8 w-[130px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+                {getStatusBadge(row.original.status)}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="order_received">Order Received</SelectItem>
+                <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
+                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            getStatusBadge(row.original.status)
+          ),
       },
       {
         id: "deliveryStatus",
@@ -418,7 +432,8 @@ export default function Orders() {
           const del = String(ord.deliveryStatus ?? "pending");
           const main = String(ord.status) === "delivered" ? "complete" : String(ord.status ?? "order_received");
           const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === ord.id;
-          const canEditDelivery = canUpdateOrderDeliveryStatus(ord, user);
+          const canEditDelivery =
+            (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(ord, user);
           const dateSource = ord.deliveryDate ?? ord.deliverySlot?.slotDate ?? null;
           const dateStr =
             dateSource != null && String(dateSource).trim() !== ""
@@ -542,12 +557,16 @@ export default function Orders() {
               <Button variant="ghost" size="icon" onClick={() => openDetailPage(ord)}>
                 <Eye className="h-4 w-4 text-muted-foreground" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => openEditPage(ord)}>
-                <Edit className="h-4 w-4 text-primary" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => openSingleDeleteDialog(ord.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
+              {canEditOrders ? (
+                <Button variant="ghost" size="icon" onClick={() => openEditPage(ord)}>
+                  <Edit className="h-4 w-4 text-primary" />
+                </Button>
+              ) : null}
+              {canDeleteOrders ? (
+                <Button variant="ghost" size="icon" onClick={() => openSingleDeleteDialog(ord.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              ) : null}
             </div>
           );
         },
@@ -566,6 +585,9 @@ export default function Orders() {
       selectedOrderIds,
       updateStatus,
       user,
+      canDeleteOrders,
+      canEditOrders,
+      canEditDeliveries,
     ],
   );
 
@@ -576,10 +598,17 @@ export default function Orders() {
           <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
           <p className="text-muted-foreground">Manage customer sales orders</p>
         </div>
-        <Button onClick={openCreatePage}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Order
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {can("orders", "view") ? (
+            <OrdersExportDialog categoryId={categoryId} />
+          ) : null}
+          {canAddOrders ? (
+            <Button onClick={openCreatePage}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Order
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
@@ -660,7 +689,11 @@ export default function Orders() {
           <span className="text-sm text-muted-foreground">{selectedCount} order(s) selected</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setExportConfirmOpen(true)}>Export selected</Button>
-            <Button variant="destructive" size="sm" onClick={openBulkDeleteDialog}>Delete selected</Button>
+            {canDeleteOrders ? (
+              <Button variant="destructive" size="sm" onClick={openBulkDeleteDialog}>
+                Delete selected
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}

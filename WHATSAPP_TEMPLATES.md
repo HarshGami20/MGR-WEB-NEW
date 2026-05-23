@@ -18,6 +18,10 @@ When an order event occurs, the API sends **approved WhatsApp template messages*
 | Payment recorded | `PAYMENT_RECEIVED` | `mgr_payment_status_guj` | `en` |
 | Delivery status changed | `ORDER_DELIVERY_UPDATED` | `mgr_delivery_status_en` | `en` |
 | Staff comment added | `ORDER_STAFF_COMMENT_ADDED` | `mgr_order_comment_en` | `en` |
+| Purchase order created | `PURCHASE_ORDER_CREATED` | `mgr_po_created_guj` | `gu` |
+| Purchase order updated | `PURCHASE_ORDER_UPDATED` | `mgr_po_updated_guj` | `gu` |
+| Purchase order status changed | `PURCHASE_ORDER_STATUS_CHANGED` | `mgr_po_status_guj` | `gu` |
+| Inventory / stock updated | `INVENTORY_UPDATED` | `mgr_inventory_updated_guj` | `gu` |
 
 Sending runs on the **backend only** (never from the browser). Implementation:
 
@@ -29,6 +33,10 @@ Sending runs on the **backend only** (never from the browser). Implementation:
 | [`backend/api-server/src/lib/whatsapp-order-recipients.ts`](backend/api-server/src/lib/whatsapp-order-recipients.ts) | Resolves assignee phone numbers |
 | [`backend/api-server/src/routes/orders.ts`](backend/api-server/src/routes/orders.ts) | Emits order / delivery / comment events |
 | [`backend/api-server/src/routes/payments.ts`](backend/api-server/src/routes/payments.ts) | Emits `PAYMENT_RECEIVED` |
+| [`backend/api-server/src/routes/purchaseOrders.ts`](backend/api-server/src/routes/purchaseOrders.ts) | Emits purchase order events |
+| [`backend/api-server/src/lib/whatsapp-po-recipients.ts`](backend/api-server/src/lib/whatsapp-po-recipients.ts) | PO partner + creator phone resolution |
+| [`backend/api-server/src/lib/whatsapp-inventory-recipients.ts`](backend/api-server/src/lib/whatsapp-inventory-recipients.ts) | Inventory updater + Super Admin phones |
+| [`backend/api-server/src/routes/inventory.ts`](backend/api-server/src/routes/inventory.ts) | Inventory adjust + emits `INVENTORY_UPDATED` |
 
 Listeners are registered in [`backend/api-server/src/index.ts`](backend/api-server/src/index.ts) via `registerWhatsAppEventListeners()`.
 
@@ -67,6 +75,14 @@ Use these if your approved templates in Meta use **different names** or **langua
 | `WHATSAPP_TEMPLATE_DELIVERY_UPDATED_LANG` | Delivery template language | `en` |
 | `WHATSAPP_TEMPLATE_ORDER_COMMENT` | Staff comment | `mgr_order_comment_en` |
 | `WHATSAPP_TEMPLATE_ORDER_COMMENT_LANG` | Comment template language | `en` |
+| `WHATSAPP_TEMPLATE_PO_CREATED` | PO created | `mgr_po_created_guj` |
+| `WHATSAPP_TEMPLATE_PO_CREATED_LANG` | PO created language | `gu` |
+| `WHATSAPP_TEMPLATE_PO_UPDATED` | PO updated | `mgr_po_updated_guj` |
+| `WHATSAPP_TEMPLATE_PO_UPDATED_LANG` | PO updated language | `gu` |
+| `WHATSAPP_TEMPLATE_PO_STATUS` | PO status | `mgr_po_status_guj` |
+| `WHATSAPP_TEMPLATE_PO_STATUS_LANG` | PO status language | `gu` |
+| `WHATSAPP_TEMPLATE_INVENTORY_UPDATED` | Inventory update | `mgr_inventory_updated_guj` |
+| `WHATSAPP_TEMPLATE_INVENTORY_UPDATED_LANG` | Inventory template language | `gu` |
 
 ### Example `.env` block
 
@@ -205,6 +221,81 @@ Template **names and parameter keys** must match what you configured in [Meta Bu
 
 ---
 
+### 3.7 Purchase order created — `mgr_po_created_guj`
+
+**When:** `POST /purchase-orders`.
+
+**Recipients:** Supplier **or** manufacturer portal user(s) + **PO creator** (staff who created it).
+
+| Component | Parameter name (Meta) | Value sent by API |
+|-----------|-------------------------|-------------------|
+| Body | `recipient_name` | User receiving the message |
+| Body | `created_by_name` | Staff who created the PO |
+| Body | `branch_name` | Branch name |
+| Body | `partner_name` | Supplier or manufacturer company name |
+| Body | `po_id` | `{poNumber} \| Supplier/Manufacturer: {name} \| ₹{total}` |
+| Button (URL, index 0) | dynamic URL suffix | Numeric purchase order `id` |
+
+**Button base URL:** `https://your-domain.com/purchase-orders/`
+
+---
+
+### 3.8 Purchase order updated — `mgr_po_updated_guj`
+
+**When:** `PUT /purchase-orders/:id` (notes, expected delivery, staff comments).
+
+**Recipients:** **PO creator only** (staff who originally created the PO).
+
+| Component | Parameter name (Meta) | Value sent by API |
+|-----------|-------------------------|-------------------|
+| Body | `recipient_name` | PO creator name |
+| Body | `updated_by_name` | User who edited the PO |
+| Body | `branch_name` | Branch name |
+| Body | `partner_name` | Supplier or manufacturer name |
+| Body | `po_id` | `{poNumber} \| {partnerName}` |
+| Button (URL, index 0) | dynamic URL suffix | Numeric purchase order `id` |
+
+---
+
+### 3.9 Purchase order status — `mgr_po_status_guj`
+
+**When:** `PATCH /purchase-orders/:id/status`.
+
+**Recipients:** Supplier/manufacturer portal user(s) + **PO creator**.
+
+| Component | Parameter name (Meta) | Value sent by API |
+|-----------|-------------------------|-------------------|
+| Body | `recipient_name` | User receiving the message |
+| Body | `branch_name` | Branch name |
+| Body | `po_id` | `{poNumber} (#{id})` |
+| Body | `po_status` | Human-readable status |
+| Body | `partner_name` | Supplier or manufacturer name |
+| Body | `changed_by_name` | User who changed status |
+| Button (URL, index 0) | dynamic URL suffix | Numeric purchase order `id` |
+
+---
+
+### 3.10 Inventory updated — `mgr_inventory_updated_guj`
+
+**When:** `POST /inventory/adjust`, product stock edit, or variant stock edit.
+
+**Recipients:** User who made the change + all **Super Admin** users (role name `Super Admin`).
+
+| Component | Parameter name (Meta) | Value sent by API |
+|-----------|-------------------------|-------------------|
+| Body | `recipient_name` | User receiving the message |
+| Body | `updated_by_name` | User who updated stock |
+| Body | `branch_name` | Branch name |
+| Body | `inventory_detail` | `{sku} \| {product} \| {variant?} \| Qty: {n}` |
+| Body | `adjustment_type` | `Stock In` / `Stock Out` / `Stock Adjustment` |
+| Body | `new_stock_qty` | Stock quantity after update |
+| Body | `notes_preview` | Notes or `—` |
+| Button (URL, index 0) | dynamic URL suffix | Numeric product `id` |
+
+**Button base URL:** `https://your-domain.com/products/`
+
+---
+
 ## 4. Who receives messages
 
 - **Included:** Users linked on the order as assignees (`order_assignees`), or legacy single `assignedTo` if no junction rows exist.
@@ -214,6 +305,24 @@ Each assignee must have:
 
 1. **Active** user account (`isActive: true`)
 2. **Mobile** stored on the user profile (10-digit India numbers are normalized to `91XXXXXXXXXX`)
+
+### Purchase orders
+
+| Event | Recipients |
+|-------|------------|
+| PO created | Supplier/manufacturer portal users + PO creator |
+| PO updated | PO creator only |
+| PO status changed | Supplier/manufacturer portal users + PO creator |
+
+Partner users are ERP users linked to the supplier or manufacturer (`User.supplierId` / `User.manufacturerId`). The creator is stored on `purchase_orders.created_by_id` (set when the PO is created).
+
+### Inventory
+
+| Event | Recipients |
+|-------|------------|
+| Stock updated | User who updated + all **Super Admin** users |
+
+Super Admin is determined by role name `Super Admin` (`isSuperAdminRole` in the API).
 
 Phone normalization lives in [`backend/api-server/src/lib/whatsapp-phone.ts`](backend/api-server/src/lib/whatsapp-phone.ts).
 
@@ -302,6 +411,14 @@ WHATSAPP_TEMPLATE_DELIVERY_UPDATED
 WHATSAPP_TEMPLATE_DELIVERY_UPDATED_LANG
 WHATSAPP_TEMPLATE_ORDER_COMMENT
 WHATSAPP_TEMPLATE_ORDER_COMMENT_LANG
+WHATSAPP_TEMPLATE_PO_CREATED
+WHATSAPP_TEMPLATE_PO_CREATED_LANG
+WHATSAPP_TEMPLATE_PO_UPDATED
+WHATSAPP_TEMPLATE_PO_UPDATED_LANG
+WHATSAPP_TEMPLATE_PO_STATUS
+WHATSAPP_TEMPLATE_PO_STATUS_LANG
+WHATSAPP_TEMPLATE_INVENTORY_UPDATED
+WHATSAPP_TEMPLATE_INVENTORY_UPDATED_LANG
 ```
 
 ---
@@ -547,6 +664,10 @@ Customer, items, amount, or assignees may have changed. Please review the order.
 
 ### 10.4 Payment received — `mgr_payment_status_guj`
 
+**Template name (suggested):** `mgr_payment_status_guj`  
+**Category:** Utility  
+**Language:** Gujarati — `gu` (or `guj` if that is what your Meta account uses)
+
 **Body text (English):**
 
 ```text
@@ -563,7 +684,25 @@ Thank you,
 MGR CASA Team
 ```
 
-**Preview:**
+**Body text (Gujarati) — header + body:**
+
+```text
+*ચૂકવણી અપડેટ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+ઓર્ડર માટે ચૂકવણી અપડેટ:
+{{order_id}}
+
+શાખા: {{branch_name}}
+ચૂકવણી સ્થિતિ: {{payment_status}}
+નોંધ કરનાર: {{recorded_by_name}}
+
+આભાર,
+MGR CASA
+```
+
+**Preview (English, filled in):**
 
 ```text
 Hello Amit Shah,
@@ -576,9 +715,31 @@ Payment status: Partially Paid
 Recorded by: Rajesh Patel
 ```
 
+**Preview (Gujarati, filled in):**
+
+```text
+*ચૂકવણી અપડેટ | MGR CASA*
+
+નમસ્તે Amit Shah,
+
+ઓર્ડર માટે ચૂકવણી અપડેટ:
+ORD-20260522-abc | ₹5000 received
+
+શાખા: Ahmedabad Showroom
+ચૂકવણી સ્થિતિ: Partially Paid
+નોંધ કરનાર: Rajesh Patel
+
+આભાર,
+MGR CASA
+```
+
 ---
 
-### 10.5 Delivery status — `mgr_delivery_status_en`
+### 10.5 Delivery status — `mgr_delivery_status_guj`
+
+**Template name (suggested):** `mgr_delivery_status_guj` or `mgr_delivery_status_en`  
+**Category:** Utility  
+**Language:** Gujarati — `gu`
 
 **Body text (English):**
 
@@ -595,7 +756,24 @@ Updated by: {{changed_by_name}}
 Open the order for details.
 ```
 
-**Preview:**
+**Body text (Gujarati) — header + body:**
+
+```text
+*ડિલિવરી અપડેટ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+ડિલિવરી અપડેટ — {{order_id}}
+
+શાખા: {{branch_name}}
+સ્થિતિ: {{delivery_status}}
+ડ્રાઇવર: {{driver_name}}
+અપડેટ કરનાર: {{changed_by_name}}
+
+વિગત માટે ઓર્ડર ખોલો.
+```
+
+**Preview (English, filled in):**
 
 ```text
 Hello Amit Shah,
@@ -608,9 +786,30 @@ Driver: Ramesh Kumar
 Updated by: Rajesh Patel
 ```
 
+**Preview (Gujarati, filled in):**
+
+```text
+*ડિલિવરી અપડેટ | MGR CASA*
+
+નમસ્તે Amit Shah,
+
+ડિલિવરી અપડેટ — ORD-20260522-abc (#42)
+
+શાખા: Ahmedabad Showroom
+સ્થિતિ: Out for delivery
+ડ્રાઇવર: Ramesh Kumar
+અપડેટ કરનાર: Rajesh Patel
+
+વિગત માટે ઓર્ડર ખોલો.
+```
+
 ---
 
-### 10.6 Staff comment — `mgr_order_comment_en`
+### 10.6 Staff comment — `mgr_order_comment_guj`
+
+**Template name (suggested):** `mgr_order_comment_guj` or `mgr_order_comment_en`  
+**Category:** Utility  
+**Language:** Gujarati — `gu`
 
 **Body text (English):**
 
@@ -627,7 +826,24 @@ By: {{comment_by_name}}
 Open the order to reply.
 ```
 
-**Preview:**
+**Body text (Gujarati) — header + body:**
+
+```text
+*નવી ટિપ્પણી | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+ઓર્ડર {{order_id}} પર નવી ટિપ્પણી
+
+શાખા: {{branch_name}}
+ટિપ્પણી કરનાર: {{comment_by_name}}
+
+{{comment_preview}}
+
+જવાબ આપવા ઓર્ડર ખોલો.
+```
+
+**Preview (English, filled in):**
 
 ```text
 Hello Amit Shah,
@@ -642,52 +858,188 @@ Please confirm delivery date with customer.
 Open the order to reply.
 ```
 
+**Preview (Gujarati, filled in):**
+
+```text
+*નવી ટિપ્પણી | MGR CASA*
+
+નમસ્તે Amit Shah,
+
+ઓર્ડર ORD-20260522-abc (#42) પર નવી ટિપ્પણી
+
+શાખા: Ahmedabad Showroom
+ટિપ્પણી કરનાર: Rajesh Patel
+
+Please confirm delivery date with customer.
+
+જવાબ આપવા ઓર્ડર ખોલો.
+```
+
 ---
 
 ### 10.7 Shorter templates (if Meta limits length)
 
-**Created (minimal):**
+**Created (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, new order at {{branch_name}} by {{created_by_name}}: {{order_id}}. Tap below.
 ```
 
-**Status (minimal):**
+**Created (minimal) — Gujarati:**
+
+```text
+*નવો ઓર્ડર | MGR CASA* — નમસ્તે {{recipient_name}}, {{branch_name}} — {{created_by_name}} દ્વારા: {{order_id}}. નીચે ટેપ કરો.
+```
+
+**Status (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, {{branch_name}} — {{order_id}} → {{job_status}} by {{changed_by_name}}.
 ```
 
-**Updated (minimal):**
+**Status (minimal) — Gujarati:**
+
+```text
+*સ્થિતિ અપડેટ | MGR CASA* — નમસ્તે {{recipient_name}}, {{branch_name}} — {{order_id}} → {{job_status}} ({{changed_by_name}}).
+```
+
+**Updated (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, {{branch_name}} — {{order_id}} updated by {{updated_by_name}}.
 ```
 
-**Payment (minimal):**
+**Updated (minimal) — Gujarati:**
+
+```text
+*ઓર્ડર અપડેટ | MGR CASA* — નમસ્તે {{recipient_name}}, {{branch_name}} — {{order_id}} અપડેટ: {{updated_by_name}}.
+```
+
+**Payment (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, {{order_id}} at {{branch_name}} — {{payment_status}}. Recorded by {{recorded_by_name}}.
 ```
 
-**Delivery (minimal):**
+**Payment (minimal) — Gujarati:**
+
+```text
+*ચૂકવણી | MGR CASA* — નમસ્તે {{recipient_name}}, {{order_id}} ({{branch_name}}) — {{payment_status}}. નોંધ: {{recorded_by_name}}.
+```
+
+**Delivery (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, {{order_id}} — {{delivery_status}}. Driver: {{driver_name}}. By {{changed_by_name}}.
 ```
 
-**Comment (minimal):**
+**Delivery (minimal) — Gujarati:**
+
+```text
+*ડિલિવરી | MGR CASA* — નમસ્તે {{recipient_name}}, {{order_id}} — {{delivery_status}}. ડ્રાઇવર: {{driver_name}}. {{changed_by_name}}.
+```
+
+**Comment (minimal) — English:**
 
 ```text
 Hi {{recipient_name}}, comment on {{order_id}} by {{comment_by_name}}: {{comment_preview}}
 ```
 
+**Comment (minimal) — Gujarati:**
+
+```text
+*ટિપ્પણી | MGR CASA* — નમસ્તે {{recipient_name}}, {{order_id}} — {{comment_by_name}}: {{comment_preview}}
+```
+
 ---
 
-### 10.8 Meta submission checklist
+### 10.8 Purchase order templates (Gujarati)
+
+#### PO created — `mgr_po_created_guj`
+
+```text
+*નવો ખરીદી ઓર્ડર | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+તમારા માટે નવો ખરીદી ઓર્ડર બનાવવામાં આવ્યો છે.
+
+બનાવનાર: {{created_by_name}}
+શાખા: {{branch_name}}
+પાર્ટનર: {{partner_name}}
+
+વિગત:
+{{po_id}}
+
+કૃપા કરીને MGR CASA માં PO ખોલી તપાસો.
+
+આભાર,
+MGR CASA
+```
+
+#### PO updated — `mgr_po_updated_guj`
+
+```text
+*ખરીદી ઓર્ડર અપડેટ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+તમે બનાવેલ PO અપડેટ થયો:
+{{po_id}}
+
+શાખા: {{branch_name}}
+પાર્ટનર: {{partner_name}}
+અપડેટ કરનાર: {{updated_by_name}}
+
+કૃપા કરીને PO ખોલી તપાસો.
+```
+
+#### PO status — `mgr_po_status_guj`
+
+```text
+*PO સ્થિતિ અપડેટ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+PO અપડેટ — {{po_id}}
+
+શાખા: {{branch_name}}
+પાર્ટનર: {{partner_name}}
+નવી સ્થિતિ: *{{po_status}}*
+બદલાવ કરનાર: {{changed_by_name}}
+
+વિગત માટે PO ખોલો.
+```
+
+#### Inventory updated — `mgr_inventory_updated_guj`
+
+```text
+*ઇન્વેન્ટરી અપડેટ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+સ્ટોક અપડેટ થયો.
+
+અપડેટ કરનાર: {{updated_by_name}}
+શાખા: {{branch_name}}
+
+વિગત:
+{{inventory_detail}}
+
+પ્રકાર: {{adjustment_type}}
+નવો સ્ટોક: {{new_stock_qty}}
+
+નોંધ: {{notes_preview}}
+
+ઉત્પાદન તપાસવા નીચે ટેપ કરો.
+```
+
+---
+
+### 10.9 Meta submission checklist
 
 1. Choose **Utility** (not Marketing) for staff notifications.
-2. Add variables per template (see sections 3.1–3.6): **`recipient_name`**, **`branch_name`**, **`order_id`**, plus event-specific names (`created_by_name`, `payment_status`, `driver_name`, `comment_preview`, etc.).
+2. Add variables per template (see sections 3.1–3.9): **`recipient_name`**, **`branch_name`**, **`order_id`** / **`po_id`**, plus event-specific names.
 3. Do not change variable names after approval without updating the API.
 4. Approve template → copy exact **template name** and **language code** into `.env` (`WHATSAPP_TEMPLATE_*`).
 5. Test with one assignee phone number in Meta’s test mode before going live.

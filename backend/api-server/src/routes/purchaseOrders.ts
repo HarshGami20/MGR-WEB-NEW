@@ -227,11 +227,13 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
   let totalAmount = 0;
   for (const item of items) totalAmount += item.unitPrice * item.quantity;
   const poNumber = generatePONumber();
+  const actorId = (req as { user?: { id: number } }).user?.id;
   const po = await prisma.purchaseOrder.create({ data: {
     ...poData,
     branchId,
     poNumber,
     totalAmount: String(totalAmount),
+    createdById: actorId ?? null,
     expectedDelivery: poData.expectedDelivery ? new Date(poData.expectedDelivery) : undefined,
   }});
   for (const raw of items as IncomingLineItem[]) {
@@ -281,7 +283,6 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
       },
     });
   }
-  const actorId = (req as { user?: { id: number } }).user?.id;
   emitSafe("PURCHASE_ORDER_CREATED", {
     purchaseOrderId: po.id,
     poNumber: po.poNumber,

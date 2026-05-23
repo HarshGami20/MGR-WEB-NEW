@@ -5,7 +5,7 @@ import {
   useListUsers,
   useCreateUser,
   useUpdateUser,
-  useDeleteUser,
+  deleteUser as deleteUserRequest,
   useToggleUserActive,
   useListRoles,
   useListBranches,
@@ -14,10 +14,19 @@ import {
   getListUsersQueryKey,
 } from "@/api-client";
 import { useBranch } from "@/lib/branch-context";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Shield, Power, GitBranch, Building2, Factory } from "lucide-react";
@@ -54,6 +63,8 @@ export default function Users() {
   const [page, setPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -95,12 +106,24 @@ export default function Users() {
     },
   });
 
-  const deleteUser = useDeleteUser({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
-        toast({ title: "User deleted" });
-      },
+  const deleteUser = useMutation({
+    mutationFn: async ({ id, password }: { id: number; password: string }) =>
+      deleteUserRequest(id, {
+        body: JSON.stringify({ password }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
+      toast({ title: "User deleted" });
+      setDeleteTarget(null);
+      setDeletePassword("");
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Could not delete user",
+        description: e.data?.error || e.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -305,7 +328,8 @@ export default function Users() {
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    if (confirm("Delete this user?")) deleteUser.mutate({ id: user.id });
+                    setDeletePassword("");
+                    setDeleteTarget({ id: user.id, name: user.name });
                   }}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -649,6 +673,54 @@ export default function Users() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeletePassword("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete user?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `This will permanently remove ${deleteTarget.name}. Enter your password to confirm.`
+                : "Enter your password to confirm."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <label htmlFor="delete-user-password" className="text-sm font-medium">
+              Your password
+            </label>
+            <Input
+              id="delete-user-password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              className="mt-2"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteUser.isPending}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={!deletePassword.trim() || deleteUser.isPending}
+              onClick={() => {
+                if (!deleteTarget) return;
+                deleteUser.mutate({ id: deleteTarget.id, password: deletePassword });
+              }}
+            >
+              {deleteUser.isPending ? "Deleting…" : "Delete user"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { requireWriteBranchId } from "../lib/branch-scope";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { loadCategoryNodes, productMatchesCategoryFilter } from "../lib/category-filter";
+import { emitInventoryUpdated } from "../lib/inventory-events";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -415,6 +416,24 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
       where: { id },
       include: { category: true, _count: { select: { variants: true } } },
     });
+    if (
+      d.stockQty !== undefined &&
+      variantCount === 0 &&
+      d.stockQty !== existingProduct.stockQty &&
+      writeBranchId != null
+    ) {
+      const delta = d.stockQty - existingProduct.stockQty;
+      await emitInventoryUpdated({
+        productId: id,
+        variantId: null,
+        type: delta >= 0 ? "in" : "out",
+        quantity: Math.abs(delta),
+        newStockQty: d.stockQty,
+        notes: "Stock changed via product update",
+        branchId: writeBranchId,
+        updatedById: user.id,
+      });
+    }
     res.json(await enrichProduct(refreshed ?? product));
   } catch (e: any) {
     if (e?.code === "P2025") {

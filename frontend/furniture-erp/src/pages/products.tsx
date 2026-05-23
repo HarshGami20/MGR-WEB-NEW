@@ -17,6 +17,7 @@ import { formatInr } from "@/lib/format-currency";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { productImageList, variantImageList } from "@/lib/image-urls";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { ProductsExportDialog } from "@/components/products-export-dialog";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 
 type ProductRow = Record<string, any>;
@@ -216,14 +217,19 @@ export default function Products() {
           <h2 className="text-2xl font-bold tracking-tight">Products</h2>
           <p className="text-muted-foreground">Manage your product catalog and variants</p>
         </div>
-        {can("products", "add") ? (
-          <Button asChild>
-            <Link href="/products/new">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Product
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {can("products", "view") ? (
+            <ProductsExportDialog search={search} categoryId={categoryId} lowStock={lowStock} />
+          ) : null}
+          {can("products", "add") ? (
+            <Button asChild>
+              <Link href="/products/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Product
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">

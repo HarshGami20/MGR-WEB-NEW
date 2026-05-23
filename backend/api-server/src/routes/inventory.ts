@@ -7,6 +7,7 @@ import { decrementProductStock, incrementProductStock, setProductStockAbsolute, 
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { inventoryLogProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { emitInventoryUpdated } from "../lib/inventory-events";
 
 const router: IRouter = Router();
 
@@ -81,6 +82,7 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
 
   const { productId, type, quantity, notes } = parsed.data as any;
   const variantId: number | null | undefined = (parsed.data as any).variantId;
+  const actorId = (req as { user?: { id: number } }).user?.id;
 
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
@@ -125,6 +127,19 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
   });
   const variant = variantId ? await prisma.productVariant.findUnique({ where: { id: variantId } }) : null;
   const p = refreshed ?? product;
+
+  const newStockQty = variant ? variant.stockQty : (refreshed?.stockQty ?? product.stockQty);
+  await emitInventoryUpdated({
+    productId,
+    variantId: variantId ?? null,
+    type,
+    quantity,
+    newStockQty,
+    notes: notes ?? null,
+    branchId: writeBranchId,
+    updatedById: actorId,
+  });
+
   res.json({
     ...log,
     product: { ...p, price: toNumber(p.price), gstPercent: toNumber(p.gstPercent) },
