@@ -622,12 +622,12 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="order-1 space-y-6 lg:order-2 lg:col-span-8">
-            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-5">
+            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Order details</h2>
                 <p className="text-xs text-muted-foreground">Customer identity and delivery address.</p>
               </div>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 gap-x-4 gap-y-3">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Customer Name*</FormLabel>
@@ -648,7 +648,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 )} />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 sm:items-start">
                 <FormField
                   control={form.control}
                   name="isGst"
@@ -706,7 +706,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               </div>
 
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
@@ -821,7 +821,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               title="Delivery"
               description="Delivery charge, driver, date, and staff who can update delivery status."
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
                 <FormField control={form.control} name="deliveryCharge" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Delivery charge (₹)</FormLabel>
@@ -1059,7 +1059,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
                     <FormField control={form.control} name="advanceAmount" render={({ field }) => (
                       <FormItem>
                         <FormLabel>{isEdit ? "Advance amount (₹)" : "Advance amount (₹)"}</FormLabel>
