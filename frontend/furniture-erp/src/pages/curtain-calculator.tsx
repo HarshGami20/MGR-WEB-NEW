@@ -8,17 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { formatInr } from "@/lib/format-currency";
-
-/** INR with paise, matching the standalone HTML quotation rows. */
-function formatInrDetail(amount: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
+import { formatInr, formatInrDetail } from "@/lib/format-currency";
 import { downloadPdfDocument } from "@/lib/pdfmake-client";
 import { cn } from "@/lib/utils";
 

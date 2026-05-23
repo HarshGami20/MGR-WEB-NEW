@@ -16,6 +16,7 @@ import { Eye, Download, GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { customFetch } from "@/api-client/custom-fetch";
 import { useToast } from "@/hooks/use-toast";
+import { formatInr } from "@/lib/format-currency";
 
 export default function Invoices() {
   const [page, setPage] = useState(1);
@@ -156,7 +157,7 @@ export default function Invoices() {
         accessorKey: "totalAmount",
         header: () => <span className="text-right block w-full">Total Amount (₹)</span>,
         meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
-        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+        cell: ({ row }) => formatInr(row.original.totalAmount),
       },
       {
         id: "actions",
@@ -292,9 +293,9 @@ export default function Invoices() {
                     <TableRow key={item.id}>
                       <TableCell>{label}</TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-right">₹{item.unitPrice.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{formatInr(item.unitPrice)}</TableCell>
                       {selectedInvoice.isGst && <TableCell className="text-right">{item.gstPercent}%</TableCell>}
-                      <TableCell className="text-right font-medium">₹{item.totalPrice.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-medium">{formatInr(item.totalPrice)}</TableCell>
                     </TableRow>
                     );
                   })}
@@ -309,7 +310,7 @@ export default function Invoices() {
                       {/* {selectedInvoice.isGst ? "Taxable amount:" : "Subtotal:"} */}
                       Sub Total:
                     </span>
-                    <span>₹{selectedInvoice.order?.subtotal?.toLocaleString()}</span>
+                    <span>{formatInr(selectedInvoice.order?.subtotal ?? 0)}</span>
                   </div>
                   
                   {selectedInvoice.isGst && (
@@ -317,19 +318,19 @@ export default function Invoices() {
                       {selectedInvoice.cgst > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">CGST:</span>
-                          <span>₹{selectedInvoice.cgst.toLocaleString()}</span>
+                          <span>{formatInr(selectedInvoice.cgst)}</span>
                         </div>
                       )}
                       {selectedInvoice.sgst > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">SGST:</span>
-                          <span>₹{selectedInvoice.sgst.toLocaleString()}</span>
+                          <span>{formatInr(selectedInvoice.sgst)}</span>
                         </div>
                       )}
                       {selectedInvoice.igst > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">IGST:</span>
-                          <span>₹{selectedInvoice.igst.toLocaleString()}</span>
+                          <span>{formatInr(selectedInvoice.igst)}</span>
                         </div>
                       )}
                     </>
@@ -337,7 +338,7 @@ export default function Invoices() {
                   
                   <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                     <span>Total:</span>
-                    <span className="text-primary">₹{selectedInvoice.totalAmount.toLocaleString()}</span>
+                    <span className="text-primary">{formatInr(selectedInvoice.totalAmount)}</span>
                   </div>
                 </div>
               </div>

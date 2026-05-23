@@ -37,6 +37,7 @@ import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
 import { listDrivers } from "@/lib/driver-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
+import { formatInr } from "@/lib/format-currency";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
@@ -100,7 +101,7 @@ const orderSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["advanceAmount"],
-      message: `Advance amount cannot exceed order total (₹${totals.total.toLocaleString()})`,
+      message: `Advance amount cannot exceed order total (${formatInr(totals.total)})`,
     });
   }
 });
@@ -997,32 +998,31 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <>
                       <div className="flex justify-between gap-2 text-sm">
                         <span className="text-muted-foreground">Sub Total</span>
-                        <span className="tabular-nums">₹{orderSummary.taxableSubtotal.toLocaleString()}</span>
+                        <span className="tabular-nums">{formatInr(orderSummary.taxableSubtotal)}</span>
                       </div>
                       <div className="flex justify-between gap-2 text-sm">
                         <span className="text-muted-foreground">GST</span>
-                        <span className="tabular-nums">₹{orderSummary.taxAmount.toLocaleString()}</span>
+                        <span className="tabular-nums">{formatInr(orderSummary.taxAmount)}</span>
                       </div>
                       <Separator />
                     </>
                   ) : null}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                      <IndianRupee className="h-4 w-4" />
                       Total{isGstInvoice ? " (incl. GST)" : ""}
                     </span>
-                    <span className="text-xl font-bold tabular-nums">₹{orderSummary.total.toLocaleString()}</span>
+                    <span className="text-xl font-bold tabular-nums">{formatInr(orderSummary.total)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">{isEdit ? "Paid" : "Advance"}</span>
                     <span className="font-medium text-green-700 tabular-nums">
-                      ₹{paidAmountDisplay.toLocaleString()}
+                      {formatInr(paidAmountDisplay)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">Due Amount</span>
-                    <span className="font-semibold tabular-nums">₹{balanceAmountDisplay.toLocaleString()}</span>
+                    <span className="font-semibold tabular-nums">{formatInr(balanceAmountDisplay)}</span>
                   </div>
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">Payment status</span>

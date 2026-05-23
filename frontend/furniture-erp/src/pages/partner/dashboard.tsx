@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Factory, Package, Truck, ArrowRight, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 
 function statusBadgeClass(status: string): string {
   switch (status) {
@@ -208,7 +209,7 @@ export default function PartnerDashboardPage() {
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{delivery}</TableCell>
                         <TableCell className="text-right tabular-nums font-medium">
-                          ₹{Number(po.totalAmount ?? 0).toLocaleString("en-IN")}
+                          {formatInr(Number(po.totalAmount ?? 0))}
                         </TableCell>
                         <TableCell>
                           <Link href={`/purchase-orders/${po.id}`}>

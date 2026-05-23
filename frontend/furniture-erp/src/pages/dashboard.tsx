@@ -30,6 +30,7 @@ import { Link } from "wouter";
 import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDeliverySlots } from "@/lib/delivery-api";
 import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
@@ -398,7 +399,7 @@ function StaffDashboard() {
                     axisLine={false}
                     width={56}
                     tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                    tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
+                    tickFormatter={(v) => `₹${formatCompactCurrency(v)}`}
                   />
                   <RechartsTooltip
                     cursor={{ fill: "hsl(var(--accent))", radius: 12 }}
@@ -413,7 +414,7 @@ function StaffDashboard() {
                             Order received: <span className="font-medium text-foreground">{payload[0]?.payload.pendingCount ?? 0}</span>
                           </p>
                           <p className="text-muted-foreground">
-                            Revenue: <span className="font-medium text-foreground">₹{(payload[0]?.payload.revenue ?? 0).toLocaleString("en-IN")}</span>
+                            Revenue: <span className="font-medium text-foreground">{formatInr(payload[0]?.payload.revenue ?? 0)}</span>
                           </p>
                         </div>
                       ) : null
@@ -602,7 +603,7 @@ function StaffDashboard() {
                       </p>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Q1 revenue: ₹{formatCurrencyFull(quarterTotals[0])}</TooltipContent>
+                  <TooltipContent side="top">Q1 revenue: {formatInr(quarterTotals[0])}</TooltipContent>
                 </Tooltip>
 
                 <Tooltip>
@@ -613,7 +614,7 @@ function StaffDashboard() {
                       </p>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Q2 revenue: ₹{formatCurrencyFull(quarterTotals[1])}</TooltipContent>
+                  <TooltipContent side="top">Q2 revenue: {formatInr(quarterTotals[1])}</TooltipContent>
                 </Tooltip>
 
                 <Tooltip>
@@ -624,7 +625,7 @@ function StaffDashboard() {
                       </p>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Q3 revenue: ₹{formatCurrencyFull(quarterTotals[2])}</TooltipContent>
+                  <TooltipContent side="top">Q3 revenue: {formatInr(quarterTotals[2])}</TooltipContent>
                 </Tooltip>
 
                 <Tooltip>
@@ -635,7 +636,7 @@ function StaffDashboard() {
                       </p>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Full year total revenue: ₹{formatCurrencyFull(annualRevenue)}</TooltipContent>
+                  <TooltipContent side="top">Full year total revenue: {formatInr(annualRevenue)}</TooltipContent>
                 </Tooltip>
               </div>
             </TooltipProvider>
@@ -836,10 +837,6 @@ function formatCompactCurrency(value: number) {
   if (value >= 100000) return `${(value / 100000).toFixed(1)}L`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
   return `${Math.round(value)}`;
-}
-
-function formatCurrencyFull(value: number) {
-  return Math.round(value).toLocaleString("en-IN");
 }
 
 function avatarUrlForName(name: string) {

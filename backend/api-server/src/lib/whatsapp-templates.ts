@@ -1,4 +1,10 @@
+import { formatInr } from "./format-currency";
 import { humanizeToken } from "./notification-copy";
+
+function formatAmountText(amount: string): string {
+  const n = Number(amount);
+  return Number.isFinite(n) ? formatInr(n) : `₹${amount}`;
+}
 
 export type WhatsAppTemplateComponent = {
   type: "body" | "button";
@@ -49,7 +55,7 @@ export function templateOrderCreated(input: {
   customerName: string;
   totalAmount: string;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.orderNumber} | ${input.customerName} | ₹${input.totalAmount}`;
+  const detail = `${input.orderNumber} | ${input.customerName} | ${formatAmountText(input.totalAmount)}`;
   return {
     name: process.env["WHATSAPP_TEMPLATE_ORDER_CREATED"]?.trim() || "mgr_carsa_order_managment",
     language: { code: process.env["WHATSAPP_TEMPLATE_ORDER_CREATED_LANG"]?.trim() || "en_US" },
@@ -134,7 +140,7 @@ export function templatePaymentReceived(input: {
   paymentStatus: string;
   amount: string;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.orderNumber} | ₹${input.amount} received`;
+  const detail = `${input.orderNumber} | ${formatAmountText(input.amount)} received`;
   return {
     name: process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED"]?.trim() || "mgr_payment_status_guj",
     language: { code: process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG"]?.trim() || "en" },
@@ -236,7 +242,7 @@ export function templatePurchaseOrderCreated(input: {
   partnerType: string;
   totalAmount: string;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.poNumber} | ${poPartnerTypeLabel(input.partnerType)}: ${input.partnerName} | ₹${input.totalAmount}`;
+  const detail = `${input.poNumber} | ${poPartnerTypeLabel(input.partnerType)}: ${input.partnerName} | ${formatAmountText(input.totalAmount)}`;
   return {
     name: process.env["WHATSAPP_TEMPLATE_PO_CREATED"]?.trim() || "mgr_po_created_guj",
     language: { code: process.env["WHATSAPP_TEMPLATE_PO_CREATED_LANG"]?.trim() || "gu" },

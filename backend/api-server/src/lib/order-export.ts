@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { orderHasProductInCategories } from "./category-filter";
+import { formatInr } from "./format-currency";
 import { prisma, toNumber } from "./prisma";
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
@@ -53,7 +54,7 @@ function formatLineItems(
       const label = cat ? `${name} (${cat})` : name;
       const desc = item.description?.trim();
       const extra = desc ? ` — ${desc}` : "";
-      return `${label}${extra} x${item.quantity} @ ${toNumber(item.unitPrice)} = ${toNumber(item.totalPrice)}`;
+      return `${label}${extra} x${item.quantity} @ ${formatInr(toNumber(item.unitPrice))} = ${formatInr(toNumber(item.totalPrice))}`;
     })
     .join("; ");
 }
@@ -64,7 +65,7 @@ function formatPayments(
   if (!payments.length) return "No payments";
   return payments
     .map((p) => {
-      const parts = [`₹${toNumber(p.amount)}`, p.mode, formatDt(p.createdAt)];
+      const parts = [formatInr(toNumber(p.amount)), p.mode, formatDt(p.createdAt)];
       if (p.chequeNumber?.trim()) parts.push(`Cheque ${p.chequeNumber.trim()}`);
       if (p.notes?.trim()) parts.push(p.notes.trim());
       return parts.join(" · ");

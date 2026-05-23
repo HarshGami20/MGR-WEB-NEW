@@ -145,7 +145,7 @@ export function NotificationBell() {
           {count > 0 ? (
             <Badge
               variant="destructive"
-              className="absolute -top-0.5 -right-0.5 h-5 min-w-5 px-1 flex items-center justify-center text-[10px] font-bold rounded-full"
+              className="!absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1 flex items-center justify-center text-[10px] font-bold rounded-full"
             >
               {count > 99 ? "99+" : count}  
             </Badge>

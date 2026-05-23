@@ -7,6 +7,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 
 /** Fits inside inventory dialog (425px) and order forms; long labels ellipsis. */
 const PICKER_MAX_W_CLASS = "w-full max-w-[360px]";
@@ -166,7 +167,7 @@ export default function ProductVariantSelect({
             </SelectTrigger>
             <SelectContent className={cn(PICKER_MAX_W_CLASS, "max-w-[min(360px,calc(100vw-2rem))]")}>
               {variants.map((v) => {
-                const label = `${v.name} (${v.sku}) · ₹${Number(v.price ?? selectedProduct?.price ?? 0).toLocaleString("en-IN")}`;
+                const label = `${v.name} (${v.sku}) · ${formatInr(Number(v.price ?? selectedProduct?.price ?? 0))}`;
                 return (
                   <SelectItem key={v.id} value={String(v.id)} title={label} className="min-w-0 max-w-full">
                     <EllipsisText>{label}</EllipsisText>

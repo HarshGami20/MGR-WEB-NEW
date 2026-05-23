@@ -42,6 +42,7 @@ import {
 } from "@/components/order-image-gallery-dialog";
 import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
 import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
+import { formatInr } from "@/lib/format-currency";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
@@ -673,20 +674,20 @@ export default function OrderDetailPage() {
                               </TableCell>
                               <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
                               <TableCell className="text-right tabular-nums">
-                                ₹
-                                {(order.isGst && (item as { gstPercent?: number }).gstPercent
-                                  ? inclusiveUnitFromExclusive(
-                                      item.unitPrice,
-                                      Number((item as { gstPercent?: number }).gstPercent ?? 0),
-                                    )
-                                  : item.unitPrice
-                                ).toLocaleString()}
+                                {formatInr(
+                                  order.isGst && (item as { gstPercent?: number }).gstPercent
+                                    ? inclusiveUnitFromExclusive(
+                                        item.unitPrice,
+                                        Number((item as { gstPercent?: number }).gstPercent ?? 0),
+                                      )
+                                    : item.unitPrice,
+                                )}
                                 {order.isGst ? (
                                   <span className="block text-[10px] text-muted-foreground">incl. GST</span>
                                 ) : null}
                               </TableCell>
                               <TableCell className="text-right font-medium tabular-nums">
-                                ₹{item.totalPrice.toLocaleString()}
+                                {formatInr(item.totalPrice)}
                               </TableCell>
                             </TableRow>
                           );
@@ -700,17 +701,17 @@ export default function OrderDetailPage() {
                         <>
                           <div className="flex justify-between gap-8 text-sm">
                             <span className="text-muted-foreground">Sub Total</span>
-                            <span className="tabular-nums">₹{Number(orderAny.subtotal ?? 0).toLocaleString()}</span>
+                            <span className="tabular-nums">{formatInr(Number(orderAny.subtotal ?? 0))}</span>
                           </div>
                           <div className="flex justify-between gap-8 text-sm">
                             <span className="text-muted-foreground">GST</span>
-                            <span className="tabular-nums">₹{Number(orderAny.taxAmount ?? 0).toLocaleString()}</span>
+                            <span className="tabular-nums">{formatInr(Number(orderAny.taxAmount ?? 0))}</span>
                           </div>
                         </>
                       ) : null}
                       <div className="flex justify-between gap-8 text-sm">
                         <span className="text-muted-foreground">Order total{order.isGst ? " (incl. GST)" : ""}</span>
-                        <span className="font-semibold tabular-nums">₹{order.totalAmount.toLocaleString()}</span>
+                        <span className="font-semibold tabular-nums">{formatInr(order.totalAmount)}</span>
                       </div>
                     </div>
                   </div>
@@ -941,11 +942,11 @@ export default function OrderDetailPage() {
                   <>
                     <div className="flex justify-between gap-2 text-sm">
                       <span className="text-muted-foreground">Sub Total</span>
-                      <span className="tabular-nums">₹{Number(orderAny.subtotal ?? 0).toLocaleString()}</span>
+                      <span className="tabular-nums">{formatInr(Number(orderAny.subtotal ?? 0))}</span>
                     </div>
                     <div className="flex justify-between gap-2 text-sm">
                       <span className="text-muted-foreground">GST</span>
-                      <span className="tabular-nums">₹{Number(orderAny.taxAmount ?? 0).toLocaleString()}</span>
+                      <span className="tabular-nums">{formatInr(Number(orderAny.taxAmount ?? 0))}</span>
                     </div>
                     <Separator />
                   </>
@@ -953,24 +954,24 @@ export default function OrderDetailPage() {
                 {Number(orderAny.deliveryCharge ?? 0) > 0 ? (
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">Delivery charge</span>
-                    <span className="tabular-nums">₹{Number(orderAny.deliveryCharge).toLocaleString()}</span>
+                    <span className="tabular-nums">{formatInr(Number(orderAny.deliveryCharge))}</span>
                   </div>
                 ) : null}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                    <IndianRupee className="h-4 w-4" />
+                 
                     Total{order.isGst ? " (incl. GST)" : ""}
                   </span>
-                  <span className="text-xl font-bold tabular-nums">₹{order.totalAmount.toLocaleString()}</span>
+                  <span className="text-xl font-bold tabular-nums">{formatInr(order.totalAmount)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">Paid</span>
-                  <span className="font-medium text-green-700 tabular-nums">₹{order.paidAmount.toLocaleString()}</span>
+                  <span className="font-medium text-green-700 tabular-nums">{formatInr(order.paidAmount)}</span>
                 </div>
                 <div className="flex justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">Due Amount</span>
-                  <span className="font-semibold tabular-nums">₹{balance.toLocaleString()}</span>
+                  <span className="font-semibold tabular-nums">{formatInr(balance)}</span>
                 </div>
                 <div className="flex justify-between gap-2 text-sm">
                   <span className="text-muted-foreground">Payment status</span>
@@ -1073,7 +1074,7 @@ export default function OrderDetailPage() {
                                 ? ` #${payment.chequeNumber}`
                                 : ""}
                               {" — "}
-                              <span className="font-medium">₹{payment.amount.toLocaleString()}</span>
+                              <span className="font-medium">{formatInr(payment.amount)}</span>
                               {payment.notes ? (
                                 <span className="text-muted-foreground"> · {payment.notes}</span>
                               ) : null}
@@ -1089,7 +1090,7 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <p className="text-sm font-medium text-muted-foreground">
-                  Remaining: <span className="text-foreground font-semibold">₹{balance.toLocaleString()}</span>
+                  Remaining: <span className="text-foreground font-semibold">{formatInr(balance)}</span>
                 </p>
               </div>
             </DetailSection>
@@ -1118,7 +1119,7 @@ export default function OrderDetailPage() {
                   <p className="text-sm text-muted-foreground">
                     Delivery charge:{" "}
                     <span className="font-medium text-foreground tabular-nums">
-                      ₹{Number(orderAny.deliveryCharge).toLocaleString()}
+                      {formatInr(Number(orderAny.deliveryCharge))}
                     </span>
                   </p>
                 ) : null}

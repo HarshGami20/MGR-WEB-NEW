@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 
 const PARTNER_ALLOWED = ["confirmed", "in_production", "shipped", "delivered"] as const;
 
@@ -155,7 +156,7 @@ function PartnerPoCard({
                 Expected: {deliveryLabel}
               </span>
               <span className="font-medium text-foreground">
-                ₹{Number(po.totalAmount).toLocaleString("en-IN")}
+                {formatInr(Number(po.totalAmount))}
               </span>
             </CardDescription>
           </div>
@@ -287,7 +288,7 @@ function PartnerPoCard({
                           {item.quantity}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
-                          ₹{Number(item.unitPrice).toLocaleString("en-IN")}
+                          {formatInr(Number(item.unitPrice))}
                         </TableCell>
                       </TableRow>
                     );

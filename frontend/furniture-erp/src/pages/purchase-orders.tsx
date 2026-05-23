@@ -32,6 +32,7 @@ import { usePermissions } from "@/lib/permissions";
 import { Input } from "@/components/ui/input";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { formatInr } from "@/lib/format-currency";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
 
@@ -266,7 +267,7 @@ export default function PurchaseOrders() {
         accessorKey: "totalAmount",
         header: () => <span className="text-right block w-full">Amount (₹)</span>,
         meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },
-        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+        cell: ({ row }) => formatInr(row.original.totalAmount),
       },
       {
         accessorKey: "expectedDelivery",

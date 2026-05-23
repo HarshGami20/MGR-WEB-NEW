@@ -27,6 +27,7 @@ import { ArrowLeft, ArrowRight, ClipboardList, Factory, Truck } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
+import { formatInr } from "@/lib/format-currency";
 
 const PARTNER_STATUS_OPTIONS = ["confirmed", "in_production", "shipped", "delivered"] as const;
 
@@ -202,7 +203,7 @@ export default function PartnerPurchaseOrdersListPage() {
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right font-medium tabular-nums">
-                          ₹{Number(po.totalAmount ?? 0).toLocaleString("en-IN")}
+                          {formatInr(Number(po.totalAmount ?? 0))}
                         </TableCell>
                         <TableCell className="text-right">
                           {canQuickEdit ? (

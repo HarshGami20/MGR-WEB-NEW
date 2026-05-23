@@ -40,6 +40,7 @@ import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { usePermissions } from "@/lib/permissions";
 import { OrdersExportDialog } from "@/components/orders-export-dialog";
+import { formatInr } from "@/lib/format-currency";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -527,7 +528,7 @@ export default function Orders() {
           headerClassName: "text-right whitespace-nowrap",
           cellClassName: "text-right font-medium whitespace-nowrap tabular-nums",
         },
-        cell: ({ row }) => `₹${row.original.totalAmount.toLocaleString()}`,
+        cell: ({ row }) => formatInr(row.original.totalAmount),
       },
       {
         id: "balance",
@@ -541,7 +542,7 @@ export default function Orders() {
           const bal = ord.totalAmount - ord.paidAmount;
           return (
             <span className={bal > 0 ? "text-destructive" : "text-green-600"}>
-              ₹{bal.toLocaleString()}
+              {formatInr(bal)}
             </span>
           );
         },

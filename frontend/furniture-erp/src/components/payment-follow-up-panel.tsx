@@ -15,6 +15,7 @@ import {
   formatPaymentStatusLabel,
 } from "@/lib/payment-follow-up-api";
 import { CalendarClock, Bell } from "lucide-react";
+import { formatInr } from "@/lib/format-currency";
 
 function localTodayYmd(): string {
   const d = new Date();
@@ -46,7 +47,7 @@ function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrd
       ) : null}
       {order ? (
         <p className="text-xs text-muted-foreground">
-          Balance due: <span className="font-semibold text-destructive">₹{order.balanceDue.toLocaleString()}</span>
+          Balance due: <span className="font-semibold text-destructive">{formatInr(order.balanceDue)}</span>
         </p>
       ) : null}
       <p className="whitespace-pre-wrap">{row.note}</p>

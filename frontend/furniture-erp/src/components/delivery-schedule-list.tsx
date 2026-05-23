@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 import { DELIVERY_STATUS_LABEL } from "@/lib/delivery-status-ui";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 
@@ -140,7 +141,7 @@ export function DeliveryScheduleList({
           ) : null}
           {(order.deliveryCharge ?? 0) > 0 ? (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Delivery charge: ₹{Number(order.deliveryCharge).toLocaleString()}
+              Delivery charge: {formatInr(Number(order.deliveryCharge))}
             </p>
           ) : null}
         </div>

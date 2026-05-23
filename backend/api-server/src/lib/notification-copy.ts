@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { formatInr } from "./format-currency";
 import { prisma } from "./prisma";
 import { purchaseOrderPartnerLabel } from "./notification-targets";
 
@@ -101,7 +102,7 @@ export function copyPaymentReceived(input: {
   amount: string;
 }): NotificationCopy {
   const amt = Number(input.amount);
-  const amountText = Number.isFinite(amt) ? `₹${amt.toLocaleString("en-IN")}` : input.amount;
+  const amountText = Number.isFinite(amt) ? formatInr(amt) : input.amount;
   return {
     title: "Payment received",
     message: `${amountText} recorded for order ${input.orderNumber}. View payment history on the order.`,

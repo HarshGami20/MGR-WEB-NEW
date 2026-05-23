@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, Truck, IndianRupee } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 
 function deliveryStatusBadge(status: string) {
   switch (status) {
@@ -134,7 +135,7 @@ export default function DriverDetailPage() {
           </div>
           <div className="text-right text-sm">
             <p className="text-muted-foreground">Total paid to driver</p>
-            <p className="text-xl font-semibold tabular-nums">₹{driver.paidTotal.toLocaleString()}</p>
+            <p className="text-xl font-semibold tabular-nums">{formatInr(driver.paidTotal)}</p>
           </div>
         </div>
 
@@ -178,7 +179,7 @@ export default function DriverDetailPage() {
                           </TableCell>
                           <TableCell>{deliveryStatusBadge(o.deliveryStatus)}</TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {o.deliveryCharge > 0 ? o.deliveryCharge.toLocaleString() : "—"}
+                            {o.deliveryCharge > 0 ? formatInr(o.deliveryCharge) : "—"}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -194,7 +195,6 @@ export default function DriverDetailPage() {
               <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                    <IndianRupee className="h-4 w-4" />
                     Record payment
                   </h2>
                   <p className="text-xs text-muted-foreground">Pay driver for a delivery or general.</p>
@@ -273,7 +273,7 @@ export default function DriverDetailPage() {
                       )}
                     >
                       <div className="flex justify-between gap-2">
-                        <span className="font-medium tabular-nums">₹{p.amount.toLocaleString()}</span>
+                        <span className="font-medium tabular-nums">{formatInr(p.amount)}</span>
                         <span className="text-xs text-muted-foreground capitalize">{p.mode}</span>
                       </div>
                       {p.order ? (

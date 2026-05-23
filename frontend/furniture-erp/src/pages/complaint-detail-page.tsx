@@ -28,6 +28,7 @@ import {
 } from "@/components/order-image-gallery-dialog";
 import { isPartnerPortalUser } from "@/lib/partner";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 import {
   ArrowLeft,
   Calendar,
@@ -549,7 +550,7 @@ export default function ComplaintDetailPage() {
                           </TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {item.unitPrice.toLocaleString()}
+                            {formatInr(item.unitPrice)}
                           </TableCell>
                         </TableRow>
                       ))}

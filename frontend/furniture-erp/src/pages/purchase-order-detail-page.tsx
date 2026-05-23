@@ -44,6 +44,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatInr } from "@/lib/format-currency";
 
 const ALL_STATUSES: UpdatePurchaseOrderStatusBodyStatus[] = [
   "pending",
@@ -607,10 +608,10 @@ export default function PurchaseOrderDetailPage() {
                                 {item.quantity}
                               </TableCell>
                               <TableCell className="text-right tabular-nums text-muted-foreground">
-                                ₹{Number(item.unitPrice).toLocaleString("en-IN")}
+                                {formatInr(Number(item.unitPrice))}
                               </TableCell>
                               <TableCell className="text-right font-semibold tabular-nums">
-                                ₹{lineTotal.toLocaleString("en-IN")}
+                                {formatInr(lineTotal)}
                               </TableCell>
                             </TableRow>
                           );
@@ -623,7 +624,7 @@ export default function PurchaseOrderDetailPage() {
                       <div className="flex justify-between gap-8 text-sm">
                         <span className="text-muted-foreground">PO total</span>
                         <span className="font-semibold tabular-nums">
-                          ₹{Number(po.totalAmount).toLocaleString("en-IN")}
+                          {formatInr(Number(po.totalAmount))}
                         </span>
                       </div>
                     </div>
@@ -714,11 +715,10 @@ export default function PurchaseOrderDetailPage() {
               <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                    <IndianRupee className="h-4 w-4" />
                     Total amount
                   </span>
                   <span className="text-xl font-bold tabular-nums">
-                    ₹{Number(po.totalAmount).toLocaleString("en-IN")}
+                    {formatInr(Number(po.totalAmount))}
                   </span>
                 </div>
                 <Separator />

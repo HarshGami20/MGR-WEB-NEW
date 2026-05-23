@@ -33,6 +33,7 @@ import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
+import { formatInr } from "@/lib/format-currency";
 
 const paymentSchema = z
   .object({
@@ -170,7 +171,7 @@ export default function Payments() {
       : 0;
     if (selectedOrderDetails && Number(data.amount) > remaining) {
       form.setError("amount", {
-        message: `Amount cannot be greater than remaining amount (₹${remaining.toLocaleString()})`,
+        message: `Amount cannot be greater than remaining amount (${formatInr(remaining)})`,
       });
       return;
     }
@@ -267,7 +268,7 @@ export default function Payments() {
         accessorKey: "amount",
         header: () => <span className="text-right block w-full">Amount (₹)</span>,
         meta: { headerClassName: "text-right", cellClassName: "text-right font-bold text-green-600" },
-        cell: ({ row }) => `+₹${row.original.amount.toLocaleString()}`,
+        cell: ({ row }) => `+${formatInr(row.original.amount)}`,
       },
     ],
     [getModeBadge],
@@ -380,9 +381,9 @@ export default function Payments() {
                           <td className="px-4 py-2 text-muted-foreground text-sm">
                             {order.branch?.name ?? "—"}
                           </td>
-                          <td className="px-4 py-2 text-right">{total.toLocaleString()}</td>
-                          <td className="px-4 py-2 text-right text-green-700">{paid.toLocaleString()}</td>
-                          <td className="px-4 py-2 text-right font-semibold text-destructive">{remaining.toLocaleString()}</td>
+                          <td className="px-4 py-2 text-right">{formatInr(total)}</td>
+                          <td className="px-4 py-2 text-right text-green-700">{formatInr(paid)}</td>
+                          <td className="px-4 py-2 text-right font-semibold text-destructive">{formatInr(remaining)}</td>
                         </tr>
                       );
                     })
@@ -477,7 +478,7 @@ export default function Payments() {
                                   if (!selected) return "Select order";
                                   const remaining =
                                     Math.max(0, Number(selected.totalAmount || 0) - Number(selected.paidAmount || 0));
-                                  return `${selected.orderNumber} - ${selected.customerName} (Remaining: ₹${remaining.toLocaleString()})`;
+                                  return `${selected.orderNumber} - ${selected.customerName} (Remaining: ${formatInr(remaining)})`;
                                 })()
                               : "Select order"}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -506,7 +507,7 @@ export default function Payments() {
                                       />
                                       <span className="truncate">{o.orderNumber} - {o.customerName}</span>
                                       <span className="ml-auto text-xs text-muted-foreground">
-                                        Remaining: ₹{remaining.toLocaleString()}
+                                        Remaining: {formatInr(remaining)}
                                       </span>
                                     </CommandItem>
                                   );
@@ -526,15 +527,15 @@ export default function Payments() {
                 <div className="bg-muted/50 p-3 rounded-md border text-sm space-y-1">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total Order Amount:</span>
-                    <span className="font-medium">₹{selectedOrderDetails.totalAmount.toLocaleString()}</span>
+                    <span className="font-medium">{formatInr(selectedOrderDetails.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Already Paid:</span>
-                    <span className="text-green-600 font-medium">₹{selectedOrderDetails.paidAmount.toLocaleString()}</span>
+                    <span className="text-green-600 font-medium">{formatInr(selectedOrderDetails.paidAmount)}</span>
                   </div>
                   <div className="flex justify-between pt-1 border-t mt-1 font-bold">
                     <span>Due Amount:</span>
-                    <span className="text-destructive">₹{(selectedOrderDetails.totalAmount - selectedOrderDetails.paidAmount).toLocaleString()}</span>
+                    <span className="text-destructive">{formatInr(selectedOrderDetails.totalAmount - selectedOrderDetails.paidAmount)}</span>
                   </div>
                 </div>
               )}
@@ -547,11 +548,13 @@ export default function Payments() {
                     <FormItem>
                       <FormLabel>
                         {selectedOrderDetails
-                          ? `Amount (₹) - Remaining: ₹${Math.max(
-                              0,
-                              Number(selectedOrderDetails.totalAmount || 0) -
-                                Number(selectedOrderDetails.paidAmount || 0),
-                            ).toLocaleString()}`
+                          ? `Amount (₹) - Remaining: ${formatInr(
+                              Math.max(
+                                0,
+                                Number(selectedOrderDetails.totalAmount || 0) -
+                                  Number(selectedOrderDetails.paidAmount || 0),
+                              ),
+                            )}`
                           : "Amount (₹)"}
                       </FormLabel>
                       <FormControl>

@@ -1,5 +1,6 @@
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { downloadPdfDocument } from "@/lib/pdfmake-client";
+import { formatInr } from "@/lib/format-currency";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 
 export type OrderQuotationLineItem = {
@@ -63,10 +64,6 @@ const PDF_STYLES = {
   muted: { fontSize: 8, color: "#555555" },
   caption: { fontSize: 7, italics: true, color: "#666666" },
 };
-
-function formatInrPdf(n: number): string {
-  return `₹${Math.round(n).toLocaleString("en-IN")}`;
-}
 
 function formatOrderDate(iso: string): string {
   try {
@@ -410,8 +407,8 @@ function buildLineItemsTable(order: OrderQuotationInput): Content {
     return [
       labelCell,
       { text: String(item.quantity), fontSize: 8.5, alignment: "right" as const },
-      { text: formatInrPdf(rate), fontSize: 8.5, alignment: "right" as const },
-      { text: formatInrPdf(item.totalPrice), fontSize: 8.5, alignment: "right" as const },
+      { text: formatInr(rate), fontSize: 8.5, alignment: "right" as const },
+      { text: formatInr(item.totalPrice), fontSize: 8.5, alignment: "right" as const },
     ];
   });
 
@@ -432,25 +429,25 @@ function buildPriceSummary(order: OrderQuotationInput): Content {
   if (order.isGst && order.subtotal != null) {
     rows.push([
       { text: "Sub Total", fontSize: 8.5 },
-      { text: formatInrPdf(order.subtotal), fontSize: 8.5, alignment: "right" },
+      { text: formatInr(order.subtotal), fontSize: 8.5, alignment: "right" },
     ]);
     rows.push([
       { text: "GST", fontSize: 8.5 },
-      { text: formatInrPdf(order.taxAmount ?? 0), fontSize: 8.5, alignment: "right" },
+      { text: formatInr(order.taxAmount ?? 0), fontSize: 8.5, alignment: "right" },
     ]);
   }
   rows.push([
     { text: "Order Total", bold: true, fontSize: 9 },
-    { text: formatInrPdf(order.totalAmount), bold: true, fontSize: 9, alignment: "right" },
+    { text: formatInr(order.totalAmount), bold: true, fontSize: 9, alignment: "right" },
   ]);
   if ((order.paidAmount ?? 0) > 0) {
     rows.push([
       { text: "Paid", fontSize: 8.5 },
-      { text: formatInrPdf(order.paidAmount!), fontSize: 8.5, alignment: "right" },
+      { text: formatInr(order.paidAmount!), fontSize: 8.5, alignment: "right" },
     ]);
     rows.push([
       { text: "Balance Due", fontSize: 8.5 },
-      { text: formatInrPdf(balance), fontSize: 8.5, alignment: "right" },
+      { text: formatInr(balance), fontSize: 8.5, alignment: "right" },
     ]);
   }
 
@@ -561,9 +558,9 @@ export function buildWhatsAppQuotationMessage(
     `Customer: ${order.customerName}`,
     order.customerMobile?.trim() ? `Mobile: ${order.customerMobile.trim()}` : "",
     "",
-    `*Total: ${formatInrPdf(order.totalAmount)}*`,
-    (order.paidAmount ?? 0) > 0 ? `Paid: ${formatInrPdf(order.paidAmount!)}` : "",
-    (order.paidAmount ?? 0) > 0 ? `Balance: ${formatInrPdf(balance)}` : "",
+    `*Total: ${formatInr(order.totalAmount)}*`,
+    (order.paidAmount ?? 0) > 0 ? `Paid: ${formatInr(order.paidAmount!)}` : "",
+    (order.paidAmount ?? 0) > 0 ? `Balance: ${formatInr(balance)}` : "",
     "",
     `${order.items.length} item(s). Please find the detailed quotation PDF attached separately or request it from our team.`,
   ].filter(Boolean);
