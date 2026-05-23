@@ -2,8 +2,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { setAuthTokenGetter, setBaseUrl } from "@/api-client";
+import { getAuthToken } from "@/lib/auth-storage";
 
-setAuthTokenGetter(() => localStorage.getItem("erp_token"));
+setAuthTokenGetter(() => getAuthToken());
 
 // When set, fetch(`/api/...`) becomes `${VITE_API_URL}/api/...` (e.g. backend on another host/port).
 // Leave unset in dev to use Vite's `/api` proxy (see vite.config.ts).

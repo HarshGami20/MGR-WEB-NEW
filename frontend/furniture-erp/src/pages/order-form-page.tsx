@@ -40,6 +40,7 @@ import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
+import { getAuthToken } from "@/lib/auth-storage";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
 
@@ -173,7 +174,7 @@ function formatDeliveryDateLabel(value: string | null | undefined): string {
 }
 
 async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {
-  const token = localStorage.getItem("erp_token");
+  const token = getAuthToken();
   const fd = new FormData();
   fd.append("image", file);
   const headers: Record<string, string> = {};

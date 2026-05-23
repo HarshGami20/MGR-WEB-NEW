@@ -1,18 +1,19 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useGetMe } from "@/api-client";
 import type { User } from "@/api-client";
+import { clearAuthToken, getAuthToken, setAuthToken as persistAuthToken } from "@/lib/auth-storage";
 
 interface AuthContextType {
   user: User | null | undefined;
   isLoading: boolean;
-  login: (token: string) => void;
+  login: (token: string, rememberMe?: boolean) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem("erp_token"));
+  const [token, setToken] = useState<string | null>(() => getAuthToken());
 
   const { data: user, isLoading, error } = useGetMe({
     query: {
@@ -25,17 +26,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (error) {
       setToken(null);
-      localStorage.removeItem("erp_token");
+      clearAuthToken();
     }
   }, [error]);
 
-  const login = (newToken: string) => {
-    localStorage.setItem("erp_token", newToken);
+  const login = (newToken: string, rememberMe = true) => {
+    persistAuthToken(newToken, rememberMe);
     setToken(newToken);
   };
 
   const logout = () => {
-    localStorage.removeItem("erp_token");
+    clearAuthToken();
     setToken(null);
   };
 

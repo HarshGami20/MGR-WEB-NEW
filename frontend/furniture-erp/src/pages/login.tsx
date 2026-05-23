@@ -2,17 +2,25 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useLogin } from "@/api-client";
 import { useAuth } from "@/lib/auth";
+import {
+  getRememberedMobile,
+  isRememberMeEnabled,
+  setRememberMePreference,
+} from "@/lib/auth-storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { BadgeCheck, Building2, LockKeyhole, Phone } from "lucide-react";
+import { BadgeCheck, Building2, Eye, EyeOff, LockKeyhole, Phone } from "lucide-react";
 import { sanitizeDigitsOnly, FIELD_LIMITS } from "@/lib/form-validation";
 
 export default function Login() {
-  const [mobile, setMobile] = useState(""); 
+  const [mobile, setMobile] = useState(() => getRememberedMobile());
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => isRememberMeEnabled());
   const [, setLocation] = useLocation();
   const { login: setAuthToken } = useAuth();
   const { toast } = useToast();
@@ -20,7 +28,9 @@ export default function Login() {
   const loginMutation = useLogin({
     mutation: {
       onSuccess: (data) => {
-        setAuthToken(data.token);
+        const digitsOnly = sanitizeDigitsOnly(mobile, FIELD_LIMITS.mobile);
+        setRememberMePreference(rememberMe, digitsOnly);
+        setAuthToken(data.token, rememberMe);
         setLocation("/dashboard");
       },
       onError: (error) => {
@@ -90,7 +100,7 @@ export default function Login() {
           <CardContent className="space-y-5">
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="mobile" >Mobile Number</Label>
+                <Label htmlFor="mobile">Mobile Number</Label>
                 <div className="relative mt-1">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -105,24 +115,46 @@ export default function Login() {
                     value={mobile}
                     onChange={(e) => handleMobileChange(e.target.value)}
                     required
-                    className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 shadow-sm  tracking-wide"
+                    className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 shadow-sm tracking-wide"
                   />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative mt-1">
-                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="password"
-                    type="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 shadow-sm"
+                    className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 pr-12 shadow-sm"
                   />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="absolute inset-y-0 right-0 z-10 flex w-11 items-center justify-center rounded-r-xl text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="remember-me"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(checked === true)}
+                />
+                <Label htmlFor="remember-me" className="cursor-pointer text-sm font-normal leading-none">
+                  Remember me
+                </Label>
               </div>
               <Button type="submit" className="mt-2 h-11 w-full rounded-xl text-sm font-semibold" disabled={loginMutation.isPending}>
                 {loginMutation.isPending ? "Logging in..." : "Login"}

@@ -7,6 +7,7 @@ import { isWebPushConfigured, onForegroundMessage, registerWebPush, showSystemNo
 import { attachServiceWorkerPushLogListener, pushLog } from "@/lib/push-notification-log";
 import { notificationPayloadHref } from "@/lib/notification-links";
 import { useNotificationNavigate } from "@/lib/use-notification-navigate";
+import { getAuthToken } from "@/lib/auth-storage";
 import { ToastAction } from "@/components/ui/toast";
 
 function socketOrigin(): string {
@@ -38,7 +39,7 @@ export function NotificationSocketProvider({ children }: { children: ReactNode }
       return;
     }
 
-    const token = localStorage.getItem("erp_token");
+    const token = getAuthToken();
     if (!token) return;
 
     const s = io(socketOrigin(), {

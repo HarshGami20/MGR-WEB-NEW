@@ -1,8 +1,8 @@
-const TOKEN_KEY = "erp_token";
+import { getAuthToken } from "@/lib/auth-storage";
 
 export function deliveryApiHeaders(branchId?: number | null): HeadersInit {
   const h: Record<string, string> = {};
-  const token = typeof localStorage !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
+  const token = typeof localStorage !== "undefined" ? getAuthToken() : null;
   if (token) h.Authorization = `Bearer ${token}`;
   if (branchId != null && Number.isFinite(branchId)) h["X-Branch-Id"] = String(branchId);
   return h;

@@ -1,4 +1,5 @@
 import { customFetch } from "@/api-client/custom-fetch";
+import { getAuthToken } from "@/lib/auth-storage";
 
 export type ComplaintStatus = "open" | "in_progress" | "resolved";
 export type ComplaintKind = "sales_order" | "purchase_order";
@@ -105,7 +106,7 @@ export async function uploadComplaintImage(
   file: File,
   branchId?: number | null,
 ): Promise<{ imageUrl: string }> {
-  const token = localStorage.getItem("erp_token");
+  const token = getAuthToken();
   const fd = new FormData();
   fd.append("image", file);
   const headers: Record<string, string> = {};
