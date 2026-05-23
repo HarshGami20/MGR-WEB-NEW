@@ -301,6 +301,7 @@ model ProductVariant {
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[]
+  orderItems         OrderItem[]
   purchaseOrderItems PurchaseOrderItem[]
 
   @@map("product_variants")
@@ -525,6 +526,7 @@ model OrderItem {
   orderId          Int      @map("order_id")
   isCustom         Boolean  @default(false) @map("is_custom")
   productId        Int?     @map("product_id")
+  variantId        Int?     @map("variant_id")
   customName       String?  @map("custom_name")
   customImageUrl   String?  @map("custom_image_url")
   /** JSON string array of image URLs for custom lines */
@@ -536,8 +538,9 @@ model OrderItem {
   gstPercent       Decimal  @default(0) @map("gst_percent") @db.Decimal(5, 2)
   totalPrice       Decimal  @map("total_price") @db.Decimal(12, 2)
 
-  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product? @relation(fields: [productId], references: [id])
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
   @@map("order_items")
 }

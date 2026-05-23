@@ -254,6 +254,7 @@ async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
 type ResolvedOrderLine = {
   isCustom: boolean;
   productId: number | null;
+  variantId: number | null;
   customName: string | null;
   customImageUrl: string | null;
   customImageUrls: string | null;
@@ -268,7 +269,7 @@ type ResolvedOrderLine = {
 async function resolveOrderLineItems(
   items: IncomingLineItem[],
   isGst: boolean,
-  db: Pick<typeof prisma, "product" | "setting"> = prisma,
+  db: Pick<typeof prisma, "product" | "productVariant" | "setting"> = prisma,
 ): Promise<ResolvedOrderLine[]> {
   const settings = await db.setting.findFirst();
   const defaultGst = settings ? toNumber(settings.defaultGstPercent) : 18;
@@ -288,6 +289,7 @@ async function resolveOrderLineItems(
       resolved.push({
         isCustom: true,
         productId: null,
+        variantId: null,
         customName: name,
         customImageUrl: imgs.customImageUrl,
         customImageUrls: imgs.customImageUrls,
@@ -303,6 +305,16 @@ async function resolveOrderLineItems(
     const productId = Number(item.productId);
     const product = await db.product.findUnique({ where: { id: productId } });
     if (!product) throw new Error(`Product ${productId} not found`);
+    const variantId =
+      item.variantId != null && Number.isFinite(Number(item.variantId)) && Number(item.variantId) > 0
+        ? Number(item.variantId)
+        : null;
+    if (variantId != null) {
+      const variant = await db.productVariant.findUnique({ where: { id: variantId } });
+      if (!variant || variant.productId !== productId) {
+        throw new Error(`Variant ${variantId} is not valid for product ${productId}`);
+      }
+    }
     const gstPercent = isGst ? defaultGst : 0;
     const breakdown = isGst
       ? breakdownGstInclusiveLine(enteredUnitPrice, qty, gstPercent)
@@ -310,6 +322,7 @@ async function resolveOrderLineItems(
     resolved.push({
       isCustom: false,
       productId,
+      variantId,
       customName: null,
       customImageUrl: null,
       customImageUrls: null,
@@ -329,6 +342,10 @@ async function enrichOrder(order: any) {
   const enrichedItems = await Promise.all(items.map(async (item) => {
     const product =
       item.productId != null ? await prisma.product.findUnique({ where: { id: item.productId } }) : null;
+    const variant =
+      item.variantId != null
+        ? await prisma.productVariant.findUnique({ where: { id: item.variantId } })
+        : null;
     const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
     return {
       ...item,
@@ -341,6 +358,12 @@ async function enrichOrder(order: any) {
       gstPercent: toNumber(item.gstPercent),
       totalPrice: toNumber(item.totalPrice),
       product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null,
+      variant: variant
+        ? {
+            ...variant,
+            price: variant.price != null ? toNumber(variant.price) : null,
+          }
+        : null,
     };
   }));
   let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
@@ -767,6 +790,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
             orderId: order.id,
             isCustom: item.isCustom,
             productId: item.productId,
+            variantId: item.variantId,
             customName: item.customName,
             customImageUrl: item.customImageUrl,
             customImageUrls: item.customImageUrls,
@@ -954,6 +978,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     : existingItems.map((item) => ({
         isCustom: item.isCustom,
         productId: item.productId,
+        variantId: item.variantId,
         customName: item.customName,
         customImageUrl: item.customImageUrl,
         customImageUrls: parseImageUrlsJson(item.customImageUrls, item.customImageUrl),
@@ -1053,6 +1078,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           orderId: id,
           isCustom: item.isCustom,
           productId: item.productId,
+          variantId: item.variantId,
           customName: item.customName,
           customImageUrl: item.customImageUrl,
           customImageUrls: item.customImageUrls,

@@ -83,6 +83,7 @@ export function apiItemToFormValues(
     isCustom?: boolean;
     productId?: number | null;
     variantId?: number | null;
+    variant?: { id?: number } | null;
     customName?: string | null;
     customImageUrl?: string | null;
     customImageUrls?: string[] | null;
@@ -140,7 +141,7 @@ export function apiItemToFormValues(
   return {
     isCustom: false,
     productId: item.productId ?? item.product?.id ?? 0,
-    variantId: item.variantId ?? null,
+    variantId: item.variantId ?? item.variant?.id ?? null,
     customName: "",
     customSize: "",
     customColour: "",

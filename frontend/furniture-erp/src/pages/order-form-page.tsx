@@ -31,7 +31,7 @@ import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { usePermissions } from "@/lib/permissions";
 import { LineItemRow } from "@/components/line-item-row";
-import { lineItemFormSchema, lineItemToApiPayload, apiItemToFormValues } from "@/lib/line-item-form-schema";
+import { lineItemFormSchema, lineItemToApiPayload } from "@/lib/line-item-form-schema";
 import { defaultCatalogLineItem } from "@/lib/custom-line-item";
 import { GoogleAddressInput } from "@/components/google-address-input";
 import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/delivery-api";
@@ -39,9 +39,11 @@ import { listDrivers } from "@/lib/driver-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { formatInr } from "@/lib/format-currency";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
-import { sanitizeLettersOnly, zodFields, FIELD_LIMITS } from "@/lib/form-validation";
+import { zodFields } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 import { getAuthToken } from "@/lib/auth-storage";
+import { buildOrderFormValues } from "@/lib/order-form-values";
+import type { Driver } from "@/lib/driver-api";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
 
@@ -137,6 +139,32 @@ const GST_INVOICE_OPTIONS = [
   { value: "gst", label: "Yes" },
   { value: "non_gst", label: "No" },
 ] as const;
+
+const ORDER_FORM_DEFAULTS: OrderFormValues = {
+  customerName: "",
+  customerMobile: "",
+  customerAddress: "",
+  deliverySlotId: null,
+  googlePlaceId: "",
+  addressLat: null,
+  addressLng: null,
+  isGst: false,
+  customerGstNumber: "",
+  items: [{ ...defaultCatalogLineItem }],
+  status: "order_received",
+  paymentStatus: "due",
+  advanceAmount: 0,
+  paymentMode: "cash",
+  assigneeUserIds: [],
+  deliveryAssigneeUserIds: [],
+  deliveryDate: null,
+  deliveryCharge: 0,
+  driverId: null,
+  challanImages: [{ imageUrl: "" }],
+  photoComments: [{ imageUrl: "", comment: "" }],
+  staffCommentsText: "",
+  deliveryCommentsText: "",
+};
 
 function FormSection({
   title,
@@ -250,6 +278,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     },
   });
 
+  const editFormValues = useMemo(() => {
+    if (!isEdit || !order?.id) return undefined;
+    return buildOrderFormValues(order as Parameters<typeof buildOrderFormValues>[0]) as OrderFormValues;
+  }, [isEdit, order]);
+
   const updateOrder = useUpdateOrder({
     mutation: {
       onSuccess: () => {
@@ -272,31 +305,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderSchema),
     mode: "onBlur",
-    defaultValues: {
-      customerName: "",
-      customerMobile: "",
-      customerAddress: "",
-      deliverySlotId: null as number | null,
-      googlePlaceId: "",
-      addressLat: null as number | null,
-      addressLng: null as number | null,
-      isGst: false,
-      customerGstNumber: "",
-      items: [{ ...defaultCatalogLineItem }],
-      status: "order_received",
-      paymentStatus: "due",
-      advanceAmount: 0,
-      paymentMode: "cash",
-      assigneeUserIds: [] as number[],
-      deliveryAssigneeUserIds: [] as number[],
-      deliveryDate: null,
-      deliveryCharge: 0,
-      driverId: null as number | null,
-      challanImages: [{ imageUrl: "" }],
-      photoComments: [{ imageUrl: "", comment: "" }],
-      staffCommentsText: "",
-      deliveryCommentsText: "",
-    },
+    defaultValues: ORDER_FORM_DEFAULTS,
+    values: editFormValues,
   });
 
   const deliveryDateWatch = form.watch("deliveryDate");
@@ -316,7 +326,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       String(deliveryDateWatch).trim().length >= 8,
   });
   const slotOptions = slotOptionsRaw ?? EMPTY_AVAIL_SLOTS;
-  const { setValue, getValues, reset } = form;
+  const { setValue, getValues } = form;
   const freeSlotIds = useMemo(
     () => slotOptions.filter((s) => s.remaining > 0).map((s) => s.id),
     [slotOptions],
@@ -345,7 +355,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     name: "items",
   });
   const photoFields = useFieldArray({ control: form.control, name: "photoComments" });
-  const hydratedOrderIdRef = useRef<number | null>(null);
   const defaultAssigneesAppliedRef = useRef<string>("");
 
   const assignableUsers = useMemo(
@@ -358,7 +367,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     queryFn: () => listDrivers({ branchId: writeBranchId!, limit: 200, isActive: true }),
     enabled: writeBranchId != null,
   });
-  const driverOptions = driversData?.data ?? [];
+  const driverOptions = useMemo(() => {
+    const list = driversData?.data ?? [];
+    if (!isEdit || !order) return list;
+    const orderAny = order as { driver?: Driver | null; driverId?: number | null };
+    const assignedId = orderAny.driver?.id ?? orderAny.driverId;
+    if (assignedId == null || list.some((d) => d.id === assignedId)) return list;
+    if (orderAny.driver) return [orderAny.driver, ...list];
+    return list;
+  }, [driversData?.data, isEdit, order]);
 
   useEffect(() => {
     if (isEdit || writeBranchId == null) return;
@@ -378,64 +395,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       setValue("assigneeUserIds", [...ids], { shouldDirty: false, shouldTouch: false, shouldValidate: false });
     }
   }, [isEdit, writeBranchId, assignableUsers, user?.id, setValue]);
-
-  useEffect(() => {
-    if (!isEdit || !order?.id) return;
-    if (hydratedOrderIdRef.current === order.id) return;
-    hydratedOrderIdRef.current = order.id;
-    const orderAny = order as any;
-    const existingStaffComments = Array.isArray(orderAny.staffComments) ? orderAny.staffComments : [];
-    const existingDeliveryComments = Array.isArray(orderAny.deliveryComments) ? orderAny.deliveryComments : [];
-    reset({
-      customerName: sanitizeLettersOnly(order.customerName ?? "", FIELD_LIMITS.customerName),
-      customerMobile: order.customerMobile ?? "",
-      customerAddress: order.customerAddress ?? "",
-      deliverySlotId: orderAny.deliverySlotId ?? null,
-      googlePlaceId: orderAny.googlePlaceId ?? "",
-      addressLat: orderAny.addressLat != null ? Number(orderAny.addressLat) : null,
-      addressLng: orderAny.addressLng != null ? Number(orderAny.addressLng) : null,
-      isGst: !!order.isGst,
-      customerGstNumber: order.customerGstNumber ?? "",
-      items: order.items?.length
-        ? order.items.map((item: any) => apiItemToFormValues(item, { priceIncludesGst: !!order.isGst }))
-        : [{ ...defaultCatalogLineItem }],
-      status: orderAny.status === "delivered" ? "complete" : (orderAny.status ?? "order_received"),
-      paymentStatus: orderAny.paymentStatus ?? "due",
-      advanceAmount: orderAny.advanceAmount ?? orderAny.paidAmount ?? 0,
-      paymentMode: orderAny.paymentMode ?? "cash",
-      assigneeUserIds: Array.isArray(orderAny.assignees)
-        ? orderAny.assignees.map((a: { id: number }) => a.id).filter((x: number) => Number.isFinite(x))
-        : orderAny.assignedToId != null
-          ? [Number(orderAny.assignedToId)]
-          : [],
-      deliveryAssigneeUserIds: Array.isArray(orderAny.deliveryAssignees)
-        ? orderAny.deliveryAssignees
-            .map((a: { id: number }) => a.id)
-            .filter((x: number) => Number.isFinite(x))
-        : [],
-      deliveryDate: orderAny.deliveryDate ? String(orderAny.deliveryDate).slice(0, 10) : null,
-      deliveryCharge: Number(orderAny.deliveryCharge ?? 0),
-      driverId: orderAny.driver?.id ?? orderAny.driverId ?? null,
-      challanImages: Array.isArray(orderAny.challanImages) && orderAny.challanImages.length > 0
-        ? [{ imageUrl: String(orderAny.challanImages[0] || "") }]
-        : [{ imageUrl: "" }],
-      photoComments: Array.isArray(orderAny.photoComments) && orderAny.photoComments.length > 0
-        ? orderAny.photoComments
-        : [{ imageUrl: "", comment: "" }],
-      staffCommentsText: existingStaffComments
-        .map((entry: any) => entry?.comment)
-        .filter(Boolean)
-        .join("\n"),
-      deliveryCommentsText: existingDeliveryComments
-        .map((entry: any) => entry?.comment)
-        .filter(Boolean)
-        .join("\n"),
-    });
-  }, [isEdit, order, reset]);
-
-  useEffect(() => {
-    if (!isEdit) hydratedOrderIdRef.current = null;
-  }, [isEdit]);
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
