@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
 import type { UpdateProductBody, UpdateProductVariantBody } from "@/api-client";
 import {
@@ -25,7 +25,14 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
 import { usePermissions } from "@/lib/permissions";
 import {
   CategoryPickerWithManage,
@@ -52,6 +59,10 @@ import { ProductImagesField } from "@/components/product-images-field";
 import { productImageList, variantImageList } from "@/lib/image-urls";
 
 type ProductFormValues = ProductEditFormValues;
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 function variantToUpdateBody(v: z.infer<typeof variantDraftWithPersistedIdSchema>): UpdateProductVariantBody {
   const imgs = variantImagesToApi(v);

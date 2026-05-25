@@ -247,7 +247,7 @@ export default function Users() {
               </Avatar>
               <div className="min-w-0">
                 <div className="font-medium truncate">{user.name}</div>
-                <div className="text-xs text-muted-foreground truncate">{user.email || user.mobile}</div>
+                <div className="text-xs text-muted-foreground truncate">{user.email || "N/A"}</div>
               </div>
             </div>
           );
@@ -547,7 +547,7 @@ export default function Users() {
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 mb-5">
                 <FormField
                   control={form.control}
                   name="supplierId"
@@ -605,9 +605,9 @@ export default function Users() {
                   )}
                 />
               </div>
-              <p className="text-xs text-muted-foreground -mt-2">
+              {/* <p className="text-xs text-muted-foreground -mt-2">
                 Links this login to procurement POs for that supplier or manufacturer. Only one link per user.
-              </p>
+              </p> */}
 
               <FormField
                 control={form.control}

@@ -57,17 +57,20 @@ async function deletePurchaseOrderById(
       for (const item of existing.items) {
         if (item.productId == null) continue;
         try {
-          await decrementProductStock(item.productId, item.quantity, tx);
+          const movements = await decrementProductStock(item.productId, item.quantity, tx, item.variantId);
           if (logBranchId != null) {
-            await tx.inventoryLog.create({
-              data: {
-                productId: item.productId,
-                type: "out",
-                quantity: item.quantity,
-                notes: `PO ${existing.poNumber} deleted (stock reversed)`,
-                branchId: logBranchId,
-              },
-            });
+            for (const movement of movements) {
+              await tx.inventoryLog.create({
+                data: {
+                  productId: movement.productId,
+                  variantId: movement.variantId,
+                  type: "out",
+                  quantity: movement.quantity,
+                  notes: `PO ${existing.poNumber} deleted (stock reversed)`,
+                  branchId: logBranchId,
+                },
+              });
+            }
           }
         } catch {
           throw new PurchaseOrderDeleteBlockedError(
@@ -432,16 +435,19 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
         const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: id } });
         for (const item of items) {
           if (item.productId == null) continue;
-          await incrementProductStock(item.productId, item.quantity, tx);
-          await tx.inventoryLog.create({
-            data: {
-              productId: item.productId,
-              type: "in",
-              quantity: item.quantity,
-              notes: `PO ${updated.poNumber} delivered`,
-              branchId: logBranchId,
-            },
-          });
+          const movements = await incrementProductStock(item.productId, item.quantity, tx, item.variantId);
+          for (const movement of movements) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: movement.productId,
+                variantId: movement.variantId,
+                type: "in",
+                quantity: movement.quantity,
+                notes: `PO ${updated.poNumber} delivered`,
+                branchId: logBranchId,
+              },
+            });
+          }
         }
       }
       return updated;

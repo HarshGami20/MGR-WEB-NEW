@@ -25,6 +25,7 @@ import {
 import { ArrowLeft, Truck, IndianRupee } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInr } from "@/lib/format-currency";
+import { formatDisplayDate } from "@/lib/format-datetime";
 
 function deliveryStatusBadge(status: string) {
   switch (status) {
@@ -282,7 +283,7 @@ export default function DriverDetailPage() {
                         </p>
                       ) : null}
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(p.paidAt).toLocaleString()}
+                        {formatDisplayDate(p.paidAt, { includeTime: true })}
                         {p.recordedBy ? ` · ${p.recordedBy}` : ""}
                       </p>
                     </li>

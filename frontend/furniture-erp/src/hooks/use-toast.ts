@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { formatErrorMessage, formatErrorTitle } from "@/lib/error-message"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -141,6 +142,17 @@ type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
   const id = genId()
+  const normalizedProps =
+    props.variant === "destructive"
+      ? {
+          ...props,
+          title: typeof props.title === "string" ? formatErrorTitle(props.title) : props.title,
+          description:
+            typeof props.description === "string"
+              ? formatErrorMessage(props.description)
+              : props.description,
+        }
+      : props
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -152,7 +164,7 @@ function toast({ ...props }: Toast) {
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
+      ...normalizedProps,
       id,
       open: true,
       onOpenChange: (open) => {

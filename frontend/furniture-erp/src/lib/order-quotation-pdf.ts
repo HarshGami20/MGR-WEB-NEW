@@ -1,6 +1,7 @@
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { downloadPdfDocument } from "@/lib/pdfmake-client";
 import { formatInr } from "@/lib/format-currency";
+import { formatDisplayDate } from "@/lib/format-datetime";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 
 export type OrderQuotationLineItem = {
@@ -64,18 +65,6 @@ const PDF_STYLES = {
   muted: { fontSize: 8, color: "#555555" },
   caption: { fontSize: 7, italics: true, color: "#666666" },
 };
-
-function formatOrderDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
 
 function absoluteImageUrl(url: string): string {
   const trimmed = url.trim();
@@ -330,11 +319,11 @@ function buildDetailColumn(fields: DetailField[]): Content {
 function buildCompactOrderDetails(order: OrderQuotationInput): Content {
   const left: DetailField[] = [
     { label: "Order", value: order.orderNumber },
-    { label: "Date", value: formatOrderDate(order.createdAt) },
+    { label: "Date", value: formatDisplayDate(order.createdAt) },
     { label: "Items", value: String(order.items.length) },
   ];
   if (order.deliveryDate?.trim()) {
-    left.push({ label: "Delivery", value: order.deliveryDate.trim().slice(0, 10) });
+    left.push({ label: "Delivery", value: formatDisplayDate(order.deliveryDate) });
   }
 
   const right: DetailField[] = [{ label: "Customer", value: order.customerName }];

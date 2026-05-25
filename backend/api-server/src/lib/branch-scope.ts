@@ -73,12 +73,11 @@ export async function requireWriteBranchId(
   const assigned = assignedBranchIds(user);
   let msg: string;
   if (assigned.length === 1) {
-    msg = "Your assigned branch is invalid or inactive. Ask an administrator to fix branch assignment.";
+    msg = "Your assigned branch is not available. Please contact an administrator.";
   } else if (assigned.length > 1) {
-    msg =
-      "Pick one of your assigned branches in the app header (or send X-Branch-Id / branchId matching an assigned branch).";
+    msg = "Please select one of your assigned branches.";
   } else {
-    msg = "Branch is required: select a working branch in the app header, or send X-Branch-Id / branchId on the request.";
+    msg = "Please select a working branch.";
   }
   res.status(400).json({ error: msg });
   return null;

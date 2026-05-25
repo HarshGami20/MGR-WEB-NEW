@@ -41,6 +41,7 @@ import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { usePermissions } from "@/lib/permissions";
 import { OrdersExportDialog } from "@/components/orders-export-dialog";
 import { formatInr } from "@/lib/format-currency";
+import { formatDisplayDate } from "@/lib/format-datetime";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -335,7 +336,7 @@ export default function Orders() {
         accessorKey: "orderNumber",
         header: "Order #",
         cell: ({ row }) => (
-          <span className="font-mono text-sm font-medium">{row.original.orderNumber}</span>
+          <span className="font-mono text-sm font-medium text-dark hover:underline cursor-pointer" onClick={() => openDetailPage(row.original)}>{row.original.orderNumber}</span>
         ),
       },
       {
@@ -382,7 +383,7 @@ export default function Orders() {
         header: "Date",
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {new Date(row.original.createdAt).toLocaleDateString()}
+            {formatDisplayDate(row.original.createdAt)}
           </span>
         ),
       },

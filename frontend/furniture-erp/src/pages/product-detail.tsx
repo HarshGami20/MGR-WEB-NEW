@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { productImageList, variantImageList } from "@/lib/image-urls";
 import { formatInr } from "@/lib/format-currency";
+import { useBranch } from "@/lib/branch-context";
 
 function formatVariantPrice(v: { price?: number | null }, basePrice: number): string {
   const amount = v.price != null ? Number(v.price) : Number(basePrice);
@@ -67,6 +68,20 @@ function formatPriceRange(basePrice: number, variants: ProductVariant[]): string
   if (min === max) return formatPriceCompact(min);
   return `${formatPriceCompact(min)} - ${formatPriceCompact(max)}`;
 }
+
+type BranchStock = {
+  branchId: number | null;
+  branchName: string;
+  stockQty: number;
+};
+
+type ProductVariantRow = ProductVariant & {
+  branchStocks?: BranchStock[];
+};
+
+type ProductBranchStockPayload = {
+  branchStocks?: BranchStock[];
+};
 
 function DetailCard({
   children,
@@ -193,6 +208,7 @@ export default function ProductDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { can } = usePermissions();
+  const { selectedBranchId } = useBranch();
 
   const [variantDialogOpen, setVariantDialogOpen] = useState(false);
   const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null);
@@ -214,7 +230,7 @@ export default function ProductDetail() {
     },
   });
 
-  const variantList: ProductVariant[] = Array.isArray(variants) ? variants : [];
+  const variantList: ProductVariantRow[] = Array.isArray(variants) ? variants : [];
   const variationCount = product?.variantCount ?? variantList.length;
   const isSingleSku = !hasVariantsProduct;
 
@@ -303,6 +319,18 @@ export default function ProductDetail() {
   const productImages = productImageList(product as { imageUrls?: string | string[] | null; imageUrl?: string | null });
   const basePrice = Number(product.price);
   const priceRangeLabel = formatPriceRange(basePrice, variantList);
+  const productWithBranchStocks = product as typeof product & ProductBranchStockPayload;
+  const productBranchStocks = (Array.isArray(productWithBranchStocks.branchStocks)
+    ? productWithBranchStocks.branchStocks
+    : []) as BranchStock[];
+  const selectedProductBranchStock =
+    selectedBranchId != null
+      ? productBranchStocks.find((branch) => branch.branchId === selectedBranchId)
+      : null;
+  const productDisplayStock =
+    selectedBranchId != null ? selectedProductBranchStock?.stockQty ?? 0 : product.stockQty;
+  const productStockLow =
+    productDisplayStock <= (product.lowStockThreshold ?? 10) && productDisplayStock > 0;
   const productActive = isSingleSku
     ? true
     : variantList.length === 0
@@ -474,15 +502,31 @@ export default function ProductDetail() {
                     <p
                       className={cn(
                         "mt-1 text-lg font-bold tabular-nums",
-                        product.stockQty <= (product.lowStockThreshold ?? 10) && product.stockQty > 0
+                        productStockLow
                           ? "text-amber-600"
-                          : product.stockQty === 0
+                          : productDisplayStock === 0
                             ? "text-destructive"
                             : "text-foreground",
                       )}
                     >
-                      {product.stockQty}
+                      {productDisplayStock}
                     </p>
+                    {selectedBranchId != null ? (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {selectedProductBranchStock?.branchName ?? "Selected branch"}
+                      </div>
+                    ) : productBranchStocks.length > 0 ? (
+                      <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                        {productBranchStocks.map((branch) => (
+                          <div key={branch.branchId ?? "unassigned"} className="flex items-center gap-2">
+                            <span className="max-w-[100px] truncate" title={branch.branchName}>
+                              {branch.branchName}
+                            </span>
+                            <span className="font-mono text-foreground">{branch.stockQty}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Low at</p>
@@ -568,7 +612,14 @@ export default function ProductDetail() {
                         const attrLine = attributesPlainLine(v.attributes);
                         const inactive = !v.isActive;
                         const low = v.lowStockThreshold ?? 10;
-                        const isLowStock = v.stockQty <= low;
+                        const branchStocks = Array.isArray(v.branchStocks) ? v.branchStocks : [];
+                        const selectedBranchStock =
+                          selectedBranchId != null
+                            ? branchStocks.find((branch) => branch.branchId === selectedBranchId)
+                            : null;
+                        const displayStock =
+                          selectedBranchId != null ? selectedBranchStock?.stockQty ?? 0 : v.stockQty;
+                        const isLowStock = displayStock <= low;
                         const vPhotos = variantImageList(
                           v as { imageUrls?: string | string[] | null; imageUrl?: string | null },
                         );
@@ -592,13 +643,34 @@ export default function ProductDetail() {
                                 <p className="mt-1 text-xs text-muted-foreground leading-snug">{attrLine}</p>
                               ) : null}
                             </TableCell>
-                            <TableCell
-                              className={cn(
-                                "px-4 py-3 text-right align-top tabular-nums font-semibold",
-                                isLowStock && "text-destructive",
-                              )}
-                            >
-                              {v.stockQty}
+                            <TableCell className="px-4 py-3 text-right align-top">
+                              <div
+                                className={cn(
+                                  "tabular-nums font-semibold",
+                                  isLowStock && "text-destructive",
+                                )}
+                              >
+                                {displayStock}
+                              </div>
+                              {selectedBranchId != null ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {selectedBranchStock?.branchName ?? "Selected branch"}
+                                </div>
+                              ) : branchStocks.length > 0 ? (
+                                <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                                  {branchStocks.map((branch) => (
+                                    <div
+                                      key={branch.branchId ?? "unassigned"}
+                                      className="flex items-center justify-end gap-2 whitespace-nowrap"
+                                    >
+                                      <span className="max-w-[90px] truncate" title={branch.branchName}>
+                                        {branch.branchName}
+                                      </span>
+                                      <span className="font-mono text-foreground">{branch.stockQty}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
                             </TableCell>
                             <TableCell className="hidden sm:table-cell px-4 py-3 text-right align-top tabular-nums text-muted-foreground text-sm">
                               {low > 0 ? `≤ ${low}` : "—"}

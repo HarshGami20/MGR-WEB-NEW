@@ -805,16 +805,19 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           },
         });
         if (!item.isCustom && item.productId != null) {
-          await decrementProductStock(item.productId, item.quantity, tx);
-          await tx.inventoryLog.create({
-            data: {
-              productId: item.productId,
-              type: "out",
-              quantity: item.quantity,
-              notes: `Order ${orderNumber}`,
-              branchId,
-            },
-          });
+          const movements = await decrementProductStock(item.productId, item.quantity, tx, item.variantId);
+          for (const movement of movements) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: movement.productId,
+                variantId: movement.variantId,
+                type: "out",
+                quantity: movement.quantity,
+                notes: `Order ${orderNumber}`,
+                branchId,
+              },
+            });
+          }
         }
       }
 
@@ -915,11 +918,13 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         : "";
 
   const user = (req as {
-    id: number;
-    branchId: number | null;
-    userBranches?: { branchId: number }[];
-    isSales?: boolean;
-    ordersListScope?: string | null;
+    user?: {
+      id: number;
+      branchId: number | null;
+      userBranches?: { branchId: number }[];
+      isSales?: boolean;
+      ordersListScope?: string | null;
+    };
   }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
@@ -1014,17 +1019,30 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   const currentPaidAmount = toNumber(existingOrder.paidAmount);
   const paymentStatus = normalizePaymentStatus(totalAmount, currentPaidAmount, payload.paymentStatus);
 
-  const previousQtyByProduct = new Map<number, number>();
+  const stockKey = (productId: number, variantId?: number | null) => `${productId}:${variantId ?? "product"}`;
+  const previousQtyByStockKey = new Map<string, { productId: number; variantId: number | null; quantity: number }>();
   for (const item of existingItems) {
     if (item.productId == null) continue;
-    previousQtyByProduct.set(item.productId, (previousQtyByProduct.get(item.productId) ?? 0) + item.quantity);
+    const key = stockKey(item.productId, item.variantId);
+    const previous = previousQtyByStockKey.get(key);
+    previousQtyByStockKey.set(key, {
+      productId: item.productId,
+      variantId: item.variantId ?? null,
+      quantity: (previous?.quantity ?? 0) + item.quantity,
+    });
   }
-  const nextQtyByProduct = new Map<number, number>();
+  const nextQtyByStockKey = new Map<string, { productId: number; variantId: number | null; quantity: number }>();
   for (const item of resolvedItems) {
     if (item.productId == null) continue;
-    nextQtyByProduct.set(item.productId, (nextQtyByProduct.get(item.productId) ?? 0) + item.quantity);
+    const key = stockKey(item.productId, item.variantId);
+    const previous = nextQtyByStockKey.get(key);
+    nextQtyByStockKey.set(key, {
+      productId: item.productId,
+      variantId: item.variantId ?? null,
+      quantity: (previous?.quantity ?? 0) + item.quantity,
+    });
   }
-  const productIds = new Set<number>([...previousQtyByProduct.keys(), ...nextQtyByProduct.keys()]);
+  const stockKeys = new Set<string>([...previousQtyByStockKey.keys(), ...nextQtyByStockKey.keys()]);
 
   let nextDriverId: number | null = (existingOrder as { driverId?: number | null }).driverId ?? null;
   if (payload.driverId !== undefined) {
@@ -1039,9 +1057,13 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   let order;
   try {
     order = await prisma.$transaction(async (tx) => {
-      for (const productId of productIds) {
-        const previousQty = previousQtyByProduct.get(productId) ?? 0;
-        const nextQty = nextQtyByProduct.get(productId) ?? 0;
+      for (const key of stockKeys) {
+        const previousStock = previousQtyByStockKey.get(key);
+        const nextStock = nextQtyByStockKey.get(key);
+        const productId = (nextStock ?? previousStock)!.productId;
+        const variantId = (nextStock ?? previousStock)!.variantId;
+        const previousQty = previousStock?.quantity ?? 0;
+        const nextQty = nextStock?.quantity ?? 0;
         const delta = nextQty - previousQty;
         if (delta === 0) continue;
 
@@ -1049,28 +1071,34 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         if (!product) throw new Error(`Product ${productId} not found while updating stock`);
 
         if (delta > 0) {
-          await decrementProductStock(productId, delta, tx);
-          await tx.inventoryLog.create({
-            data: {
-              productId,
-              type: "out",
-              quantity: delta,
-              notes: `Order ${existingOrder.orderNumber} updated`,
-              branchId: logBranchId,
-            },
-          });
+          const movements = await decrementProductStock(productId, delta, tx, variantId);
+          for (const movement of movements) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: movement.productId,
+                variantId: movement.variantId,
+                type: "out",
+                quantity: movement.quantity,
+                notes: `Order ${existingOrder.orderNumber} updated`,
+                branchId: logBranchId,
+              },
+            });
+          }
         } else {
           const returnQty = Math.abs(delta);
-          await incrementProductStock(productId, returnQty, tx);
-          await tx.inventoryLog.create({
-            data: {
-              productId,
-              type: "in",
-              quantity: returnQty,
-              notes: `Order ${existingOrder.orderNumber} updated (restock)`,
-              branchId: logBranchId,
-            },
-          });
+          const movements = await incrementProductStock(productId, returnQty, tx, variantId);
+          for (const movement of movements) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: movement.productId,
+                variantId: movement.variantId,
+                type: "in",
+                quantity: movement.quantity,
+                notes: `Order ${existingOrder.orderNumber} updated (restock)`,
+                branchId: logBranchId,
+              },
+            });
+          }
         }
       }
 

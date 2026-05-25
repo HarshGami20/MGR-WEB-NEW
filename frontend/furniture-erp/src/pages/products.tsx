@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Edit, Layers, ImageIcon } from "lucide-react";
+import { Plus, Search, Trash2, Edit, Layers, ImageIcon, Eye } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
@@ -19,8 +19,15 @@ import { productImageList, variantImageList } from "@/lib/image-urls";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { ProductsExportDialog } from "@/components/products-export-dialog";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
+import { useBranch } from "@/lib/branch-context";
 
 type ProductRow = Record<string, any>;
+
+type BranchStock = {
+  branchId: number | null;
+  branchName: string;
+  stockQty: number;
+};
 
 function ProductNameCell({ product }: { product: ProductRow }) {
   const gallery = productImageList(product);
@@ -69,6 +76,7 @@ export default function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { can } = usePermissions();
+  const { selectedBranchId } = useBranch();
   const { data: settingsData } = useGetSettings();
   const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
 
@@ -146,10 +154,47 @@ export default function Products() {
       {
         accessorKey: "stockQty",
         header: "Stock",
-        meta: { headerClassName: "text-right", cellClassName: "text-right tabular-nums" },
+        meta: { headerClassName: "text-right", cellClassName: "text-right" },
         cell: ({ row }) => {
-          const low = row.original.isLowStock === true;
-          return <span className={cn("font-medium", low && "text-destructive")}>{row.original.stockQty}</span>;
+          const branches = (Array.isArray(row.original.branchStocks)
+            ? row.original.branchStocks
+            : []) as BranchStock[];
+          const selectedBranchStock =
+            selectedBranchId != null ? branches.find((branch) => branch.branchId === selectedBranchId) : null;
+          const displayStock =
+            selectedBranchId != null
+              ? selectedBranchStock?.stockQty ?? 0
+              : Number(row.original.stockQty ?? 0);
+          const low =
+            selectedBranchId != null
+              ? displayStock <= Number(row.original.lowStockThreshold ?? 10)
+              : row.original.isLowStock === true;
+          return (
+            <div className="space-y-1">
+              <div className={cn("font-medium tabular-nums", low && "text-destructive")}>
+                {displayStock}
+              </div>
+              {selectedBranchId != null ? (
+                <div className="text-xs text-muted-foreground">
+                  {/* {selectedBranchStock?.branchName ?? "Selected branch"} */}
+                </div>
+              ) : branches.length > 0 ? (
+                <div className="space-y-0.5 text-xs text-muted-foreground">
+                  {branches.map((branch) => (
+                    <div
+                      key={branch.branchId ?? "unassigned"}
+                      className="flex items-center justify-end gap-2 whitespace-nowrap"
+                    >
+                      <span className="max-w-[90px] truncate" title={branch.branchName}>
+                        {branch.branchName}
+                      </span>
+                      <span className="font-mono text-foreground">{branch.stockQty}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
         },
       },
       {
@@ -180,6 +225,11 @@ export default function Products() {
           const p = row.original;
           return (
             <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" asChild>
+                <Link href={`/products/${p.id}`} aria-label="View product">
+                  <Eye className="h-4 w-4" />
+                </Link>
+              </Button>
               {can("products", "edit") && (
                 <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" asChild>
                   <Link href={`/products/${p.id}/edit`} aria-label="Edit product">
@@ -207,7 +257,7 @@ export default function Products() {
         },
       },
     ],
-    [can, deleteProduct, defaultGstPercent],
+    [can, deleteProduct, defaultGstPercent, selectedBranchId],
   );
 
   return (

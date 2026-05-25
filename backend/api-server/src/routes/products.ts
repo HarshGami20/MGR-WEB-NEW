@@ -107,6 +107,68 @@ async function enrichProduct(p: any, extras?: { isLowStock?: boolean }) {
   };
 }
 
+type BranchStockRow = {
+  branchId: number | null;
+  branchName: string;
+  stockQty: number;
+};
+
+async function branchStockByProduct(productIds: number[]): Promise<Map<number, BranchStockRow[]>> {
+  const result = new Map<number, BranchStockRow[]>();
+  if (productIds.length === 0) return result;
+
+  const logs = await prisma.inventoryLog.findMany({
+    where: { productId: { in: productIds } },
+    include: { branch: { select: { id: true, name: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+
+  const stockBySkuBranch = new Map<string, number>();
+  const branchLabels = new Map<string, { branchId: number | null; branchName: string }>();
+
+  for (const log of logs) {
+    const branchKey = log.branchId == null ? "unassigned" : String(log.branchId);
+    const skuKey = `${log.productId}:${log.variantId ?? "product"}:${branchKey}`;
+    const current = stockBySkuBranch.get(skuKey) ?? 0;
+
+    if (log.type === "in") {
+      stockBySkuBranch.set(skuKey, current + log.quantity);
+    } else if (log.type === "out") {
+      stockBySkuBranch.set(skuKey, current - log.quantity);
+    } else if (log.type === "adjustment") {
+      stockBySkuBranch.set(skuKey, log.quantity);
+    }
+
+    branchLabels.set(branchKey, {
+      branchId: log.branchId ?? null,
+      branchName: log.branch?.name ?? "Unassigned",
+    });
+  }
+
+  const totalsByProductBranch = new Map<string, number>();
+  for (const [key, qty] of stockBySkuBranch.entries()) {
+    const [productId, , branchKey] = key.split(":");
+    const productBranchKey = `${productId}:${branchKey}`;
+    totalsByProductBranch.set(productBranchKey, (totalsByProductBranch.get(productBranchKey) ?? 0) + qty);
+  }
+
+  for (const [key, qty] of totalsByProductBranch.entries()) {
+    const [productIdRaw, branchKey] = key.split(":");
+    const productId = Number(productIdRaw);
+    const branch = branchLabels.get(branchKey);
+    if (!branch) continue;
+    const rows = result.get(productId) ?? [];
+    rows.push({ ...branch, stockQty: Math.max(0, qty) });
+    result.set(productId, rows);
+  }
+
+  for (const rows of result.values()) {
+    rows.sort((a, b) => a.branchName.localeCompare(b.branchName));
+  }
+
+  return result;
+}
+
 function resolveProductImagesInput(
   body: { imageUrls?: string[] | null; imageUrl?: string | null },
 ): { imageUrls: string | null; imageUrl: string | null } {
@@ -181,8 +243,12 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
 
   const total = products.length;
   const pageRows = products.slice(offset, offset + limitNum);
+  const branchStocks = await branchStockByProduct(pageRows.map((row) => row.id));
   const data = await Promise.all(
-    pageRows.map((row) => enrichProduct(row, { isLowStock: rowIsLow(row) })),
+    pageRows.map(async (row) => ({
+      ...(await enrichProduct(row, { isLowStock: rowIsLow(row) })),
+      branchStocks: branchStocks.get(row.id) ?? [],
+    })),
   );
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
@@ -321,7 +387,11 @@ router.get("/products/:id", requireAuth, requireProductReadAccess(), async (req,
     isLowStock = variants.some((v) => v.stockQty <= v.lowStockThreshold);
   }
 
-  res.json(await enrichProduct(product, { isLowStock }));
+  const branchStocks = await branchStockByProduct([product.id]);
+  res.json({
+    ...(await enrichProduct(product, { isLowStock })),
+    branchStocks: branchStocks.get(product.id) ?? [],
+  });
 });
 
 router.put("/products/:id", requireAuth, requirePermission("products", "update"), async (req, res): Promise<void> => {
@@ -346,7 +416,7 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
       return;
     }
 
-    const user = (req as { user?: { branchId: number | null } }).user;
+    const user = (req as { user?: { id: number; branchId: number | null } }).user;
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
       return;

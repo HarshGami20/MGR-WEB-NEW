@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ComponentProps } from "react";
 import { Link, useLocation, Redirect } from "wouter";
 import { useCreateProduct, useGetSettings, useListCategories, getListProductsQueryKey } from "@/api-client";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,14 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
 import { usePermissions } from "@/lib/permissions";
 import { CategoryPickerWithManage, resolveLeafCategoryId, type CategoryRoot } from "@/components/category-picker-with-manage";
 import {
@@ -29,6 +36,10 @@ import { cn } from "@/lib/utils";
 import { ProductImagesField } from "@/components/product-images-field";
 
 type ProductFormValues = ProductNewFormValues;
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 export default function ProductNew() {
   const [, setLocation] = useLocation();
@@ -194,7 +205,7 @@ export default function ProductNew() {
                           onSubChange={subField.onChange}
                         />
                         {form.formState.errors.parentCategoryId?.message != null && (
-                          <p className="text-sm font-medium text-destructive">{form.formState.errors.parentCategoryId.message}</p>
+                          <p className="text-sm font-medium text-destructive -mt-2.5">{form.formState.errors.parentCategoryId.message}</p>
                         )}
                         <FormMessage />
                       </FormItem>

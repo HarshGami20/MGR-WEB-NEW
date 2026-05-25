@@ -3,7 +3,7 @@ import { AdjustInventoryBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
-import { decrementProductStock, incrementProductStock, setProductStockAbsolute, syncProductStockFromVariants } from "../lib/product-stock";
+import { decrementProductStock, incrementProductStock, setProductStockAbsolute } from "../lib/product-stock";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { inventoryLogProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
@@ -87,6 +87,7 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
+  let movements: Array<{ productId: number; variantId: number | null; quantity: number }> = [];
   try {
     if (variantId) {
       const variant = await prisma.productVariant.findUnique({ where: { id: variantId } });
@@ -95,25 +96,20 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
         return;
       }
       if (type === "in") {
-        await prisma.productVariant.update({ where: { id: variantId }, data: { stockQty: variant.stockQty + quantity } });
+        movements = await incrementProductStock(productId, quantity, prisma, variantId);
       } else if (type === "out") {
-        if (variant.stockQty < quantity) {
-          res.status(400).json({ error: "Insufficient stock" });
-          return;
-        }
-        await prisma.productVariant.update({ where: { id: variantId }, data: { stockQty: variant.stockQty - quantity } });
+        movements = await decrementProductStock(productId, quantity, prisma, variantId);
       } else {
-        await prisma.productVariant.update({ where: { id: variantId }, data: { stockQty: Math.max(0, quantity) } });
+        movements = await setProductStockAbsolute(productId, quantity, prisma, variantId);
       }
-      await syncProductStockFromVariants(productId);
     } else {
-      if (type === "in") await incrementProductStock(productId, quantity);
-      else if (type === "out") await decrementProductStock(productId, quantity);
-      else await setProductStockAbsolute(productId, quantity);
+      if (type === "in") movements = await incrementProductStock(productId, quantity);
+      else if (type === "out") movements = await decrementProductStock(productId, quantity);
+      else movements = await setProductStockAbsolute(productId, quantity);
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Insufficient stock across variants") {
+    if (msg === "Insufficient stock") {
       res.status(400).json({ error: "Insufficient stock" });
       return;
     }
@@ -122,9 +118,20 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
   }
 
   const refreshed = await prisma.product.findUnique({ where: { id: productId } });
-  const log = await prisma.inventoryLog.create({
-    data: { productId, variantId: variantId ?? null, type, quantity, notes, branchId: writeBranchId },
-  });
+  const createdLogs = await Promise.all(
+    movements.map((movement) =>
+      prisma.inventoryLog.create({
+        data: {
+          productId: movement.productId,
+          variantId: movement.variantId,
+          type,
+          quantity: movement.quantity,
+          notes,
+          branchId: writeBranchId,
+        },
+      }),
+    ),
+  );
   const variant = variantId ? await prisma.productVariant.findUnique({ where: { id: variantId } }) : null;
   const p = refreshed ?? product;
 
@@ -141,7 +148,14 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
   });
 
   res.json({
-    ...log,
+    ...(createdLogs[0] ?? {
+      productId,
+      variantId: variantId ?? null,
+      type,
+      quantity,
+      notes,
+      branchId: writeBranchId,
+    }),
     product: { ...p, price: toNumber(p.price), gstPercent: toNumber(p.gstPercent) },
     variant: variant
       ? { ...variant, price: variant.price != null ? toNumber(variant.price) : null, attributes: variant.attributes ?? null }

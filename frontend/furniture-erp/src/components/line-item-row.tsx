@@ -1,14 +1,22 @@
+import type { ComponentProps } from "react";
 import type { Product } from "@/api-client";
 import ProductVariantSelect from "@/components/product-variant-select";
 import { ProductImagesField } from "@/components/product-images-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
 import { ValidatedInput } from "@/components/validated-input";
 import type { UseFormReturn } from "react-hook-form";
 import { defaultCatalogLineItem, defaultCustomLineItem } from "@/lib/custom-line-item";
 import { Package, PackagePlus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Props = {
   index: number;
@@ -19,6 +27,10 @@ type Props = {
   isGstInvoice?: boolean;
   defaultGstPercent?: number;
 };
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 export function LineItemRow({
   index,
@@ -31,6 +43,13 @@ export function LineItemRow({
   const isCustom = !!form.watch(`items.${index}.isCustom`);
   const productId = Number(form.watch(`items.${index}.productId`) ?? 0);
   const variantId = form.watch(`items.${index}.variantId`) ?? null;
+  const lineItemErrors = (
+    form.formState.errors.items as
+      | Array<{ productId?: { message?: string }; variantId?: { message?: string } }>
+      | undefined
+  )?.[index];
+  const productSelectionError =
+    lineItemErrors?.productId?.message || lineItemErrors?.variantId?.message;
 
   const switchToCustom = () => {
     form.setValue(
@@ -169,13 +188,11 @@ export function LineItemRow({
               form.setValue(`items.${index}.unitPrice`, Number(price || 0), { shouldDirty: true, shouldValidate: true })
             }
           />
-          {(form.formState.errors.items?.[index]?.productId?.message ||
-            form.formState.errors.items?.[index]?.variantId?.message) && (
-            <p className="text-sm font-medium text-destructive">
-              {form.formState.errors.items?.[index]?.productId?.message ||
-                form.formState.errors.items?.[index]?.variantId?.message}
+          {productSelectionError ? (
+            <p className="text-sm font-medium text-destructive -mt-3">
+              {productSelectionError}
             </p>
-          )}
+          ) : null}
         </>
       )}
 

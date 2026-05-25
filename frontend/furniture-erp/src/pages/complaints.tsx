@@ -401,9 +401,9 @@ export default function ComplaintsPage() {
         id: "po",
         header: "PO #",
         cell: ({ row }) => (
-          <span className="font-mono text-sm text-muted-foreground">
+          <div className="font-mono text-sm text-muted-foreground hover:underline cursor-pointer" onClick={() => openDetailPage(row.original)}>
             {row.original.purchaseOrder?.poNumber ?? "—"}
-          </span>
+          </div>
         ),
       },
       {

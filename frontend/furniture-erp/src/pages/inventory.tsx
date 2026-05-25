@@ -449,12 +449,12 @@ export default function Inventory() {
                 onPriceChange={() => {}}
               />
               {form.formState.errors.productId?.message ? (
-                <p className="text-sm font-medium text-destructive">
+                <p className="text-sm font-medium text-destructive -mt-3">
                   {form.formState.errors.productId.message}
                 </p>
               ) : null}
               {form.formState.errors.variantId?.message ? (
-                <p className="text-sm font-medium text-destructive">
+                <p className="text-sm font-medium text-destructive -mt-3">
                   {form.formState.errors.variantId.message}
                 </p>
               ) : null}

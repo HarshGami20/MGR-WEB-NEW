@@ -17,3 +17,35 @@ export function formatIndianDateTime(iso: string | Date | null | undefined): str
     return String(iso);
   }
 }
+
+type DisplayDateOptions = {
+  includeTime?: boolean;
+  includeWeekday?: boolean;
+};
+
+/** e.g. May 25, 2026 or May 25, 2026, 10:30 AM */
+export function formatDisplayDate(
+  value: string | Date | null | undefined,
+  options: DisplayDateOptions = {},
+): string {
+  if (value == null || value === "") return "—";
+  try {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat(undefined, {
+      ...(options.includeWeekday ? { weekday: "short" as const } : {}),
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      ...(options.includeTime
+        ? {
+            hour: "numeric" as const,
+            minute: "2-digit" as const,
+            hour12: true,
+          }
+        : {}),
+    }).format(date);
+  } catch {
+    return String(value);
+  }
+}

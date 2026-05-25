@@ -513,7 +513,6 @@ export default function OrderDetailPage() {
                 )}
               </div>
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 shrink-0" />
                  {formatCommentDateTime(order.createdAt)}
               </p>
             </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateProductVariant,
@@ -31,11 +31,23 @@ import { usePermissions } from "@/lib/permissions";
 import { z } from "zod";
 import { useForm, useFieldArray, Control, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProductImagesField } from "@/components/product-images-field";
 import { variantImageList } from "@/lib/image-urls";
+import { cn } from "@/lib/utils";
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 export function flattenCategoryRoots(roots: unknown[]): { id: number; name: string; parentId?: number | null }[] {
   const out: { id: number; name: string; parentId?: number | null }[] = [];

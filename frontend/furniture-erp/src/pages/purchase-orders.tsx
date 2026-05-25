@@ -35,13 +35,28 @@ import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-f
 import { formatInr } from "@/lib/format-currency";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
+import { formatDisplayDate } from "@/lib/format-datetime";
+
+function todayDateInputValue(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 const poSchema = z.object({
   type: z.enum(["supplier", "manufacturer"]),
   supplierId: z.coerce.number().optional().nullable(),
   manufacturerId: z.coerce.number().optional().nullable(),
   items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
-  expectedDelivery: z.string().optional().nullable(),
+  expectedDelivery: z
+    .string()
+    .optional()
+    .nullable()
+    .refine((value) => !value || value >= todayDateInputValue(), {
+      message: "Expected delivery cannot be in the past",
+    }),
   notes: z.string().optional().nullable(),
 });
 
@@ -211,13 +226,12 @@ export default function PurchaseOrders() {
         accessorKey: "poNumber",
         header: "PO #",
         cell: ({ row }) => (
-          <button
-            type="button"
-            className="font-mono text-sm font-medium text-primary hover:underline text-left"
+          <div
+            className="font-mono text-sm font-medium cursor-pointer text-dark hover:underline text-left"
             onClick={() => setLocation(`/purchase-orders/${row.original.id}`)}
           >
             {row.original.poNumber}
-          </button>
+          </div>
         ),
       },
       {
@@ -275,7 +289,7 @@ export default function PurchaseOrders() {
         cell: ({ row }) =>
           row.original.expectedDelivery ? (
             <span className="text-muted-foreground">
-              {new Date(row.original.expectedDelivery).toLocaleDateString()}
+              {formatDisplayDate(row.original.expectedDelivery)}
             </span>
           ) : (
             "—"
@@ -516,7 +530,13 @@ export default function PurchaseOrders() {
                     <FormItem>
                       <FormLabel>Expected Delivery Date</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} value={field.value || ""} />
+                        <Input
+                          type="date"
+                          min={todayDateInputValue()}
+                          {...field}
+                          value={field.value || ""}
+                          onChange={(event) => field.onChange(event.target.value)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

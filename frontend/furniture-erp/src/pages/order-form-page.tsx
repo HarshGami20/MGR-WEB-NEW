@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, type ComponentProps, type ReactNode } from "react";
 import { Link, Redirect, useLocation, useRoute } from "wouter";
 import {
   useCreateOrder,
@@ -21,7 +21,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { formatPaymentStatusLabel } from "@/lib/payment-follow-up-api";
@@ -103,12 +110,16 @@ const orderSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["advanceAmount"],
-      message: `Advance amount cannot exceed order total (${formatInr(totals.total)})`,
+      message: `exceed order total (${formatInr(totals.total)})`,
     });
   }
 });
 
 type OrderFormValues = z.infer<typeof orderSchema>;
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 function collectFormErrorMessages(err: unknown): string[] {
   if (!err || typeof err !== "object") return [];
