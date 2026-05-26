@@ -837,12 +837,27 @@ export function VariantFormDialog({
                     <FormLabel>Price Override (₹)</FormLabel>
                     <FormControl>
                       <Input
-                        type="number"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
                         placeholder="Leave blank = base price"
-                        {...field}
-                        value={field.value ?? ""}
-                        onChange={(e) => field.onChange(e.target.value === "" ? undefined : parseFloat(e.target.value))}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={
+                          field.value === null || field.value === undefined
+                            ? ""
+                            : String(field.value)
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            field.onChange(undefined);
+                            return;
+                          }
+                          if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
+                          field.onChange(raw);
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
