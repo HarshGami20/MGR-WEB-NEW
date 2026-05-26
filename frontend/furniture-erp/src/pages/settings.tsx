@@ -11,18 +11,38 @@ import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api-client/custom-fetch";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Building, FileText, Settings2, UserCircle2, Upload, ChevronDown } from "lucide-react";
+import { Building, Eye, EyeOff, FileText, LockKeyhole, Settings2, UserCircle2, Upload, ChevronDown } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { useAuth } from "@/lib/auth";
-import { profileFormSchema, settingsFormSchema, type ProfileFormValues, type SettingsFormValues } from "@/lib/form-validation";
+import { FIELD_LIMITS, profileFormSchema, settingsFormSchema, type ProfileFormValues, type SettingsFormValues } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 
 const settingsSchema = settingsFormSchema;
 const profileSchema = profileFormSchema;
+const passwordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z
+      .string()
+      .min(FIELD_LIMITS.passwordMin, `Password must be at least ${FIELD_LIMITS.passwordMin} characters`)
+      .max(FIELD_LIMITS.passwordMax, `Password must be at most ${FIELD_LIMITS.passwordMax} characters`),
+    confirmPassword: z.string().min(1, "Confirm your new password"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: "New password must be different from current password",
+    path: ["newPassword"],
+  });
+
+type PasswordChangeFormValues = z.infer<typeof passwordChangeSchema>;
 
 export default function Settings() {
   const queryClient = useQueryClient();
@@ -63,8 +83,21 @@ export default function Settings() {
       avatarUrl: "",
     },
   });
+  const passwordForm = useForm<PasswordChangeFormValues>({
+    resolver: zodResolver(passwordChangeSchema),
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
   const avatarUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const [showPasswordFields, setShowPasswordFields] = useState({
+    current: false,
+    next: false,
+    confirm: false,
+  });
   const avatarChoices = useMemo(() => {
     const base = profileForm.watch("name") || user?.name || "user";
     return Array.from({ length: 24 }, (_, i) => avatarUrlForName(`${base}-${i + 1}`));
@@ -116,6 +149,29 @@ export default function Settings() {
         variant: "destructive",
       });
     }
+  };
+  const onSubmitPassword = async (data: PasswordChangeFormValues) => {
+    try {
+      await customFetch("/api/auth/me/password", {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword,
+        }),
+      });
+      passwordForm.reset();
+      setShowPasswordFields({ current: false, next: false, confirm: false });
+      toast({ title: "Password changed successfully" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to change password",
+        description: error?.message ?? "Please check your current password and try again.",
+        variant: "destructive",
+      });
+    }
+  };
+  const togglePasswordVisibility = (field: keyof typeof showPasswordFields) => {
+    setShowPasswordFields((prev) => ({ ...prev, [field]: !prev[field] }));
   };
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -280,6 +336,146 @@ export default function Settings() {
                   </div>
                   <div className="flex justify-end">
                     <Button type="button" onClick={profileForm.handleSubmit(onSubmitProfile)}>Save Profile</Button>
+                  </div>
+                </div>
+              </Form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <LockKeyhole className="h-5 w-5 text-muted-foreground" />
+                Change Password
+              </CardTitle>
+              <CardDescription>
+                Update your login password after confirming your current password.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...passwordForm}>
+                <div
+                  className="space-y-4"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void passwordForm.handleSubmit(onSubmitPassword)();
+                    }
+                  }}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={passwordForm.control}
+                      name="currentPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Current Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                {...field}
+                                type={showPasswordFields.current ? "text" : "password"}
+                                autoComplete="current-password"
+                                maxLength={FIELD_LIMITS.passwordMax}
+                                className="pl-10 pr-10"
+                              />
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="absolute inset-y-0 right-0 z-10 flex w-10 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => togglePasswordVisibility("current")}
+                                aria-label={showPasswordFields.current ? "Hide current password" : "Show current password"}
+                              >
+                                {showPasswordFields.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={passwordForm.control}
+                      name="newPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>New Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                {...field}
+                                type={showPasswordFields.next ? "text" : "password"}
+                                autoComplete="new-password"
+                                maxLength={FIELD_LIMITS.passwordMax}
+                                className="pl-10 pr-10"
+                              />
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="absolute inset-y-0 right-0 z-10 flex w-10 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => togglePasswordVisibility("next")}
+                                aria-label={showPasswordFields.next ? "Hide new password" : "Show new password"}
+                              >
+                                {showPasswordFields.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Use {FIELD_LIMITS.passwordMin}-{FIELD_LIMITS.passwordMax} characters.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={passwordForm.control}
+                      name="confirmPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Confirm New Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                {...field}
+                                type={showPasswordFields.confirm ? "text" : "password"}
+                                autoComplete="new-password"
+                                maxLength={FIELD_LIMITS.passwordMax}
+                                className="pl-10 pr-10"
+                              />
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="absolute inset-y-0 right-0 z-10 flex w-10 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => togglePasswordVisibility("confirm")}
+                                aria-label={showPasswordFields.confirm ? "Hide confirmed password" : "Show confirmed password"}
+                              >
+                                {showPasswordFields.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={passwordForm.handleSubmit(onSubmitPassword)}
+                      disabled={passwordForm.formState.isSubmitting}
+                    >
+                      {passwordForm.formState.isSubmitting ? "Changing..." : "Change Password"}
+                    </Button>
                   </div>
                 </div>
               </Form>

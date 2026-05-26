@@ -1,11 +1,11 @@
 import {
   useGetDashboardSummary,
   useGetRecentOrders,
-  useGetSalesReport,
   useGetOrderStatusBreakdown,
+  useGetSalesReport,
   useListOrders,
-  useListUsers,
-  type User,
+  useListCategories,
+  useListInventoryLogs,
 } from "@/api-client";
 import { useAuth } from "@/lib/auth";
 import { useBranch } from "@/lib/branch-context";
@@ -14,21 +14,21 @@ import PartnerDashboardPage from "@/pages/partner/dashboard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ArrowUpRight,
   Box,
-  CalendarClock,
-  Download,
   Plus,
-  Video,
   ClipboardList,
   ChevronDown,
+  PackageOpen,
+  Activity,
+  Layers,
+  AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { cn } from "@/lib/utils";
 import { formatInr } from "@/lib/format-currency";
 import { useQuery } from "@tanstack/react-query";
@@ -41,10 +41,6 @@ import {
   type DeliveryOrderRow,
 } from "@/lib/delivery-stats";
 
-const chartOrders = "hsl(var(--chart-1))";
-const chartRevenue = "hsl(var(--chart-2))";
-const chartPending = "hsl(var(--chart-3))";
-
 function statusCount(orderStatus: { status: string; count: number }[] | undefined, key: string) {
   return orderStatus?.find((s) => s.status === key)?.count ?? 0;
 }
@@ -52,7 +48,8 @@ function statusCount(orderStatus: { status: string; count: number }[] | undefine
 function StaffDashboard() {
   const currentYear = new Date().getFullYear();
   const [revenueYear, setRevenueYear] = useState(currentYear);
-  const [analyticsRange, setAnalyticsRange] = useState<"week" | "month" | "year">("month");
+  const [kpiRange, setKpiRange] = useState<"today" | "week" | "month">("today");
+  const [earningRange, setEarningRange] = useState<7 | 14 | 30>(14);
   const { selectedBranchId } = useBranch();
   const branchIdParam = selectedBranchId != null ? { branchId: selectedBranchId } : undefined;
 
@@ -61,17 +58,21 @@ function StaffDashboard() {
     limit: 6,
     ...branchIdParam,
   });
-  const { data: annualSalesReport, isLoading: annualRevenueLoading } = useGetSalesReport({
-    year: revenueYear,
-    ...branchIdParam,
-  });
   const { data: analyticsOrdersData, isLoading: analyticsOrdersLoading } = useListOrders({
     page: 1,
     limit: 1000,
     ...branchIdParam,
   });
   const { data: orderStatus, isLoading: statusLoading } = useGetOrderStatusBreakdown(branchIdParam);
-  const { data: usersData } = useListUsers({ isActive: true, limit: 6 });
+  const { data: annualSalesReport, isLoading: annualRevenueLoading } = useGetSalesReport({
+    year: revenueYear,
+    ...branchIdParam,
+  });
+  const { data: categoriesData } = useListCategories();
+  const { data: inventoryLogsData, isLoading: logsLoading } = useListInventoryLogs({
+    page: 1,
+    limit: 10,
+  });
 
   const completedMain =
     statusCount(orderStatus, "complete") + statusCount(orderStatus, "delivered");
@@ -84,106 +85,160 @@ function StaffDashboard() {
   const fromBreakdownSum = completedMain + openOrders + cancelled;
   const totalOrders = summary?.totalOrders ?? fromBreakdownSum;
 
-  const orderAnalyticsData = useMemo(() => {
+  const earningReportData = useMemo(() => {
     const orders = analyticsOrdersData?.data ?? [];
     const now = new Date();
-
-    if (analyticsRange === "week") {
-      const days = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(now);
-        d.setDate(now.getDate() - (6 - i));
-        d.setHours(0, 0, 0, 0);
-        return d;
-      });
-      return days.map((day) => {
-        const dayEnd = new Date(day);
-        dayEnd.setDate(day.getDate() + 1);
-        const bucket = orders.filter((o) => {
-          const dt = new Date(o.createdAt);
-          return dt >= day && dt < dayEnd;
-        });
-        return {
-          label: day.toLocaleDateString(undefined, { weekday: "short" }),
-          orderCount: bucket.length,
-          pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
-          revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
-        };
-      });
-    }
-
-    if (analyticsRange === "month") {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      const monthOrders = orders.filter((o) => {
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayKey = todayStart.getTime();
+    return Array.from({ length: earningRange }, (_, i) => {
+      const day = new Date(todayStart);
+      day.setDate(todayStart.getDate() - (earningRange - 1 - i));
+      const dayEnd = new Date(day);
+      dayEnd.setDate(day.getDate() + 1);
+      const bucket = orders.filter((o) => {
         const dt = new Date(o.createdAt);
-        return dt >= start && dt < end;
+        return dt >= day && dt < dayEnd;
       });
-      const weeks = ["W1", "W2", "W3", "W4", "W5"];
-      return weeks.map((w, i) => {
-        const weekStartDay = i * 7 + 1;
-        const weekEndDay = Math.min((i + 1) * 7, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
-        const bucket = monthOrders.filter((o) => {
-          const d = new Date(o.createdAt).getDate();
-          return d >= weekStartDay && d <= weekEndDay;
-        });
-        return {
-          label: w,
-          orderCount: bucket.length,
-          pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
-          revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
-        };
-      });
-    }
-
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const yearOrders = orders.filter((o) => new Date(o.createdAt).getFullYear() === revenueYear);
-    return months.map((m, i) => {
-      const bucket = yearOrders.filter((o) => new Date(o.createdAt).getMonth() === i);
+      const revenue = bucket.reduce((sum, o) => sum + o.totalAmount, 0);
       return {
-        label: m,
-        orderCount: bucket.length,
-        pendingCount: bucket.filter((o) => String(o.status) === "order_received").length,
-        revenue: bucket.reduce((sum, o) => sum + o.totalAmount, 0),
+        key: day.getTime(),
+        label: day.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
+        tooltipLabel: day.toLocaleDateString(undefined, {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+        revenue,
+        isToday: day.getTime() === todayKey,
       };
     });
-  }, [analyticsOrdersData?.data, analyticsRange, revenueYear]);
+  }, [analyticsOrdersData?.data, earningRange]);
 
-  const pendingTotal = orderReceived + cancelled;
-  const donutData = [
-    { name: "Delivered", value: completedMain, fill: chartOrders },
-    { name: "In progress", value: inProgress, fill: "hsl(var(--chart-2))" },
-    { name: "Open", value: pendingTotal, fill: chartPending },
-  ];
-  const donutTotal = Math.max(completedMain + inProgress + pendingTotal, 1);
-  const completedPct = Math.round((completedMain / donutTotal) * 100);
+  const earningTotal = earningReportData.reduce((sum, d) => sum + d.revenue, 0);
+  const earningMax = earningReportData.reduce((max, d) => (d.revenue > max ? d.revenue : max), 0);
 
-  const reminder = useMemo(() => {
-    if (summary && summary.pendingPayments > 0) {
-      return {
-        title: "Pending payments",
-        meta: `${summary.pendingPayments.toFixed(2)} invoice(s) need attention`,
-      };
+  const allOrdersForStats = analyticsOrdersData?.data ?? [];
+
+  const kpiBreakdown = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dow = todayStart.getDay();
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(todayStart.getDate() - dow);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const rangeStart =
+      kpiRange === "today" ? todayStart : kpiRange === "week" ? weekStart : monthStart;
+    let total = 0;
+    let delivered = 0;
+    let inProgress = 0;
+    let received = 0;
+    let cancelled = 0;
+    let revenueTotal = 0;
+    let revenuePaid = 0;
+    let revenueDue = 0;
+    for (const o of allOrdersForStats) {
+      const dt = new Date(o.createdAt);
+      if (dt < rangeStart) continue;
+      total++;
+      const st = String(o.status);
+      if (st === "delivered" || st === "complete") delivered++;
+      else if (st === "manufacturing" || st === "ready_to_ship") inProgress++;
+      else if (st === "order_received") received++;
+      else if (st === "cancelled") cancelled++;
+      const totalAmt = (o as any).totalAmount ?? 0;
+      const paidAmt = (o as any).paidAmount ?? 0;
+      revenueTotal += totalAmt;
+      revenuePaid += paidAmt;
+      revenueDue += Math.max(totalAmt - paidAmt, 0);
     }
-    if (summary && summary.lowStockCount > 0) {
-      return {
-        title: "Low stock alert",
-        meta: `${summary.lowStockCount} product(s) below threshold`,
-      };
+    return { total, delivered, inProgress, received, cancelled, revenueTotal, revenuePaid, revenueDue };
+  }, [allOrdersForStats, kpiRange]);
+
+  const revenueBarData = useMemo(
+    () => [
+      { name: "Due", value: kpiBreakdown.revenueDue, fill: "hsl(var(--chart-3))" },
+      { name: "Received", value: kpiBreakdown.revenuePaid, fill: "hsl(var(--chart-1))" },
+      { name: "Total", value: kpiBreakdown.revenueTotal, fill: "hsl(var(--chart-2))" },
+    ],
+    [kpiBreakdown.revenueDue, kpiBreakdown.revenuePaid, kpiBreakdown.revenueTotal],
+  );
+
+  const yearOptions = useMemo(
+    () => Array.from({ length: 6 }, (_, idx) => currentYear - idx),
+    [currentYear],
+  );
+  const annualRevenue = annualSalesReport?.reduce((sum, item) => sum + item.revenue, 0) ?? 0;
+  const quarterTotals = useMemo(() => {
+    const rows = annualSalesReport ?? [];
+    if (!rows.length) return [0, 0, 0, 0];
+    if (rows.length >= 12) {
+      return [0, 1, 2, 3].map((q) =>
+        rows.slice(q * 3, q * 3 + 3).reduce((sum, row) => sum + row.revenue, 0),
+      );
     }
-    const urgent = recentOrders?.find(
-      (o) =>
-        (o.status as string) !== "complete" &&
-        (o.status as string) !== "delivered" &&
-        (o.status as string) !== "cancelled",
+    const chunkSize = Math.ceil(rows.length / 4);
+    return [0, 1, 2, 3].map((q) =>
+      rows.slice(q * chunkSize, q * chunkSize + chunkSize).reduce((sum, row) => sum + row.revenue, 0),
     );
-    const first = urgent ?? recentOrders?.[0];
-    if (!first)
-      return { title: "No upcoming actions", meta: "You are all caught up" };
-    return {
-      title: `Follow up · ${first.orderNumber}`,
-      meta: `${first.customerName} · ${first.status}`,
-    };
-  }, [summary, recentOrders]);
+  }, [annualSalesReport]);
+
+  const categoryRevenue = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const categoryMap = new Map<number, string>();
+    for (const c of categoriesData ?? []) {
+      categoryMap.set(c.id, c.name);
+    }
+    const buckets = new Map<string, number>();
+    for (const o of allOrdersForStats) {
+      const dt = new Date(o.createdAt);
+      if (dt < monthStart || dt >= monthEnd) continue;
+      const items = ((o as any).items ?? []) as Array<{
+        totalPrice?: number;
+        unitPrice?: number;
+        quantity?: number;
+        product?: { categoryId?: number | null; categoryPath?: string | null; category?: { name?: string } | null } | null;
+      }>;
+      for (const item of items) {
+        const lineTotal =
+          item.totalPrice ?? (item.unitPrice ?? 0) * (item.quantity ?? 0);
+        const name =
+          item.product?.categoryPath ||
+          item.product?.category?.name ||
+          (item.product?.categoryId != null ? categoryMap.get(item.product.categoryId) : null) ||
+          "Uncategorised";
+        buckets.set(name, (buckets.get(name) ?? 0) + lineTotal);
+      }
+    }
+    return Array.from(buckets.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [allOrdersForStats, categoriesData]);
+
+  const categoryRevenueTotal = categoryRevenue.reduce((sum, c) => sum + c.value, 0);
+
+  const paymentReminders = useMemo(() => {
+    return allOrdersForStats
+      .map((o) => {
+        const total = (o as any).totalAmount ?? 0;
+        const paid = (o as any).paidAmount ?? 0;
+        const dueAmount = Math.max(total - paid, 0);
+        return { order: o, dueAmount };
+      })
+      .filter(
+        (row) =>
+          row.dueAmount > 0 &&
+          String(row.order.status) !== "cancelled",
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.order.createdAt).getTime() - new Date(b.order.createdAt).getTime(),
+      )
+      .slice(0, 6);
+  }, [allOrdersForStats]);
 
   const loadingBlock = summaryLoading || statusLoading;
   const todayYmd = localTodayYmd();
@@ -204,25 +259,6 @@ function StaffDashboard() {
     todayYmd,
     todaySlotCapacity || 0,
   );
-  const annualRevenue = annualSalesReport?.reduce((sum, item) => sum + item.revenue, 0) ?? 0;
-  const yearOptions = useMemo(
-    () => Array.from({ length: 6 }, (_, idx) => currentYear - idx),
-    [currentYear],
-  );
-  const quarterTotals = useMemo(() => {
-    const rows = annualSalesReport ?? [];
-    if (!rows.length) return [0, 0, 0, 0];
-    if (rows.length >= 12) {
-      return [0, 1, 2, 3].map((q) =>
-        rows.slice(q * 3, q * 3 + 3).reduce((sum, row) => sum + row.revenue, 0),
-      );
-    }
-    const chunkSize = Math.ceil(rows.length / 4);
-    return [0, 1, 2, 3].map((q) =>
-      rows.slice(q * chunkSize, q * chunkSize + chunkSize).reduce((sum, row) => sum + row.revenue, 0),
-    );
-  }, [annualSalesReport]);
-
   const iconForOrder = (st: string) => {
     const map: Record<string, typeof Box> = {
       order_received: ClipboardList,
@@ -255,25 +291,14 @@ function StaffDashboard() {
     }
   };
 
-  const badgeForTeam = (u: User) =>
-    !u.isActive ? (
-      <Badge variant="outline" className="rounded-full border-rose-200 bg-rose-50 text-rose-700 capitalize">
-        Inactive
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary capitalize">
-        Active
-      </Badge>
-    );
-
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-[1600px]">
       {/* Title row */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
-          <p className="mt-1 text-muted-foreground max-w-xl">
-            Plan, prioritize, and run your showroom and orders — with live inventory and fulfilment insights.
+          <p className="mt-1 text-muted-foreground">
+            Today's orders, revenue & fulfilment at a glance.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -292,287 +317,189 @@ function StaffDashboard() {
         </div>
       </div>
 
-      {/* KPI strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {loadingBlock ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[132px] rounded-3xl" />)
-        ) : (
-          <>
-            <div className="rounded-3xl bg-[linear-gradient(145deg,hsl(var(--primary))_0%,hsl(var(--primary-dim))_42%,hsl(var(--primary-deep))_100%)] text-primary-foreground p-6 shadow-[0_14px_34px_rgba(56,39,67,0.28)] relative overflow-hidden border border-primary/15">
-              <div
-                className="pointer-events-none absolute inset-0 opacity-55"
-                style={{
-                  backgroundImage:
-                    "radial-gradient(circle at 14% 12%, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 35%), radial-gradient(circle at 88% 86%, rgba(188,154,226,0.35) 0%, rgba(188,154,226,0) 46%), linear-gradient(130deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 34%)",
-                }}
-              />
-              <div
-                className="pointer-events-none absolute inset-0 opacity-20"
-                style={{
-                  backgroundImage:
-                    "repeating-linear-gradient(135deg, rgba(255,255,255,0.11) 0 1px, transparent 1px 9px)",
-                  backgroundSize: "18px 18px",
-                }}
-              />
-              <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent" />
-              <div className="absolute right-4 top-4 opacity-20">
-                <ArrowUpRight className="h-8 w-8" aria-hidden />
+      {/* KPI strip with Today/Week/Month filter */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">Total Orders</h2>
+            <span className="text-xs text-muted-foreground capitalize">
+              {kpiRange === "today" ? "Today" : kpiRange === "week" ? "This week" : "This month"}
+            </span>
+          </div>
+          <div className="inline-flex rounded-xl border border-border bg-background p-1 text-xs">
+            {([
+              { key: "today", label: "Today" },
+              { key: "week", label: "This Week" },
+              { key: "month", label: "This Month" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setKpiRange(opt.key)}
+                className={cn(
+                  "px-3 py-1 rounded-lg transition-colors",
+                  kpiRange === opt.key
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {loadingBlock || analyticsOrdersLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[132px] rounded-3xl" />
+            ))
+          ) : (
+            <>
+              <div className="rounded-3xl bg-[linear-gradient(145deg,hsl(var(--primary))_0%,hsl(var(--primary-dim))_42%,hsl(var(--primary-deep))_100%)] text-primary-foreground p-6 shadow-[0_14px_34px_rgba(56,39,67,0.28)] relative overflow-hidden border border-primary/15">
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-55"
+                  style={{
+                    backgroundImage:
+                      "radial-gradient(circle at 14% 12%, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 35%), radial-gradient(circle at 88% 86%, rgba(188,154,226,0.35) 0%, rgba(188,154,226,0) 46%), linear-gradient(130deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 34%)",
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-20"
+                  style={{
+                    backgroundImage:
+                      "repeating-linear-gradient(135deg, rgba(255,255,255,0.11) 0 1px, transparent 1px 9px)",
+                    backgroundSize: "18px 18px",
+                  }}
+                />
+                <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent" />
+                <div className="absolute right-4 top-4 opacity-20">
+                  <ArrowUpRight className="h-8 w-8" aria-hidden />
+                </div>
+                <p className="text-sm font-medium text-primary-foreground/85">Total orders</p>
+                <p className="mt-2 text-4xl font-bold tabular-nums">{kpiBreakdown.total}</p>
+                <p className="mt-3 text-xs text-primary-foreground/75">
+                  {kpiRange === "today"
+                    ? `${summary?.completedOrdersToday ?? 0} completed today`
+                    : `${kpiBreakdown.delivered} completed in range`}
+                </p>
               </div>
-              <p className="text-sm font-medium text-primary-foreground/85">Total orders</p>
-              <p className="mt-2 text-4xl font-bold tabular-nums">{totalOrders}</p>
-              <p className="mt-3 text-xs text-primary-foreground/75">
-                {summary?.completedOrdersToday ?? 0} completed today
+              <MetricCardPlain
+                title="Delivered"
+                value={kpiBreakdown.delivered}
+                hint={
+                  kpiBreakdown.total > 0
+                    ? `${Math.round((kpiBreakdown.delivered / kpiBreakdown.total) * 100)}% of pipeline`
+                    : "No orders yet"
+                }
+              />
+              <MetricCardPlain
+                title="In progress"
+                value={kpiBreakdown.inProgress}
+                hint="Manufacturing + ready to ship"
+              />
+              <MetricCardPlain
+                title="Order received"
+                value={kpiBreakdown.received}
+                hint={kpiBreakdown.cancelled > 0 ? `${kpiBreakdown.cancelled} cancelled in mix` : "Needs action"}
+              />
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* Total Revenue 3-bar chart + Annual Revenue rings */}
+      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <div className="lg:col-span-8 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">Total Revenue</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Due, received & total revenue — {kpiRange === "today" ? "today" : kpiRange === "week" ? "this week" : "this month"}
               </p>
             </div>
-            <MetricCardPlain
-              title="Delivered"
-              value={completedMain}
-              hint={`${completedPct}% of pipeline`}
-            />
-            <MetricCardPlain title="In progress" value={inProgress} hint={`Manufacturing + ready to ship`} />
-            <MetricCardPlain
-              title="Order received"
-              value={orderReceived}
-              hint={cancelled > 0 ? `${cancelled} cancelled in mix` : "Needs action"}
-            />
-          </>
-        )}
-      </div>
-
-      {/* Middle grid */}
-      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-        <div className="lg:col-span-5 xl:col-span-5 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-2 mb-6">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">Order analytics</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">Orders, order-received, and revenue from DB</p>
-            </div>
-            <div className="relative">
-              <select
-                value={analyticsRange}
-                onChange={(e) => setAnalyticsRange(e.target.value as "week" | "month" | "year")}
-                className="appearance-none rounded-xl border border-border bg-background pl-3 pr-8 py-1 text-xs text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-                aria-label="Order analytics range"
-              >
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-                <option value="year">Year</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-xl text-xs">
+                Total ₹{formatCompactCurrency(kpiBreakdown.revenueTotal)}
+              </Badge>
+              <Badge variant="outline" className="rounded-xl text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                Received ₹{formatCompactCurrency(kpiBreakdown.revenuePaid)}
+              </Badge>
+              <Badge variant="outline" className="rounded-xl text-xs bg-amber-50 text-amber-700 border-amber-200">
+                Due ₹{formatCompactCurrency(kpiBreakdown.revenueDue)}
+              </Badge>
             </div>
           </div>
-          <div className="md:h-[400px] h-[260px] w-full">
+          <div className="h-[260px] w-full mt-4">
             {analyticsOrdersLoading ? (
-              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Loading chart…</div>
-            ) : !orderAnalyticsData.length ? (
+              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                Loading revenue…
+              </div>
+            ) : kpiBreakdown.revenueTotal === 0 ? (
               <div className="h-full flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
-                No sales analytics data available
+                No revenue recorded for the selected range
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={orderAnalyticsData} barCategoryGap="22%" margin={{ top: 16, bottom: 0, left: 0, right: 0 }}>
-                  <defs>
-                    <pattern id="pending-orders-pattern" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                      <rect width="8" height="8" fill="hsl(var(--chart-pattern-bg))" />
-                      <rect width="4" height="8" fill="hsl(var(--chart-pattern-stripe))" />
-                    </pattern>
-                  </defs>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <BarChart
+                  data={revenueBarData}
+                  layout="vertical"
+                  margin={{ top: 8, bottom: 8, left: 12, right: 24 }}
+                  barCategoryGap="28%"
+                >
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                   <XAxis
-                    dataKey="label"
+                    type="number"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                  />
-                  <YAxis
-                    yAxisId="orders"
-                    tickLine={false}
-                    axisLine={false}
-                    width={30}
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                    allowDecimals={false}
-                  />
-                  <YAxis
-                    yAxisId="revenue"
-                    orientation="right"
-                    tickLine={false}
-                    axisLine={false}
-                    width={56}
                     tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                     tickFormatter={(v) => `₹${formatCompactCurrency(v)}`}
                   />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    width={80}
+                    tick={{ fill: "hsl(var(--foreground))", fontSize: 13, fontWeight: 600 }}
+                  />
                   <RechartsTooltip
                     cursor={{ fill: "hsl(var(--accent))", radius: 12 }}
-                    content={({ payload }: { payload?: Array<{ payload: { label: string; orderCount: number; pendingCount: number; revenue: number } }> }) =>
+                    content={({
+                      payload,
+                    }: {
+                      payload?: Array<{ payload: { name: string; value: number } }>;
+                    }) =>
                       payload?.length ? (
                         <div className="rounded-2xl border bg-card px-3 py-2 text-sm shadow-md">
-                          <p className="font-semibold">{payload[0]?.payload.label}</p>
+                          <p className="font-semibold">{payload[0]?.payload.name}</p>
                           <p className="text-muted-foreground mt-1">
-                            Orders: <span className="font-medium text-foreground">{payload[0]?.payload.orderCount ?? 0}</span>
-                          </p>
-                          <p className="text-muted-foreground">
-                            Order received: <span className="font-medium text-foreground">{payload[0]?.payload.pendingCount ?? 0}</span>
-                          </p>
-                          <p className="text-muted-foreground">
-                            Revenue: <span className="font-medium text-foreground">{formatInr(payload[0]?.payload.revenue ?? 0)}</span>
+                            <span className="font-medium text-foreground">
+                              {formatInr(payload[0]?.payload.value ?? 0)}
+                            </span>
                           </p>
                         </div>
                       ) : null
                     }
                   />
-                  <Bar yAxisId="orders" dataKey="orderCount" name="Orders" fill={chartOrders} radius={[12, 12, 0, 0]} maxBarSize={26} />
-                  <Bar yAxisId="orders" dataKey="pendingCount" name="Order received" fill="url(#pending-orders-pattern)" radius={[12, 12, 0, 0]} maxBarSize={26} />
-                  <Bar yAxisId="revenue" dataKey="revenue" name="Revenue" fill={chartRevenue} radius={[12, 12, 0, 0]} maxBarSize={26} />
+                  <Bar dataKey="value" radius={[0, 12, 12, 0]} maxBarSize={40}>
+                    {revenueBarData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                    <LabelList
+                      dataKey="value"
+                      position="right"
+                      formatter={(v: number) => (v > 0 ? `₹${formatCompactCurrency(v)}` : "")}
+                      style={{ fill: "hsl(var(--foreground))", fontSize: 12, fontWeight: 600 }}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
-          <div className="flex w-full justify-center flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
-            <LegendDot color={chartOrders} label="Orders" />
-            <LegendDot pattern label="Order received" />
-            <LegendDot color={chartRevenue} label="Revenue" />
-          </div>
         </div>
 
-        <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-4">
-          <div className="rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight">Reminder</h2>
-                <p className="text-muted-foreground text-sm mt-3 leading-snug">{reminder.title}</p>
-              </div>
-              <Badge variant="secondary" className="rounded-xl shrink-0 capitalize">
-                <CalendarClock className="h-3.5 w-3.5 mr-1 opacity-70" aria-hidden />
-                Today
-              </Badge>
-            </div>
-            <p className="text-sm mt-4 text-muted-foreground">{reminder.meta}</p>
-            <Button className="mt-6 w-full rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" asChild>
-              <Link href="/orders">
-                <Video className="h-4 w-4 mr-2" aria-hidden />
-                Open orders
-              </Link>
-            </Button>
-          </div>
-
-          <div className="rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm min-h-[220px] relative">
-            <h2 className="text-lg font-semibold tracking-tight mb-1">Fulfillment pulse</h2>
-            <p className="text-sm text-muted-foreground mb-2">Orders by lifecycle stage</p>
-            <div className="h-[220px] relative">
-              {statusLoading ? (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
-              ) : (
-                <FulfillmentGauge completedPct={completedPct} segments={donutData} />
-              )}
-            </div>
-            <div className="flex flex-wrap justify-center gap-x-7 gap-y-2 mt-1 text-[11px] text-muted-foreground">
-              <LegendDot color={chartOrders} label="Delivered" />
-              <LegendDot color="hsl(var(--chart-2))" label="In progress" />
-              <LegendDot pattern label="Open" />
-            </div>
-          </div>
-        </div>
-
-        <div className="lg:col-span-3 xl:col-span-3 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col min-h-[420px]">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h2 className="text-lg font-semibold tracking-tight">Recent orders</h2>
-            <Button variant="outline" size="sm" className="rounded-xl h-5 text-xs border-primary/20" asChild>
-              <Link href="/orders">+ New</Link>
-            </Button>
-          </div>
-          <ul className="space-y-3 flex-1 overflow-auto pr-1">
-            {ordersLoading ? (
-              <li className="text-muted-foreground text-sm py-10 text-center">Loading…</li>
-            ) : !recentOrders?.length ? (
-              <li className="text-muted-foreground text-sm py-10 text-center">No orders yet</li>
-            ) : (
-              recentOrders.slice(0, 7).map((order) => {
-                const Icon = iconForOrder(order.status);
-                return (
-                  <li key={order.id}>
-                    <Link
-                      href="/orders"
-                      className={cn(
-                        "flex  gap-3 rounded-2xl border border-transparent px-2 py-1.5 transition-colors hover:border-border hover:bg-muted/40",
-                      )}
-                    >
-                      <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-primary">
-                        <Icon className="h-5 w-5 opacity-90" aria-hidden />
-                      </div>
-                      <div className="min-w-0 w-full flex justify-between gap-2 ">
-                        <div className="grid">
-
-                        <p className="text-sm font-medium truncate">{order.customerName}</p>
-                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{order.orderNumber}</p>
-                        </div>
-                        <div className="mt-2">
-                          {orderStatusChip(order.status)}
-                        </div>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
-      </div>
-
-      {/* Bottom row */}
-      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6 pb-4">
-        <div className="lg:col-span-8 xl:col-span-8 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <h2 className="text-lg font-semibold tracking-tight">Team access</h2>
-            <Button variant="outline" size="sm" className="rounded-xl h-9 text-xs border-primary/20" asChild>
-              <Link href="/users">+ Add member</Link>
-            </Button>
-          </div>
-          <div className="overflow-x-auto rounded-2xl border border-border/80">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/40 text-muted-foreground text-xs uppercase tracking-wider [&_th]:font-medium">
-                  <th className="text-left py-3 pl-4 pr-2 rounded-tl-xl">Member</th>
-                  <th className="text-left py-3 px-2 hidden sm:table-cell">Role</th>
-                  <th className="text-right py-3 pr-4 rounded-tr-xl">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!usersData?.data?.length ? (
-                  <tr>
-                    <td colSpan={3} className="py-10 text-center text-muted-foreground">
-                      No active users loaded
-                    </td>
-                  </tr>
-                ) : (
-                  usersData.data.slice(0, 3).map((u) => (
-                    <tr key={u.id} className="border-t border-border/60 hover:bg-muted/20 transition-colors">
-                      <td className="py-3 pl-4 pr-2">
-                        <div className="flex items-center gap-3 min-w-[180px]">
-                          <Avatar className="h-10 w-10 shrink-0 rounded-full border border-border/60">
-                            <AvatarImage src={(u as any).avatarUrl || avatarUrlForName(u.name)} alt={u.name} />
-                            <AvatarFallback className="text-xs bg-primary/12 text-primary font-bold">
-                              {initials(u.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="font-medium truncate">{u.name}</p>
-                            <p className="text-[11px] text-muted-foreground truncate">{u.email ?? u.mobile}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-2 text-muted-foreground hidden sm:table-cell">
-                        <span className="line-clamp-2 capitalize">{u.role?.name ?? "Staff"} · {u.branch?.name ?? "All branches"}</span>
-                      </td>
-                      <td className="py-3 pr-4 text-right">{badgeForTeam(u)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="lg:col-span-4 xl:col-span-4">
+        <div className="lg:col-span-4">
           <div className="relative overflow-hidden rounded-3xl border border-border bg-card p-5 md:p-6 min-h-[320px] shadow-sm">
             <div className="flex items-center justify-between">
               <p className="text-base font-semibold tracking-tight text-foreground">Annual revenue</p>
@@ -649,187 +576,459 @@ function StaffDashboard() {
             </p>
           </div>
         </div>
-
-
-        
       </div>
 
 
+      <div className="rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Earning Reports</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Daily income overview · Last {earningRange} days
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-xl border border-border bg-background p-1 text-xs">
+              {[7, 14, 30].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setEarningRange(value as 7 | 14 | 30)}
+                  className={cn(
+                    "px-3 py-1 rounded-lg transition-colors",
+                    earningRange === value
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {value}d
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+            <p className="text-xs font-medium text-muted-foreground">Income</p>
+            <p className="mt-1 text-xl font-bold text-primary tabular-nums">
+              ₹{formatCompactCurrency(earningTotal)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Total for selected range</p>
+          </div>
+          <div className="rounded-2xl border border-border bg-background px-4 py-3">
+            <p className="text-xs font-medium text-muted-foreground">Best day</p>
+            <p className="mt-1 text-xl font-bold tabular-nums">
+              ₹{formatCompactCurrency(earningMax)}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Highest single-day income</p>
+          </div>
+        </div>
+
+        <div className="h-[320px] w-full mt-5">
+          {analyticsOrdersLoading ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+              Loading earnings…
+            </div>
+          ) : earningTotal === 0 ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
+              No income recorded in the last {earningRange} days
+            </div> 
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={earningReportData}                      
+                barCategoryGap={earningRange === 30 ? "10%" : "22%"}
+                margin={{ top: 28, bottom: 0, left: 0, right: 8 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  interval={earningRange === 30 ? "preserveStartEnd" : 0}
+                  minTickGap={earningRange === 30 ? 12 : 4}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={48}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                  tickFormatter={(v) => `₹${formatCompactCurrency(v)}`}
+                />
+                <RechartsTooltip
+                  cursor={{ fill: "hsl(var(--accent))", radius: 12 }}
+                  content={({
+                    payload,
+                  }: {
+                    payload?: Array<{ payload: { tooltipLabel: string; revenue: number } }>;
+                  }) =>
+                    payload?.length ? (
+                      <div className="rounded-2xl border bg-card px-3 py-2 text-sm shadow-md">
+                        <p className="font-semibold">{payload[0]?.payload.tooltipLabel}</p>
+                        <p className="text-muted-foreground mt-1">
+                          Income:{" "}
+                          <span className="font-medium text-foreground">
+                            {formatInr(payload[0]?.payload.revenue ?? 0)}
+                          </span>
+                        </p>
+                      </div>
+                    ) : null
+                  }
+                />
+                <Bar
+                  dataKey="revenue"
+                  name="Income"
+                  radius={[12, 12, 0, 0]}
+                  maxBarSize={earningRange === 30 ? 18 : 32}
+                >
+                  {earningReportData.map((entry) => (
+                    <Cell
+                      key={entry.key}
+                      fill={
+                        entry.isToday
+                          ? "hsl(var(--chart-1))"
+                          : "hsl(var(--chart-1) / 0.25)"
+                      }
+                    />
+                  ))}
+                  <LabelList
+                    dataKey="revenue"
+                    position="top"
+                    formatter={(v: number) => (v > 0 ? `₹${formatCompactCurrency(v)}` : "")}
+                    style={{ fill: "hsl(var(--muted-foreground))", fontSize: 11, fontWeight: 600 }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Revenue by Categories + Recent Orders */}
       <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-        <div className="lg:col-span-6">
-          <DeliveryProgressKpi
-            stats={todayDeliveryStats}
-            loading={analyticsOrdersLoading || todaySlotsLoading}
-          />
+        <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" aria-hidden />
+                Revenue by Categories
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Current month · Top categories</p>
+            </div>
+            <Badge variant="outline" className="rounded-xl text-xs">
+              ₹{formatCompactCurrency(categoryRevenueTotal)}
+            </Badge>
+          </div>
+          {analyticsOrdersLoading ? (
+            <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm">
+              Loading categories…
+            </div>
+          ) : categoryRevenue.length === 0 ? (
+            <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
+              No category revenue recorded for this month
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {categoryRevenue.map((row, idx) => {
+                const pct = categoryRevenueTotal > 0 ? (row.value / categoryRevenueTotal) * 100 : 0;
+                return (
+                  <li key={`${row.name}-${idx}`} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium truncate max-w-[60%]">{row.name}</span>
+                      <span className="text-muted-foreground tabular-nums">
+                        ₹{formatCompactCurrency(row.value)} <span className="text-xs opacity-70">({pct.toFixed(1)}%)</span>
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
-        <div className="lg:col-span-6 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
-          <DashboardUpcomingDeliveries
-            orders={deliveryOrders}
-            loading={analyticsOrdersLoading}
-          />
+
+        <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col min-h-[320px]">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+              <PackageOpen className="h-4 w-4 text-primary" aria-hidden />
+              Recent Orders
+            </h2>
+            <Button variant="outline" size="sm" className="rounded-xl h-7 text-xs border-primary/20" asChild>
+              <Link href="/orders">+ New</Link>
+            </Button>
+          </div>
+          <ul className="space-y-3 flex-1 overflow-auto pr-1">
+            {ordersLoading ? (
+              <li className="text-muted-foreground text-sm py-10 text-center">Loading…</li>
+            ) : !recentOrders?.length ? (
+              <li className="text-muted-foreground text-sm py-10 text-center">No orders yet</li>
+            ) : (
+              recentOrders.slice(0, 7).map((order) => {
+                const Icon = iconForOrder(order.status);
+                return (
+                  <li key={order.id}>
+                    <Link
+                      href="/orders"
+                      className={cn(
+                        "flex gap-3 rounded-2xl border border-transparent px-2 py-1.5 transition-colors hover:border-border hover:bg-muted/40",
+                      )}
+                    >
+                      <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+                        <Icon className="h-5 w-5 opacity-90" aria-hidden />
+                      </div>
+                      <div className="min-w-0 w-full flex justify-between gap-2">
+                        <div className="grid">
+                          <p className="text-sm font-medium truncate">{order.customerName}</p>
+                          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{order.orderNumber}</p>
+                        </div>
+                        <div className="mt-2">{orderStatusChip(order.status)}</div>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })
+            )}
+          </ul>
         </div>
       </div>
 
-      
+      {/* Delivery Actions */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold tracking-tight">Delivery Actions</h2>
+          <span className="text-xs text-muted-foreground">Today's progress and upcoming deliveries</span>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+          <div className="lg:col-span-6">
+            <DeliveryProgressKpi
+              stats={todayDeliveryStats}
+              loading={analyticsOrdersLoading || todaySlotsLoading}
+            />
+          </div>
+          <div className="lg:col-span-6 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+            <DashboardUpcomingDeliveries
+              orders={deliveryOrders}
+              loading={analyticsOrdersLoading}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Payment Reminders + Logs */}
+      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600" aria-hidden />
+                Payment Reminders
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Orders with outstanding balance · Oldest first
+              </p>
+            </div>
+            <Badge variant="outline" className="rounded-xl text-xs">
+              {paymentReminders.length} pending
+            </Badge>
+          </div>
+          {analyticsOrdersLoading ? (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+              Loading…
+            </div>
+          ) : paymentReminders.length === 0 ? (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
+              No outstanding payments — you're all caught up.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {paymentReminders.map(({ order, dueAmount }) => {
+                const orderAny = order as any;
+                const createdAt = new Date(order.createdAt);
+                const ageDays = Math.max(
+                  0,
+                  Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24)),
+                );
+                return (
+                  <li key={order.id} className="py-2.5">
+                    <Link
+                      href="/orders"
+                      className="flex items-center justify-between gap-3 rounded-xl px-2 py-1.5 hover:bg-muted/40 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {orderAny.customerName ?? "Customer"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                          {orderAny.orderNumber} · {ageDays}d old
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold tabular-nums text-amber-700">
+                          ₹{formatCompactCurrency(dueAmount)}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          of ₹{formatCompactCurrency(orderAny.totalAmount ?? 0)}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" aria-hidden />
+                Logs
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Latest inventory activity</p>
+            </div>
+            <Button variant="outline" size="sm" className="rounded-xl h-7 text-xs border-primary/20" asChild>
+              <Link href="/inventory">View all</Link>
+            </Button>
+          </div>
+          {logsLoading ? (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+              Loading…
+            </div>
+          ) : !inventoryLogsData?.data?.length ? (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
+              No recent inventory activity
+            </div>
+          ) : (
+            <ul className="space-y-2.5">
+              {inventoryLogsData.data.slice(0, 7).map((log) => {
+                const productName = log.product?.name ?? `Product #${log.productId}`;
+                const variantName = log.variant?.name ? ` · ${log.variant.name}` : "";
+                const created = new Date(log.createdAt);
+                const ago = relativeTimeFromNow(created);
+                const typeChip =
+                  log.type === "in" ? (
+                    <Badge className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0">
+                      +{log.quantity}
+                    </Badge>
+                  ) : log.type === "out" ? (
+                    <Badge className="rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] px-2 py-0">
+                      -{log.quantity}
+                    </Badge>
+                  ) : (
+                    <Badge className="rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] px-2 py-0">
+                      Adj {log.quantity}
+                    </Badge>
+                  );
+                return (
+                  <li key={log.id} className="flex items-center gap-3 text-sm">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 text-primary">
+                      <Box className="h-4 w-4" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">
+                        {productName}
+                        {variantName}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{ago}</p>
+                    </div>
+                    {typeChip}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }
 
-function MetricCardPlain({
-  title,
+type KpiTone = "primary" | "info" | "accent" | "success" | "warning";
+
+function KpiCard({
+  tone,
+  icon,
+  label,
   value,
   hint,
 }: {
-  title: string;
-  value: number;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-border bg-card text-card-foreground p-6 shadow-sm relative overflow-hidden hover:shadow-md transition-shadow">
-      <div className="absolute right-4 top-4 text-muted-foreground/40">
-        <ArrowUpRight className="h-6 w-6" aria-hidden />
-      </div>
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
-      <p className="mt-2 text-4xl font-bold tabular-nums">{value}</p>
-      <p className="mt-3 text-xs text-muted-foreground leading-snug max-w-[200px]">{hint}</p>
-    </div>
-  );
-}
-
-function LegendDot({
-  color,
-  label,
-  pattern,
-}: {
-  color?: string;
+  tone: KpiTone;
+  icon: React.ReactNode;
   label: string;
-  pattern?: boolean;
+  value: string;
+  hint?: string;
 }) {
-  const patternStyle: React.CSSProperties = {
-    backgroundColor: "hsl(var(--chart-pattern-bg))",
-    backgroundImage:
-      "repeating-linear-gradient(135deg, hsl(var(--chart-pattern-stripe)) 0 2px, transparent 2px 6px)",
-    backgroundSize: "8px 8px",
+  const toneClass: Record<KpiTone, string> = {
+    primary:
+      "bg-[linear-gradient(145deg,hsl(var(--primary))_0%,hsl(var(--primary-dim))_45%,hsl(var(--primary-deep))_100%)] text-primary-foreground border-primary/20 shadow-[0_14px_34px_rgba(56,39,67,0.22)]",
+    info: "bg-card border-border text-card-foreground",
+    accent: "bg-card border-border text-card-foreground",
+    success: "bg-emerald-50 border-emerald-200 text-emerald-900",
+    warning: "bg-amber-50 border-amber-200 text-amber-900",
   };
-
+  const iconBg: Record<KpiTone, string> = {
+    primary: "bg-white/15 text-primary-foreground",
+    info: "bg-primary/10 text-primary",
+    accent: "bg-primary/10 text-primary",
+    success: "bg-emerald-100 text-emerald-700",
+    warning: "bg-amber-100 text-amber-700",
+  };
+  const labelClass: Record<KpiTone, string> = {
+    primary: "text-primary-foreground/80",
+    info: "text-muted-foreground",
+    accent: "text-muted-foreground",
+    success: "text-emerald-700",
+    warning: "text-amber-700",
+  };
+  const hintClass: Record<KpiTone, string> = {
+    primary: "text-primary-foreground/75",
+    info: "text-muted-foreground",
+    accent: "text-muted-foreground",
+    success: "text-emerald-700/80",
+    warning: "text-amber-700/80",
+  };
   return (
-    <span className="inline-flex items-center gap-2">
-      <span
-        className={cn("h-3 w-3 rounded-full shrink-0", pattern && "opacity-95")}
-        style={pattern ? patternStyle : color ? { backgroundColor: color } : undefined}
-      />
-      {label}
-    </span>
-  );
-} 
-
-function FulfillmentGauge({
-  completedPct,
-  segments,
-}: {
-  completedPct: number;
-  segments: { name: string; value: number; fill: string }[];
-}) {
-  const total = Math.max(segments.reduce((sum, seg) => sum + seg.value, 0), 1);
-  const centerX = 210;
-  const centerY = 206;
-  const radius = 156;
-  const strokeWidth = 60;
-  const gapDeg = 4;
-  // Keep this gauge as a strict half arc (180deg).
-  const startDeg = 180;
-  const endDeg = 0;
-  const span = Math.max(startDeg - endDeg - gapDeg * (segments.length - 1), 0);
-
-  const minSweep = 14;
-  const baseAllocation = minSweep * segments.length;
-  const distributable = Math.max(span - baseAllocation, 0);
-  const weighted = segments.map((seg) => (seg.value / total) * distributable);
-
-  let cursor = startDeg;
-  const arcs = segments.map((seg, idx) => {
-    const sweep = minSweep + weighted[idx];
-    const segStart = cursor;
-    const segEnd = Math.max(cursor - sweep, endDeg);
-    cursor = segEnd - gapDeg;
-    return { ...seg, start: segStart, end: segEnd };
-  });
-
-  // SVG paints in document order — draw Delivered last so it sits on top at overlaps.
-  const arcRenderOrder = [...arcs].sort((a, b) => {
-    const zIndex: Record<string, number> = {
-      Open: 0,
-      "In progress": 1,
-      Delivered: 2,
-      Complete: 2,
-    };
-    return (zIndex[a.name] ?? 0) - (zIndex[b.name] ?? 0);
-  });
-
-  return (
-    <div className="relative h-full w-full">
-      <svg viewBox="0 0 420 320" className="h-full w-full" aria-label="Project progress gauge">
-        <defs>
-          <pattern id="pending-stripes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="9" height="8" fill="hsl(var(--chart-pattern-bg))" />
-            <rect width="4" height="8" fill="hsl(var(--chart-pattern-stripe))" />
-          </pattern>
-        </defs>
-        {arcRenderOrder.map((arc, idx) => (
-          <path
-            key={`${arc.name}-${idx}`}
-            d={describeSegment(centerX, centerY, radius, arc.start, arc.end)}
-            fill="none"
-            stroke={arc.name === "Open" ? "url(#pending-stripes)" : arc.fill}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-      </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pt-14">
-        <p className="text-[3rem] font-semibold leading-[0.92] tracking-tight text-black tabular-nums">{completedPct}%</p>
-        <p className="text-[1.05rem] leading-none text-primary mt-1">Order Delivered</p>
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-3xl border p-5 md:p-6 transition-shadow hover:shadow-md",
+        toneClass[tone],
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={cn("text-xs font-medium uppercase tracking-wide", labelClass[tone])}>{label}</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums leading-tight truncate">{value}</p>
+          {hint ? <p className={cn("mt-2 text-xs leading-snug", hintClass[tone])}>{hint}</p> : null}
+        </div>
+        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", iconBg[tone])}>
+          {icon}
+        </div>
       </div>
     </div>
   );
 }
 
-function describeSegment(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
-  const step = 2;
-  const points: { x: number; y: number }[] = [];
-  for (let deg = startDeg; deg >= endDeg; deg -= step) {
-    points.push(polarToCartesian(cx, cy, r, deg));
-  }
-  const last = polarToCartesian(cx, cy, r, endDeg);
-  if (!points.length || points[points.length - 1].x !== last.x || points[points.length - 1].y !== last.y) {
-    points.push(last);
-  }
-  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-}
-
-function polarToCartesian(cx: number, cy: number, r: number, deg: number) {
-  const rad = (deg * Math.PI) / 180;
-  return {
-    x: cx + r * Math.cos(rad),
-    y: cy - r * Math.sin(rad),
-  };
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-function formatDue(createdAt: string) {
-  const d = new Date(createdAt);
-  d.setDate(d.getDate() + 7);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+function relativeTimeFromNow(date: Date) {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 function formatCompactCurrency(value: number) {
@@ -839,8 +1038,22 @@ function formatCompactCurrency(value: number) {
   return `${Math.round(value)}`;
 }
 
-function avatarUrlForName(name: string) {
-  return `https://api.dicebear.com/9.x/adventurer/svg?seed=${encodeURIComponent(name || "user")}&radius=50&backgroundColor=f8d1d1,cfe7b2,c8ccff,f5dfbf,bfe3ff,d9c6ff`;
+function MetricCardPlain({
+  title,
+  value,
+  hint,
+}: {
+  title: string;
+  value: number | string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-3xl border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
+      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      <p className="mt-2 text-4xl font-bold tabular-nums text-foreground">{value}</p>
+      {hint ? <p className="mt-3 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
 }
 
 export default function Dashboard() {

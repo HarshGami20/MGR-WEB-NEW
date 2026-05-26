@@ -35,12 +35,52 @@ function pickUserScalarFields(source: Record<string, unknown>): Record<string, u
   return out;
 }
 
-function mapUserUpdateError(e: unknown): { status: number; error: string } {
+function uniqueConflictField(e: unknown): string | null {
+  if (!e || typeof e !== "object") return null;
+  const meta = (e as { meta?: { target?: unknown } }).meta;
+  if (!meta || typeof meta !== "object") return null;
+  const target = meta.target;
+  if (Array.isArray(target)) {
+    const fields = target.map((t) => String(t).toLowerCase());
+    if (fields.some((f) => f.includes("mobile"))) return "mobile";
+    if (fields.some((f) => f.includes("email"))) return "email";
+    return fields[0] ?? null;
+  }
+  if (typeof target === "string") {
+    const lower = target.toLowerCase();
+    if (lower.includes("mobile")) return "mobile";
+    if (lower.includes("email")) return "email";
+    return target;
+  }
+  return null;
+}
+
+function mapUserMutationError(
+  e: unknown,
+  fallback = "Could not save user",
+): { status: number; error: string; field?: string } {
   const code = e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
   if (code === "P2025") return { status: 404, error: "User not found" };
-  if (code === "P2002") return { status: 409, error: "Mobile number is already in use" };
+  if (code === "P2002") {
+    const field = uniqueConflictField(e);
+    if (field === "mobile") {
+      return {
+        status: 409,
+        error: "A user with this mobile number already exists",
+        field: "mobile",
+      };
+    }
+    if (field === "email") {
+      return {
+        status: 409,
+        error: "A user with this email already exists",
+        field: "email",
+      };
+    }
+    return { status: 409, error: "A user with these credentials already exists" };
+  }
   if (code === "P2003") return { status: 400, error: "Invalid role, branch, supplier, or manufacturer" };
-  const msg = e instanceof Error ? e.message : "Could not update user";
+  const msg = e instanceof Error ? e.message : fallback;
   return { status: 400, error: msg };
 }
 
@@ -200,8 +240,8 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
     const publicUser = await loadUserPublicById(user.id);
     res.status(201).json(publicUser ?? { ...user, passwordHash: undefined });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    res.status(400).json({ error: msg });
+    const mapped = mapUserMutationError(e, "Could not create user");
+    res.status(mapped.status).json({ error: mapped.error, ...(mapped.field ? { field: mapped.field } : {}) });
   }
 });
 
@@ -314,8 +354,10 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
       }
     });
   } catch (e: unknown) {
-    const mapped = mapUserUpdateError(e);
-    res.status(mapped.status).json({ error: mapped.error });
+    const mapped = mapUserMutationError(e, "Could not update user");
+    res
+      .status(mapped.status)
+      .json({ error: mapped.error, ...(mapped.field ? { field: mapped.field } : {}) });
     return;
   }
 

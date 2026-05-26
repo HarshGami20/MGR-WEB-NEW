@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, type ComponentProps } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import {
@@ -34,7 +34,15 @@ import { Plus, Search, Edit, Trash2, Shield, Power, GitBranch, Building2, Factor
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +52,10 @@ import { userFormSchema, type UserFormValues } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 
 const userSchema = userFormSchema;
+
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
 
 const emptyForm: UserFormValues = {
   name: "",
@@ -96,7 +108,7 @@ export default function Users() {
         toast({ title: "User created successfully" });
         setIsDialogOpen(false);
       },
-      onError: (e: any) => toast({ title: "Error", description: e.data?.error || e.message, variant: "destructive" }),
+      onError: (e: any) => handleUserMutationError(e, "create"),
     },
   });
 
@@ -107,7 +119,7 @@ export default function Users() {
         toast({ title: "User updated successfully" });
         setIsDialogOpen(false);
       },
-      onError: (e: any) => toast({ title: "Error", description: e.data?.error || e.message, variant: "destructive" }),
+      onError: (e: any) => handleUserMutationError(e, "update"),
     },
   });
 
@@ -126,7 +138,8 @@ export default function Users() {
     onError: (e: any) => {
       toast({
         title: "Could not delete user",
-        description: e.data?.error || e.message,
+        description:
+          e?.data?.error ?? e?.response?.data?.error ?? e?.message ?? "Please try again.",
         variant: "destructive",
       });
     },
@@ -145,6 +158,28 @@ export default function Users() {
     resolver: zodResolver(userSchema),
     defaultValues: emptyForm,
   });
+
+  function handleUserMutationError(e: any, action: "create" | "update") {
+    const description: string =
+      e?.data?.error ?? e?.response?.data?.error ?? e?.message ?? "Please try again.";
+    const field = (e?.data?.field as string | undefined) || inferConflictField(description);
+    const isConflict = e?.status === 409 || /already (exists|in use|registered)/i.test(description);
+    if (isConflict && (field === "mobile" || field === "email")) {
+      form.setError(field, { type: "server", message: description });
+      form.setFocus(field);
+      toast({
+        title: "User already exists",
+        description,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: action === "create" ? "Failed to create user" : "Failed to update user",
+      description,
+      variant: "destructive",
+    });
+  }
 
   const roleRows = coerceRoleList(rolesData) as { id: number; name: string }[];
   const roleIdWatch = form.watch("roleId");
@@ -454,10 +489,24 @@ export default function Users() {
                 <FormField
                   control={form.control}
                   name="mobile"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Mobile Number</FormLabel>
-                      <FormControl><ValidatedInput field={field} rule="mobile" /></FormControl>
+                      <FormControl>
+                        <ValidatedInput
+                          field={{
+                            value: field.value,
+                            onChange: (value) => {
+                              if (fieldState.error?.type === "server") {
+                                form.clearErrors("mobile");
+                              }
+                              field.onChange(value);
+                            },
+                          }}
+                          rule="mobile"
+                          aria-invalid={!!fieldState.error}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -465,10 +514,23 @@ export default function Users() {
                 <FormField
                   control={form.control}
                   name="email"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Email (Optional)</FormLabel>
-                      <FormControl><Input type="email" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          {...field}
+                          value={field.value || ""}
+                          aria-invalid={!!fieldState.error}
+                          onChange={(e) => {
+                            if (fieldState.error?.type === "server") {
+                              form.clearErrors("email");
+                            }
+                            field.onChange(e);
+                          }}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -746,6 +808,13 @@ export default function Users() {
       </AlertDialog>
     </div>
   );
+}
+
+function inferConflictField(message: string): "mobile" | "email" | null {
+  const lower = (message || "").toLowerCase();
+  if (lower.includes("mobile")) return "mobile";
+  if (lower.includes("email")) return "email";
+  return null;
 }
 
 function avatarUrlForName(name: string) {

@@ -52,6 +52,14 @@
     "cancelled",
   ];
 
+  function todayDateInputValue(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
   const PARTNER_STATUS_OPTIONS = ["confirmed", "in_production", "shipped", "delivered"] as const;
 
   type PoLineItem = {
@@ -330,7 +338,20 @@
     ? formatDisplayDate(po.expectedDelivery, { includeWeekday: true })
     : "Not scheduled";
 
+    const minDeliveryDate = todayDateInputValue();
+    const expectedDeliveryInPast = Boolean(
+      expectedDeliveryDraft && expectedDeliveryDraft < minDeliveryDate,
+    );
+
     const saveDetails = () => {
+      if (expectedDeliveryInPast) {
+        toast({
+          title: "Invalid expected delivery",
+          description: "Expected delivery date cannot be in the past.",
+          variant: "destructive",
+        });
+        return;
+      }
       updatePo.mutate({
         id: po.id,
         data: {
@@ -758,9 +779,15 @@
                       <Input
                         type="date"
                         className="rounded-xl"
+                        min={minDeliveryDate}
                         value={expectedDeliveryDraft}
                         onChange={(e) => setExpectedDeliveryDraft(e.target.value)}
                       />
+                      {expectedDeliveryInPast ? (
+                        <p className="text-xs text-destructive">
+                          Expected delivery date cannot be in the past.
+                        </p>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium flex items-center gap-2">
@@ -779,7 +806,7 @@
                       type="button"
                       className="w-full rounded-xl"
                       variant="secondary"
-                      disabled={!detailsDirty || updatePo.isPending}
+                      disabled={!detailsDirty || updatePo.isPending || expectedDeliveryInPast}
                       onClick={saveDetails}
                     >
                       Save details

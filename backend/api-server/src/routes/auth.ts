@@ -1,6 +1,6 @@
 import { Router, IRouter } from "express";
 import { LoginBody } from "../zod";
-import { comparePassword, signToken } from "../lib/auth";
+import { comparePassword, hashPassword, signToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
@@ -50,6 +50,11 @@ const UpdateMyProfileBody = z.object({
       if (value.startsWith("/uploads/")) return true;
       return z.string().url().safeParse(value).success;
     }, "Invalid avatar URL"),
+});
+
+const ChangeMyPasswordBody = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(6, "New password must be at least 6 characters").max(18, "New password must be at most 18 characters"),
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {
@@ -133,6 +138,44 @@ router.patch("/auth/me", requireAuth, async (req, res): Promise<void> => {
   }
   const role = await loadRoleForClient(publicUser.roleId);
   res.json({ ...publicUser, role });
+});
+
+router.post("/auth/me/password", requireAuth, async (req, res): Promise<void> => {
+  const user = (req as any).user;
+  const parsed = ChangeMyPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const currentUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { passwordHash: true },
+  });
+  if (!currentUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const passwordOk = await comparePassword(parsed.data.currentPassword, currentUser.passwordHash);
+  if (!passwordOk) {
+    res.status(403).json({ error: "Current password is incorrect" });
+    return;
+  }
+
+  const samePassword = await comparePassword(parsed.data.newPassword, currentUser.passwordHash);
+  if (samePassword) {
+    res.status(400).json({ error: "New password must be different from current password" });
+    return;
+  }
+
+  const passwordHash = await hashPassword(parsed.data.newPassword);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash },
+  });
+
+  res.json({ success: true });
 });
 
 router.post("/auth/me/avatar", requireAuth, avatarUpload.single("avatar"), async (req, res): Promise<void> => {

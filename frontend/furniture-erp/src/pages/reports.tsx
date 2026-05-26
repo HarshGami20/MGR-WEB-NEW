@@ -230,7 +230,7 @@ export default function ReportsPage() {
             />
             <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent" />
             <p className="text-sm font-medium text-primary-foreground/85">Overall Revenue</p>
-            <p className="mt-2 text-4xl font-bold tabular-nums">{formatInr(data.totals.overallRevenue)}</p>
+            <p className="mt-2 text-2xl lg:text-3xl font-bold tabular-nums">{formatInr(data.totals.overallRevenue)}</p>
             <p className="mt-3 text-xs text-primary-foreground/75">{data.totals.totalOrders} orders in selected filter</p>
           </div>
           <Card className="border-border/70 shadow-sm">
@@ -243,7 +243,7 @@ export default function ReportsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-foreground">{formatInr(data.totals.overallReceived)}</p>
+              <p className="text-xl lg:text-2xl font-bold text-foreground">{formatInr(data.totals.overallReceived)}</p>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-green-600/80" style={{ width: `${receivedPct}%` }} />
               </div>
@@ -260,7 +260,7 @@ export default function ReportsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-foreground">{formatInr(data.totals.overallDue)}</p>
+              <p className="text-xl lg:text-2xl font-bold text-foreground">{formatInr(data.totals.overallDue)}</p>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-red-600/80" style={{ width: `${duePct}%` }} />
               </div>
