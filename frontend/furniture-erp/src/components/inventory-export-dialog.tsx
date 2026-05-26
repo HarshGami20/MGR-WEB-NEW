@@ -156,7 +156,7 @@ export function InventoryExportDialog({
               </Select>
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 grid ">
             <Label>Category</Label>
             <ListCategoryFilter value={exportCategoryId} onChange={setExportCategoryId} triggerClassName="w-full" />
           </div>
