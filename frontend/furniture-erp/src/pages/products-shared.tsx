@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateProductVariant,
@@ -686,6 +686,95 @@ function AttributeValueSelect({
   return <Input className="rounded-lg" placeholder="Value" value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
+function VariantPriceField({ control }: { control: Control<VariantFormValues> }) {
+  return (
+    <FormField
+      control={control}
+      name="price"
+      render={({ field }) => (
+        <PriceOverrideInner
+          name={field.name}
+          value={field.value}
+          onChange={field.onChange}
+          onBlur={field.onBlur}
+          inputRef={field.ref}
+        />
+      )}
+    />
+  );
+}
+
+function PriceOverrideInner({
+  name,
+  value,
+  onChange,
+  onBlur,
+  inputRef,
+}: {
+  name: string;
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+  onBlur: () => void;
+  inputRef: (el: HTMLInputElement | null) => void;
+}) {
+  const externalText = value === null || value === undefined ? "" : String(value);
+  const [text, setText] = useState(externalText);
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (focusedRef.current) return;
+    setText(externalText);
+  }, [externalText]);
+
+  const handleChange = (raw: string) => {
+    if (raw === "") {
+      setText("");
+      onChange(null);
+      return;
+    }
+    if (!/^\d{0,9}(?:\.\d{0,2})?$/.test(raw)) return;
+    setText(raw);
+    if (raw === "." || raw.endsWith(".")) return;
+    const num = Number(raw);
+    onChange(Number.isFinite(num) ? num : null);
+  };
+
+  return (
+    <FormItem>
+      <FormLabel>Price Override (₹)</FormLabel>
+      <FormControl>
+        <Input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="Leave blank = base price"
+          name={name}
+          ref={inputRef}
+          value={text}
+          onFocus={() => {
+            focusedRef.current = true;
+          }}
+          onBlur={() => {
+            focusedRef.current = false;
+            if (text === "" || text === ".") {
+              onChange(null);
+            } else {
+              const num = Number(text);
+              if (Number.isFinite(num)) {
+                onChange(num);
+                setText(String(num));
+              }
+            }
+            onBlur();
+          }}
+          onChange={(e) => handleChange(e.target.value)}
+        />
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  );
+}
+
 export function VariantFormDialog({
   open,
   onClose,
@@ -740,7 +829,7 @@ export function VariantFormDialog({
         name: editingVariant.name,
         sku: editingVariant.sku,
         imageUrls: variantImageList(editingVariant),
-        price: editingVariant.price ?? undefined,
+        price: editingVariant.price ?? null,
         stockQty: editingVariant.stockQty,
         lowStockThreshold: editingVariant.lowStockThreshold ?? 10,
         isActive: editingVariant.isActive,
@@ -829,41 +918,7 @@ export function VariantFormDialog({
             />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="price"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Price Override (₹)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        placeholder="Leave blank = base price"
-                        name={field.name}
-                        ref={field.ref}
-                        onBlur={field.onBlur}
-                        value={
-                          field.value === null || field.value === undefined
-                            ? ""
-                            : String(field.value)
-                        }
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          if (raw === "") {
-                            field.onChange(undefined);
-                            return;
-                          }
-                          if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
-                          field.onChange(raw);
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <VariantPriceField control={form.control} />
               <FormField
                 control={form.control}
                 name="stockQty"
