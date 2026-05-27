@@ -668,106 +668,133 @@ export default function Orders() {
       </div>
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
-        <div className="flex flex-1 flex-wrap gap-4 items-center">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search orders..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+        <div className="flex flex-1 flex-wrap gap-4 items-end">
+          <div className="space-y-1 w-full max-w-sm">
+            <label className="text-xs text-muted-foreground">Search</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search orders..."
+                className="pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Date</label>
+            <ListDateRangeFilter
+              context="orders"
+              value={createdDateRange}
+              onChange={(next) => {
+                setCreatedDateRange(next);
+                setPage(1);
+              }}
             />
           </div>
-          <ListDateRangeFilter
-            context="orders"
-            value={createdDateRange}
-            onChange={(next) => {
-              setCreatedDateRange(next);
-              setPage(1);
-            }}
-          />
-          <ListCategoryFilter
-            value={categoryId}
-            onChange={(next) => {
-              setCategoryId(next);
-              setPage(1);
-            }}
-          />
-          <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1); }}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="order_received">Order Received</SelectItem>
-              <SelectItem value="manufacturing">Manufacturing</SelectItem>
-              <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-              <SelectItem value="complete">Complete</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={isGst} onValueChange={(val: any) => { setIsGst(val); setPage(1); }}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="GST Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Orders</SelectItem>
-              <SelectItem value="true">GST</SelectItem>
-              <SelectItem value="false">Non-GST</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={paymentStatus}
-            onValueChange={(val: "all" | "due" | "partially_paid" | "paid") => {
-              setPaymentStatus(val);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Payment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All payments</SelectItem>
-              <SelectItem value="due">Due</SelectItem>
-              <SelectItem value="partially_paid">Partial</SelectItem>
-              <SelectItem value="paid">Received</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={sort}
-            onValueChange={(val: "newest" | "oldest") => {
-              setSort(val);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest first</SelectItem>
-              <SelectItem value="oldest">Oldest first</SelectItem>
-            </SelectContent>
-          </Select>
-          {orderScopeConfig.showScopePicker ? (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Category</label>
+            <ListCategoryFilter
+              value={categoryId}
+              onChange={(next) => {
+                setCategoryId(next);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Order Status</label>
+            <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1); }}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="order_received">Order Received</SelectItem>
+                <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
+                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">GST</label>
+            <Select value={isGst} onValueChange={(val: any) => { setIsGst(val); setPage(1); }}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All orders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Orders</SelectItem>
+                <SelectItem value="true">GST</SelectItem>
+                <SelectItem value="false">Non-GST</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Payment</label>
             <Select
-              value={assignmentScope}
-              onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => {
-                setAssignmentScope(val);
+              value={paymentStatus}
+              onValueChange={(val: "all" | "due" | "partially_paid" | "paid") => {
+                setPaymentStatus(val);
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="My orders" />
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All payments" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All orders</SelectItem>
-                <SelectItem value="created_by_me">Created by me</SelectItem>
-                <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
+                <SelectItem value="all">All payments</SelectItem>
+                <SelectItem value="due">Due</SelectItem>
+                <SelectItem value="partially_paid">Partial</SelectItem>
+                <SelectItem value="paid">Received</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Sort</label>
+            <Select
+              value={sort}
+              onValueChange={(val: "newest" | "oldest") => {
+                setSort(val);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Newest first" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest first</SelectItem>
+                <SelectItem value="oldest">Oldest first</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {orderScopeConfig.showScopePicker ? (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Scope</label>
+              <Select
+                value={assignmentScope}
+                onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => {
+                  setAssignmentScope(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="All orders" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All orders</SelectItem>
+                  <SelectItem value="created_by_me">Created by me</SelectItem>
+                  <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           ) : orderScopeConfig.forcedScope ? (
-            <div className="flex h-11 items-center rounded-xl border border-border/80 bg-muted/30 px-3 text-sm text-muted-foreground">
-              {orderScopeConfig.scopeLabel}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Scope</label>
+              <div className="flex h-9 items-center rounded-xl border border-border/80 bg-muted/30 px-3 text-sm text-muted-foreground">
+                {orderScopeConfig.scopeLabel}
+              </div>
             </div>
           ) : null}
         </div>
