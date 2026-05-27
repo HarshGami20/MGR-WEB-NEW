@@ -7,7 +7,9 @@
  */
 import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { PERMISSION_MODULE_KEYS } from "../src/lib/permissions";
 import { decrementProductStock, incrementProductStock, syncProductStockFromVariants } from "../src/lib/product-stock";
+import { clearDatabase } from "./lib/clear-database";
 
 const prisma = new PrismaClient();
 
@@ -33,64 +35,14 @@ function daysAgo(n: number): Date {
   return d;
 }
 
-async function clearAll() {
-  await prisma.notificationRecipient.deleteMany();
-  await prisma.notificationLog.deleteMany();
-  await prisma.notification.deleteMany();
-  await prisma.notificationPreference.deleteMany();
-  await prisma.userFcmToken.deleteMany();
-  await prisma.payment.deleteMany();
-  await prisma.invoice.deleteMany();
-  await prisma.orderAssignee.deleteMany();
-  await prisma.orderItem.deleteMany();
-  await prisma.order.deleteMany();
-  await prisma.deliverySlot.deleteMany();
-  await prisma.purchaseOrderItem.deleteMany();
-  await prisma.purchaseOrder.deleteMany();
-  await prisma.inventoryLog.deleteMany();
-  await prisma.productVariant.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.attributeOption.deleteMany();
-  await prisma.attributeKey.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.userBranch.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.supplier.deleteMany();
-  await prisma.manufacturer.deleteMany();
-  await prisma.branch.deleteMany();
-  await prisma.role.deleteMany();
-  await prisma.setting.deleteMany();
-  await prisma.notificationTypeDefinition.deleteMany();
-}
-
-const ALL_MODULES = [
-  "dashboard",
-  "users",
-  "roles",
-  "branches",
-  "categories",
-  "products",
-  "inventory",
-  "orders",
-  "deliveries",
-  "invoices",
-  "payments",
-  "reports",
-  "suppliers",
-  "manufacturers",
-  "purchaseOrders",
-  "complaints",
-  "settings",
-] as const;
-
 function fullAccess(): Record<string, { view: boolean; add: boolean; edit: boolean; delete: boolean }> {
   const row = { view: true, add: true, edit: true, delete: true };
-  return Object.fromEntries(ALL_MODULES.map((m) => [m, { ...row }]));
+  return Object.fromEntries(PERMISSION_MODULE_KEYS.map((m) => [m, { ...row }]));
 }
 
 async function main() {
   console.log("Seeding MGR Casa database…\n");
-  await clearAll();
+  await clearDatabase(prisma);
 
   // ——— Roles ———
   const roleSuperAdmin = await prisma.role.create({

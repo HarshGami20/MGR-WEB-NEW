@@ -13,6 +13,7 @@
     "db:psql": "bash scripts/psql.sh",
     "prisma:migrate:dev": "prisma migrate dev",
     "seed": "prisma db seed",
+    "seed:admin": "tsx prisma/seed-admin-only.ts",
     "worker:notifications": "node --env-file=.env --enable-source-maps ./dist/workers/notification-worker.mjs"
   },
   "prisma": {
