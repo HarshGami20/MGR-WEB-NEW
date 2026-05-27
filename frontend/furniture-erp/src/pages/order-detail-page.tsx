@@ -19,6 +19,8 @@ import {
   MessageCircle,
   PencilLine,
   Plus,
+  Wallet,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -156,6 +158,63 @@ function formatCommentDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatPaymentRecordDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function formatPaymentModeLabel(mode: string): string {
+  const labels: Record<string, string> = {
+    cash: "Cash",
+    upi: "UPI Wallet",
+    bank_transfer: "Bank Transfer",
+    cheque: "Cheque",
+  };
+  return labels[mode] ?? mode.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function paymentOrdinalLabel(index: number): string {
+  const n = index + 1;
+  const mod100 = n % 100;
+  const suffix =
+    mod100 >= 11 && mod100 <= 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+  return `${n}${suffix} Payment`;
+}
+
+const ADVANCE_PAYMENT_NOTE = "Advance payment at order creation";
+
+function identifyAdvancePaymentId(payments: OrderPaymentRow[], advanceAmount: number): number | null {
+  const byNote = payments.find((p) => p.notes === ADVANCE_PAYMENT_NOTE);
+  if (byNote) return byNote.id;
+  if (advanceAmount <= 0) return null;
+  const match = sortPaymentsChronologically(payments).find(
+    (p) => Math.abs(Number(p.amount) - advanceAmount) < 0.01,
+  );
+  return match?.id ?? null;
+}
+
+type OrderPaymentRow = {
+  id: number;
+  mode: string;
+  amount: number;
+  chequeNumber?: string | null;
+  notes?: string | null;
+  recordedBy?: string | null;
+  createdBy?: { name?: string } | null;
+  createdAt: string;
+};
+
+function sortPaymentsChronologically(payments: OrderPaymentRow[]): OrderPaymentRow[] {
+  return [...payments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
 function formatDeliverySlotDate(slotDate: string): string {
@@ -390,8 +449,6 @@ export default function OrderDetailPage() {
   const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
   const canUpdateDelivery =
     (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(orderAny, user);
-  const deliveryCharge = Number(orderAny.deliveryCharge ?? 0);
-  const orderTotalExclDelivery = Math.max(0, order.totalAmount - deliveryCharge);
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -712,7 +769,7 @@ export default function OrderDetailPage() {
                       ) : null}
                       <div className="flex justify-between gap-8 text-sm">
                         <span className="text-muted-foreground">Order total{order.isGst ? " (incl. GST)" : ""}</span>
-                        <span className="font-semibold tabular-nums">{formatInr(orderTotalExclDelivery)}</span>
+                        <span className="font-semibold tabular-nums">{formatInr(order.totalAmount)}</span>
                       </div>
                     </div>
                   </div>
@@ -952,18 +1009,11 @@ export default function OrderDetailPage() {
                     <Separator />
                   </>
                 ) : null}
-                {deliveryCharge > 0 ? (
-                  <div className="flex justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">Delivery charge</span>
-                    <span className="tabular-nums">{formatInr(deliveryCharge)}</span>
-                  </div>
-                ) : null}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                 
                     Total{order.isGst ? " (incl. GST)" : ""}
                   </span>
-                  <span className="text-xl font-bold tabular-nums">{formatInr(orderTotalExclDelivery)}</span>
+                  <span className="text-xl font-bold tabular-nums">{formatInr(order.totalAmount)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between gap-2 text-sm">
@@ -1053,41 +1103,68 @@ export default function OrderDetailPage() {
                 {payments.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
                 ) : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {payments.map(
-                      (payment: {
-                        id: number;
-                        mode: string;
-                        amount: number;
-                        chequeNumber?: string | null;
-                        notes?: string | null;
-                        recordedBy?: string | null;
-                        createdBy?: { name?: string } | null;
-                        createdAt: string;
-                      }) => {
+                  <div className="space-y-3">
+                    {(() => {
+                      const sortedPayments = sortPaymentsChronologically(payments as OrderPaymentRow[]);
+                      const advancePaymentId = identifyAdvancePaymentId(
+                        sortedPayments,
+                        Number(orderAny.advanceAmount ?? 0),
+                      );
+                      let regularPaymentIndex = 0;
+                      return sortedPayments.map((payment) => {
+                        const isAdvance =
+                          advancePaymentId != null && payment.id === advancePaymentId;
+                        const sequenceLabel = isAdvance
+                          ? "Advanced"
+                          : paymentOrdinalLabel(regularPaymentIndex++);
                         const recordedBy =
                           payment.recordedBy ?? payment.createdBy?.name ?? null;
+                        const displayNote =
+                          payment.notes && payment.notes !== ADVANCE_PAYMENT_NOTE ? payment.notes : null;
+                        const modeLabel =
+                          payment.mode === "cheque" && payment.chequeNumber
+                            ? `${formatPaymentModeLabel(payment.mode)} · ${payment.chequeNumber}`
+                            : formatPaymentModeLabel(payment.mode);
                         return (
-                          <div key={payment.id} className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
-                            <p>
-                              <span className="capitalize">{payment.mode}</span>
-                              {payment.mode === "cheque" && payment.chequeNumber
-                                ? ` #${payment.chequeNumber}`
-                                : ""}
-                              {" — "}
-                              <span className="font-medium">{formatInr(payment.amount)}</span>
-                              {payment.notes ? (
-                                <span className="text-muted-foreground"> · {payment.notes}</span>
-                              ) : null}
+                          <div
+                            key={payment.id}
+                            className="rounded-xl border border-border/70 bg-card p-4 shadow-sm"
+                          >
+                            <p className="text-sm leading-none">
+                              <span className="text-muted-foreground text-sm">Date :- </span>
+                              <span className="font-medium text-sm text-primary/75">
+                                {formatPaymentRecordDate(payment.createdAt)}
+                              </span>
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {recordedBy ? `${recordedBy} · ` : ""}
-                              {formatCommentDateTime(payment.createdAt)}
-                            </p>
+                            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Wallet className="h-4 w-4 shrink-0 opacity-70" />
+                                  <span>{sequenceLabel}</span>
+                                </div>
+                                <p className="text-base font-semibold tracking-tight tabular-nums text-foreground">
+                                  {formatInr(payment.amount)}
+                                </p>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex text-xs items-center gap-2 text-sm text-muted-foreground">
+                                  <CreditCard className="h-4 w-4 shrink-0 opacity-70" />
+                                  <span>Mode of Payment</span>
+                                </div>
+                                <p className="text-sm font-semibold tracking-tight text-foreground">{modeLabel}</p>
+                              </div>
+                            </div>
+                            {displayNote || recordedBy ? (
+                              <p className="mt-3 text-xs text-muted-foreground">
+                                {recordedBy ? `${recordedBy}` : ""}
+                                {recordedBy && displayNote ? " · " : ""}
+                                {displayNote ?? ""}
+                              </p>
+                            ) : null}
                           </div>
                         );
-                      },
-                    )}
+                      });
+                    })()}
                   </div>
                 )}
                 <p className="text-sm font-medium text-muted-foreground">

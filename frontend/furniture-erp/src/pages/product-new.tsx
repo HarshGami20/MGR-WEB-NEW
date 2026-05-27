@@ -168,7 +168,7 @@ export default function ProductNew() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="space-y-6 lg:col-span-8">
-            <ProductFormSection title="Product details" description="Name, category, SKU, and description.">
+            <ProductFormSection title="Product details" >
               <FormField
                 control={form.control}
                 name="name"
@@ -256,7 +256,7 @@ export default function ProductNew() {
             </ProductFormSection>
 
             <ProductFormSection title="Inventory type" description="Single SKU or multiple variants.">
-              <FormField
+              <FormField  
                 control={form.control}
                 name="inventoryMode"
                 render={({ field }) => (
@@ -457,7 +457,7 @@ export default function ProductNew() {
             </div>
 
             <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
-              <ProductFormSection title="Product photos" description="First image is the main thumbnail.">
+              <ProductFormSection title="Product photos" >
                 <FormField
                   control={form.control}
                   name="imageUrls"
@@ -473,7 +473,7 @@ export default function ProductNew() {
               </ProductFormSection>
 
               {inventoryMode === "simple" ? (
-                <ProductFormSection title="Pricing & stock" description="Base price and low-stock alert level.">
+                <ProductFormSection title="Pricing & stock" >
                   <div className="space-y-4">
                     <FormField
                       control={form.control}
@@ -523,7 +523,7 @@ export default function ProductNew() {
                   </div>
                 </ProductFormSection>
               ) : (
-                <ProductFormSection title="Stock alerts" description="Default threshold for new variants.">
+                <ProductFormSection title="Stock alerts" >
                   <FormField
                     control={form.control}
                     name="lowStockThreshold"

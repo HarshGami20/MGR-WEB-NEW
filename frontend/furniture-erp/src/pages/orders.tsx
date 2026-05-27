@@ -5,6 +5,7 @@ import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListOrders, 
   useDeleteOrder, 
+  useUpdateOrder,
   useUpdateOrderStatus,
   getListOrdersQueryKey
 } from "@/api-client";
@@ -49,6 +50,10 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
+  const [paymentStatus, setPaymentStatus] = useState<
+    "all" | "due" | "partially_paid" | "paid"
+  >("all");
+  const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [assignmentScope, setAssignmentScope] = useState<"all" | "created_by_me" | "assigned_to_me">("all");
   const [createdDateRange, setCreatedDateRange] = useState<DateRangeValue>({});
   const [categoryId, setCategoryId] = useState<number | undefined>();
@@ -100,6 +105,8 @@ export default function Orders() {
       search: search || undefined,
       status: status !== "all" ? (status as any) : undefined,
       isGst: isGst !== "all" ? isGst === "true" : undefined,
+      paymentStatus: paymentStatus !== "all" ? (paymentStatus as any) : undefined,
+      sort: sort !== "newest" ? (sort as any) : undefined,
       branchId: selectedBranchId ?? undefined,
       assignmentScope: orderScopeConfig.forcedScope
         ? orderScopeConfig.forcedScope
@@ -115,6 +122,8 @@ export default function Orders() {
       search,
       status,
       isGst,
+      paymentStatus,
+      sort,
       selectedBranchId,
       assignmentScope,
       orderScopeConfig.forcedScope,
@@ -146,6 +155,21 @@ export default function Orders() {
       onError: (error: any) =>
         toast({
           title: "Status update failed",
+          description: error?.response?.data?.error ?? error?.message,
+          variant: "destructive",
+        }),
+    },
+  });
+
+  const updatePaymentStatus = useUpdateOrder({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+        toast({ title: "Payment status updated" });
+      },
+      onError: (error: any) =>
+        toast({
+          title: "Payment update failed",
           description: error?.response?.data?.error ?? error?.message,
           variant: "destructive",
         }),
@@ -196,6 +220,18 @@ export default function Orders() {
         return <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">Delivery: Delivered</Badge>;
       default:
         return <Badge variant="outline">{s}</Badge>;
+    }
+  };
+
+  const getPaymentStatusBadge = (status: string | null | undefined) => {
+    switch (status) {
+      case "paid":
+        return <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">Received</Badge>;
+      case "partially_paid":
+        return <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">Partial</Badge>;
+      case "due":
+      default:
+        return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Due</Badge>;
     }
   };
 
@@ -360,25 +396,6 @@ export default function Orders() {
         ),
       },
       {
-        id: "assignees",
-        header: "Assignees",
-        meta: { cellClassName: "max-w-[160px]" },
-        cell: ({ row }) => {
-          const ord = row.original as any;
-          const list: { id?: number; name?: string }[] = Array.isArray(ord.assignees) ? ord.assignees : [];
-          if (list.length === 0 && ord.assignedTo?.name) {
-            return <span className="text-sm text-muted-foreground truncate">{ord.assignedTo.name}</span>;
-          }
-          if (list.length === 0) return <span className="text-sm text-muted-foreground">—</span>;
-          const text = list.map((a) => a.name).filter(Boolean).join(", ");
-          return (
-            <span className="text-sm text-muted-foreground line-clamp-2" title={text}>
-              {text}
-            </span>
-          );
-        },
-      },
-      {
         accessorKey: "createdAt",
         header: "Date",
         cell: ({ row }) => (
@@ -523,6 +540,41 @@ export default function Orders() {
         },
       },
       {
+        id: "paymentStatus",
+        header: "Payment",
+        meta: { headerClassName: "whitespace-nowrap", cellClassName: "whitespace-nowrap" },
+        cell: ({ row }) => {
+          const ord = row.original as { id: number; paymentStatus?: string | null };
+          const pay = String(ord.paymentStatus ?? "due");
+          const rowPending =
+            updatePaymentStatus.isPending && updatePaymentStatus.variables?.id === ord.id;
+          if (!canEditOrders) {
+            return getPaymentStatusBadge(pay);
+          }
+          return (
+            <Select
+              value={pay}
+              disabled={rowPending}
+              onValueChange={(val: "due" | "partially_paid" | "paid") =>
+                updatePaymentStatus.mutate({
+                  id: ord.id,
+                  data: { paymentStatus: val } as any,
+                })
+              }
+            >
+              <SelectTrigger className="h-8 min-w-[100px] max-w-[100px] border-none bg-transparent shadow-none p-0 focus:ring-0">
+                {getPaymentStatusBadge(pay)}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="due">Due</SelectItem>
+                <SelectItem value="partially_paid">Partial</SelectItem>
+                <SelectItem value="paid">Received</SelectItem>
+              </SelectContent>
+            </Select>
+          );
+        },
+      },
+      {
         accessorKey: "totalAmount",
         header: () => <span className=" w-full whitespace-nowrap text-right"> <span className="xl:inline hidden">Total </span>Amount (₹)</span>,
         meta: {
@@ -577,6 +629,7 @@ export default function Orders() {
     [
       allSelectedOnPage,
       getDeliveryStatusBadge,
+      getPaymentStatusBadge,
       getStatusBadge,
       openDetailPage,
       openEditPage,
@@ -586,6 +639,7 @@ export default function Orders() {
       selectedCount,
       selectedOrderIds,
       updateStatus,
+      updatePaymentStatus,
       user,
       canDeleteOrders,
       canEditOrders,
@@ -660,6 +714,38 @@ export default function Orders() {
               <SelectItem value="all">All Orders</SelectItem>
               <SelectItem value="true">GST</SelectItem>
               <SelectItem value="false">Non-GST</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={paymentStatus}
+            onValueChange={(val: "all" | "due" | "partially_paid" | "paid") => {
+              setPaymentStatus(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Payment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All payments</SelectItem>
+              <SelectItem value="due">Due</SelectItem>
+              <SelectItem value="partially_paid">Partial</SelectItem>
+              <SelectItem value="paid">Received</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={sort}
+            onValueChange={(val: "newest" | "oldest") => {
+              setSort(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest first</SelectItem>
+              <SelectItem value="oldest">Oldest first</SelectItem>
             </SelectContent>
           </Select>
           {orderScopeConfig.showScopePicker ? (

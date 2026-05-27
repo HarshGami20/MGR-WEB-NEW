@@ -45,6 +45,9 @@ export type DriverPayment = {
 export type DriverDetail = Driver & {
   orders: DriverOrderRow[];
   payments: DriverPayment[];
+  /** Sum of delivery charges on all orders assigned to this driver. */
+  chargeTotal: number;
+  /** Sum of all payments recorded to this driver. */
   paidTotal: number;
 };
 

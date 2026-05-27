@@ -56,6 +56,7 @@ export function CategoryPickerWithManage({
   });
 
   const [manageOpen, setManageOpen] = useState(false);
+  const [parentSelectOpen, setParentSelectOpen] = useState(false);
   const [newRootName, setNewRootName] = useState("");
   const [subParentId, setSubParentId] = useState("");
   const [newSubName, setNewSubName] = useState("");
@@ -68,10 +69,7 @@ export function CategoryPickerWithManage({
   }, [roots, parentCategoryId]);
 
   const handleParentSelectChange = (v: string) => {
-    if (v === "__manage__") {
-      setManageOpen(true);
-      return;
-    }
+    if (v === "__manage__") return;
     onParentChange(v);
     onSubChange("");
   };
@@ -130,7 +128,13 @@ export function CategoryPickerWithManage({
           <Label className="font-semibold">Category *</Label>
           <Select
             key={`parent-${parentCategoryId}-${rootsKey}`}
-            value={parentCategoryId || undefined}
+            open={parentSelectOpen}
+            onOpenChange={setParentSelectOpen}
+            value={
+              parentCategoryId && parentCategoryId !== "__manage__"
+                ? parentCategoryId
+                : undefined
+            }
             onValueChange={handleParentSelectChange}
           >
             <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
@@ -144,13 +148,22 @@ export function CategoryPickerWithManage({
               ))}
               {canManageCategories && (
                 <>
-                  <SelectSeparator />
-                  <SelectItem value="__manage__" className="gap-2">
+                  {roots.length > 0 ? <SelectSeparator /> : null}
+                  <button
+                    type="button"
+                    className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm text-left outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setParentSelectOpen(false);
+                      setManageOpen(true);
+                    }}
+                  >
                     <span className="flex items-center gap-2">
                       <Settings2 className="h-4 w-4 shrink-0 opacity-70" />
                       Manage categories…
                     </span>
-                  </SelectItem>
+                  </button>
                 </>
               )}
             </SelectContent>

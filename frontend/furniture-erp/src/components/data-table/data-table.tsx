@@ -8,6 +8,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isStickyRightColumn, tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type DataTableColumnMeta = {
@@ -15,6 +16,8 @@ export type DataTableColumnMeta = {
   cellClassName?: string;
   /** Set false to disable default one-line ellipsis behavior for primitive cell values. */
   truncate?: boolean;
+  /** Pin column on the right when the table scrolls horizontally. Defaults to true for id `actions`. */
+  stickyRight?: boolean;
 };
 
 /** TanStack Table wrapper with consistent ERP list styling, loading/empty rows, and optional footer (e.g. pagination). */
@@ -119,12 +122,14 @@ export function DataTable<TData, TValue>({
             <TableRow key={headerGroup.id} className="border-b border-border/70 hover:bg-transparent">
               {headerGroup.headers.map((header) => {
                 const meta = header.column.columnDef.meta as DataTableColumnMeta | undefined;
+                const stickyRight = isStickyRightColumn(header.column.id, meta);
                 return (
                   <TableHead
                     key={header.id}
                     className={cn(
                       "h-12 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pl-6 last:pr-6",
                       meta?.headerClassName,
+                      stickyRight && tableStickyHeadClassName(),
                     )}
                   >
                     {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
@@ -149,15 +154,20 @@ export function DataTable<TData, TValue>({
             </TableRow>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} className="border-b border-border/60">
+              <TableRow key={row.id} className={tableRowWithStickyActionsClassName("border-b border-border/60")}>
                 {row.getVisibleCells().map((cell) => {
                   const meta = cell.column.columnDef.meta as DataTableColumnMeta | undefined;
+                  const stickyRight = isStickyRightColumn(cell.column.id, meta);
                   const rawValue = cell.getValue();
                   const shouldTruncatePrimitive = meta?.truncate !== false && (typeof rawValue === "string" || typeof rawValue === "number");
                   return (
                     <TableCell
                       key={cell.id}
-                      className={cn("px-4 py-3 align-middle first:pl-6 last:pr-6", meta?.cellClassName)}
+                      className={cn(
+                        "px-4 py-3 align-middle first:pl-6 last:pr-6",
+                        meta?.cellClassName,
+                        stickyRight && tableStickyCellClassName(),
+                      )}
                     >
                       {shouldTruncatePrimitive ? (
                         <span

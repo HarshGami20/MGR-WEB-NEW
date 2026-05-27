@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { productImageList, variantImageList } from "@/lib/image-urls";
 import { formatInr } from "@/lib/format-currency";
+import { tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
 import { useBranch } from "@/lib/branch-context";
 
 function formatVariantPrice(v: { price?: number | null }, basePrice: number): string {
@@ -601,7 +602,11 @@ export default function ProductDetail() {
                           Status
                         </TableHead>
                         {(canEdit || canDelete) && (
-                          <TableHead className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground w-[100px]">
+                          <TableHead
+                            className={tableStickyHeadClassName(
+                              "px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground w-[100px]",
+                            )}
+                          >
                             Actions
                           </TableHead>
                         )}
@@ -626,7 +631,7 @@ export default function ProductDetail() {
                         const thumb = vPhotos[0] ? resolvedProductImageUrl(vPhotos[0]) : null;
 
                         return (
-                          <TableRow key={v.id} className={cn("border-border/60", inactive && "opacity-55")}>
+                          <TableRow key={v.id} className={tableRowWithStickyActionsClassName(cn("border-border/60", inactive && "opacity-55"))}>
                             <TableCell className="px-3 py-3 align-middle">
                               {thumb ? (
                                 <div className="h-11 w-11 overflow-hidden rounded-lg border border-border/60 bg-muted/30">
@@ -682,7 +687,7 @@ export default function ProductDetail() {
                               <ActiveStatusBadge active={!inactive} />
                             </TableCell>
                             {(canEdit || canDelete) && (
-                              <TableCell className="px-4 py-3 text-right align-top">
+                              <TableCell className={tableStickyCellClassName("px-4 py-3 text-right align-top")}>
                                 <div className="inline-flex items-center justify-end gap-1">
                                   {canEdit && (
                                     <Button

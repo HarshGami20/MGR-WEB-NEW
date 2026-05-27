@@ -22,10 +22,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Truck, IndianRupee } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowLeft, Truck } from "lucide-react";
 import { formatInr } from "@/lib/format-currency";
 import { formatDisplayDate } from "@/lib/format-datetime";
+import { Separator } from "@/components/ui/separator";
 
 function deliveryStatusBadge(status: string) {
   switch (status) {
@@ -51,6 +51,17 @@ function formatDeliveryDate(iso: string | null): string {
   } catch {
     return iso;
   }
+}
+
+function formatPaymentModeLabel(mode: string): string {
+  const labels: Record<string, string> = {
+    cash: "Cash",
+    upi: "UPI",
+    bank: "Bank transfer",
+    bank_transfer: "Bank transfer",
+    cheque: "Cheque",
+  };
+  return labels[mode] ?? mode.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function DriverDetailPage() {
@@ -107,6 +118,12 @@ export default function DriverDetailPage() {
   }
 
   const orders = driver.orders ?? [];
+  const chargeTotal =
+    driver.chargeTotal != null
+      ? Number(driver.chargeTotal)
+      : orders.reduce((sum, o) => sum + Number(o.deliveryCharge ?? 0), 0);
+  const paidTotal = Number(driver.paidTotal ?? 0);
+  const dueTotal = Math.max(0, chargeTotal - paidTotal);
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">
@@ -133,10 +150,6 @@ export default function DriverDetailPage() {
                 {driver.vehicleInfo ? ` · ${driver.vehicleInfo}` : ""}
               </p>
             </div>
-          </div>
-          <div className="text-right text-sm">
-            <p className="text-muted-foreground">Total paid to driver</p>
-            <p className="text-xl font-semibold tabular-nums">{formatInr(driver.paidTotal)}</p>
           </div>
         </div>
 
@@ -189,9 +202,93 @@ export default function DriverDetailPage() {
                 </div>
               )}
             </section>
+
+            <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Payment history</h2>
+                <p className="text-xs text-muted-foreground">
+                  {driver.payments.length} payment{driver.payments.length === 1 ? "" : "s"} recorded
+                </p>
+              </div>
+              {driver.payments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No payments recorded.</p>
+              ) : (
+                <div className="rounded-lg border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Amount (₹)</TableHead>
+                        <TableHead>Mode</TableHead>
+                        <TableHead>Order</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead>Recorded by</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {driver.payments.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {formatDisplayDate(p.paidAt, { includeTime: true })}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-medium tabular-nums">
+                            {formatInr(p.amount)}
+                          </TableCell>
+                          <TableCell className="text-sm">{formatPaymentModeLabel(p.mode)}</TableCell>
+                          <TableCell className="text-sm">
+                            {p.order ? (
+                              <Link
+                                href={`/orders/${p.order.id}`}
+                                className="font-mono text-primary hover:underline"
+                              >
+                                {p.order.orderNumber}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate" title={p.reference?.trim() || undefined}>
+                            {p.reference?.trim() || "—"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate" title={p.notes?.trim() || undefined}>
+                            {p.notes?.trim() || "—"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {p.recordedBy ?? "—"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </section>
           </div>
 
-          <div className="space-y-6 lg:col-span-4">
+          <div className="space-y-6 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
+            <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-3">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Payment summary</h2>
+                <p className="text-xs text-muted-foreground">Delivery charges vs payments to driver</p>
+              </div>
+              <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-muted-foreground">Total payment</span>
+                  <span className="text-xl font-bold tabular-nums">{formatInr(chargeTotal)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className="font-medium text-green-700 tabular-nums">{formatInr(paidTotal)}</span>
+                </div>
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">Due amount</span>
+                  <span className="font-semibold tabular-nums">{formatInr(dueTotal)}</span>
+                </div>
+              </div>
+            </section>
+
             {can("deliveries", "add") && (
               <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
                 <div>
@@ -259,45 +356,6 @@ export default function DriverDetailPage() {
                 </div>
               </section>
             )}
-
-            <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold tracking-tight">Payment history</h2>
-              {driver.payments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No payments recorded.</p>
-              ) : (
-                <ul className="space-y-2 max-h-[360px] overflow-y-auto">
-                  {driver.payments.map((p) => (
-                    <li
-                      key={p.id}
-                      className={cn(
-                        "rounded-lg border bg-muted/15 px-3 py-2.5 text-sm",
-                      )}
-                    >
-                      <div className="flex justify-between gap-2">
-                        <span className="font-medium tabular-nums">{formatInr(p.amount)}</span>
-                        <span className="text-xs text-muted-foreground capitalize">{p.mode}</span>
-                      </div>
-                      {p.order ? (
-                        <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                          {p.order.orderNumber}
-                        </p>
-                      ) : null}
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {formatDisplayDate(p.paidAt, { includeTime: true })}
-                        {p.recordedBy ? ` · ${p.recordedBy}` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {driver.notes ? (
-              <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-                <h2 className="text-base font-semibold tracking-tight mb-2">Notes</h2>
-                <p className="text-sm whitespace-pre-wrap text-muted-foreground">{driver.notes}</p>
-              </section>
-            ) : null}
           </div>
         </div>
       </div>

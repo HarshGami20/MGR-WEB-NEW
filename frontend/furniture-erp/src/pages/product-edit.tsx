@@ -402,7 +402,7 @@ export default function ProductEdit() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="space-y-6 lg:col-span-8">
-            <ProductFormSection title="Product details" description="Name, category, SKU, and description.">
+            <ProductFormSection title="Product details" >
               <FormField
                 control={form.control}
                 name="name"
@@ -716,7 +716,7 @@ export default function ProductEdit() {
             </div>
 
             <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
-              <ProductFormSection title="Product photos" description="First image is the main thumbnail.">
+              <ProductFormSection title="Product photos">
                 <FormField
                   control={form.control}
                   name="imageUrls"
@@ -782,7 +782,7 @@ export default function ProductEdit() {
                   </div>
                 </ProductFormSection>
               ) : (
-                <ProductFormSection title="Stock alerts" description="Default threshold for new variants.">
+                <ProductFormSection title="Stock alerts" >
                   <FormField
                     control={form.control}
                     name="lowStockThreshold"

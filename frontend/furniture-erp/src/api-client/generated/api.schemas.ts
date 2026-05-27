@@ -841,6 +841,14 @@ createdTo?: string;
  * Filter orders that include at least one line item in this category (includes child categories when a parent is selected).
  */
 categoryId?: number;
+/**
+ * Filter by payment status. `unpaid` matches both `due` and `partially_paid`.
+ */
+paymentStatus?: ListOrdersPaymentStatus;
+/**
+ * Sort by created date. Defaults to newest first.
+ */
+sort?: ListOrdersSort;
 };
 
 export type ListOrdersStatus = typeof ListOrdersStatus[keyof typeof ListOrdersStatus];
@@ -861,6 +869,25 @@ export const ListOrdersAssignmentScope = {
   all: 'all',
   created_by_me: 'created_by_me',
   assigned_to_me: 'assigned_to_me',
+} as const;
+
+export type ListOrdersPaymentStatus = typeof ListOrdersPaymentStatus[keyof typeof ListOrdersPaymentStatus];
+
+
+export const ListOrdersPaymentStatus = {
+  all: 'all',
+  paid: 'paid',
+  unpaid: 'unpaid',
+  due: 'due',
+  partially_paid: 'partially_paid',
+} as const;
+
+export type ListOrdersSort = typeof ListOrdersSort[keyof typeof ListOrdersSort];
+
+
+export const ListOrdersSort = {
+  newest: 'newest',
+  oldest: 'oldest',
 } as const;
 
 export type ListAssignableOrderUsersParams = {

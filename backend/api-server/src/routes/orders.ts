@@ -168,9 +168,111 @@ function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
 
 function normalizePaymentStatus(totalAmount: number, paidAmount: number, requested?: string | null) {
   if (requested && PAYMENT_STATUSES.has(requested)) return requested;
+  return derivePaymentStatusFromAmounts(totalAmount, paidAmount);
+}
+
+function derivePaymentStatusFromAmounts(
+  totalAmount: number,
+  paidAmount: number,
+): "due" | "partially_paid" | "paid" {
   if (paidAmount <= 0) return "due";
   if (paidAmount >= totalAmount) return "paid";
   return "partially_paid";
+}
+
+const ADVANCE_PAYMENT_NOTE = "Advance payment at order creation";
+
+async function syncAdvancePaymentOnOrderUpdate(
+  tx: Prisma.TransactionClient,
+  orderId: number,
+  opts: {
+    totalAmount: number;
+    existingAdvanceAmount: number;
+    nextAdvanceAmount?: number;
+    paymentMode?: string | null;
+    chequeNumber?: string | null;
+    advanceAmountProvided: boolean;
+    paymentModeProvided: boolean;
+  },
+): Promise<{ advanceAmount: number; paidAmount: number; paymentStatus: "due" | "partially_paid" | "paid" }> {
+  const payments = await tx.payment.findMany({
+    where: { orderId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let advancePayment = payments.find((p) => p.notes === ADVANCE_PAYMENT_NOTE) ?? null;
+  if (!advancePayment && opts.existingAdvanceAmount > 0) {
+    advancePayment =
+      payments.find((p) => Math.abs(toNumber(p.amount) - opts.existingAdvanceAmount) < 0.01) ?? null;
+  }
+
+  const otherPaymentsTotal = payments
+    .filter((p) => p.id !== advancePayment?.id)
+    .reduce((sum, p) => sum + toNumber(p.amount), 0);
+
+  let nextAdvance = opts.existingAdvanceAmount;
+  if (opts.advanceAmountProvided && opts.nextAdvanceAmount != null) {
+    const raw = Number(opts.nextAdvanceAmount);
+    nextAdvance = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    const maxAdvance = Math.max(0, opts.totalAmount - otherPaymentsTotal);
+    nextAdvance = Math.min(nextAdvance, maxAdvance);
+  }
+
+  const advanceMode =
+    opts.paymentModeProvided && typeof opts.paymentMode === "string" && opts.paymentMode.trim()
+      ? opts.paymentMode.trim()
+      : (advancePayment?.mode ?? "cash");
+  const advanceCheque = typeof opts.chequeNumber === "string" ? opts.chequeNumber.trim() : "";
+  const resolvedCheque =
+    advanceMode === "cheque"
+      ? advanceCheque || advancePayment?.chequeNumber || null
+      : null;
+
+  const shouldTouchAdvance =
+    opts.advanceAmountProvided || (opts.paymentModeProvided && advancePayment != null);
+
+  if (shouldTouchAdvance) {
+    if (nextAdvance > 0) {
+      if (advanceMode === "cheque" && !resolvedCheque) {
+        throw new Error("Cheque number is required for cheque advance payment");
+      }
+      if (advancePayment) {
+        await tx.payment.update({
+          where: { id: advancePayment.id },
+          data: {
+            amount: String(nextAdvance),
+            mode: advanceMode,
+            chequeNumber: resolvedCheque,
+          },
+        });
+      } else {
+        await tx.payment.create({
+          data: {
+            orderId,
+            amount: String(nextAdvance),
+            mode: advanceMode,
+            chequeNumber: resolvedCheque,
+            notes: ADVANCE_PAYMENT_NOTE,
+          },
+        });
+      }
+    } else if (advancePayment) {
+      await tx.payment.delete({ where: { id: advancePayment.id } });
+    } else if (opts.paymentModeProvided) {
+      // payment mode changed but there is no advance payment row to update
+    }
+  }
+
+  const refreshedPayments = await tx.payment.findMany({ where: { orderId } });
+  const paidAmount = Math.min(
+    opts.totalAmount,
+    refreshedPayments.reduce((sum, p) => sum + toNumber(p.amount), 0),
+  );
+  return {
+    advanceAmount: nextAdvance,
+    paidAmount,
+    paymentStatus: derivePaymentStatusFromAmounts(opts.totalAmount, paidAmount),
+  };
 }
 
 const ORDER_NUMBER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -492,6 +594,8 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
     createdFrom,
     createdTo,
     categoryId,
+    paymentStatus,
+    sort,
   } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -510,6 +614,19 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   }
   if (isGst !== undefined) where.isGst = isGst === "true";
   if (branchId) where.branchId = parseInt(branchId, 10);
+
+  if (typeof paymentStatus === "string" && paymentStatus.trim() && paymentStatus !== "all") {
+    const ps = paymentStatus.trim();
+    if (ps === "paid") {
+      where.paymentStatus = "paid";
+    } else if (ps === "unpaid") {
+      where.paymentStatus = { in: ["due", "partially_paid"] };
+    } else if (PAYMENT_STATUSES.has(ps)) {
+      where.paymentStatus = ps;
+    }
+  }
+
+  const sortDirection: "asc" | "desc" = sort === "oldest" ? "asc" : "desc";
 
   const createdAtFilter: { gte?: Date; lte?: Date } = {};
   if (typeof createdFrom === "string" && createdFrom.trim()) {
@@ -550,7 +667,12 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   }
 
   const total = await prisma.order.count({ where });
-  const orders = await prisma.order.findMany({ where, skip: offset, take: limitNum, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  const orders = await prisma.order.findMany({
+    where,
+    skip: offset,
+    take: limitNum,
+    orderBy: [{ createdAt: sortDirection }, { id: sortDirection }],
+  });
   const data = await Promise.all(orders.map(enrichOrder));
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
@@ -673,7 +795,9 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   }
 
   const deliveryCharge = parseDeliveryCharge(orderData.deliveryCharge);
-  const totalAmount = subtotal + taxAmount + deliveryCharge;
+  // Delivery charge is tracked separately and is NOT rolled into the order total used for
+  // payment summary, paid/due balance, payment status, exports, or invoices.
+  const totalAmount = subtotal + taxAmount;
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
   const requestedStatusRaw = typeof orderData.status === "string" ? orderData.status : "order_received";
@@ -851,7 +975,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
             amount: String(safeAdvanceAmount),
             mode: advanceMode,
             chequeNumber: advanceMode === "cheque" ? advanceCheque : null,
-            notes: "Advance payment at order creation",
+            notes: ADVANCE_PAYMENT_NOTE,
           },
         });
       }
@@ -1015,9 +1139,10 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     payload.deliveryCharge !== undefined
       ? parseDeliveryCharge(payload.deliveryCharge)
       : toNumber((existingOrder as { deliveryCharge?: unknown }).deliveryCharge ?? 0);
-  const totalAmount = subtotal + taxAmount + nextDeliveryCharge;
-  const currentPaidAmount = toNumber(existingOrder.paidAmount);
-  const paymentStatus = normalizePaymentStatus(totalAmount, currentPaidAmount, payload.paymentStatus);
+  // Delivery charge stays as a separate column; it is NOT included in totalAmount.
+  const totalAmount = subtotal + taxAmount;
+  const advanceAmountProvided = Object.prototype.hasOwnProperty.call(payload, "advanceAmount");
+  const paymentModeProvided = Object.prototype.hasOwnProperty.call(payload, "paymentMode");
 
   const stockKey = (productId: number, variantId?: number | null) => `${productId}:${variantId ?? "product"}`;
   const previousQtyByStockKey = new Map<string, { productId: number; variantId: number | null; quantity: number }>();
@@ -1135,6 +1260,11 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         assignedToId: payloadAssignedToIdField,
         driverId: _payloadDriverId,
         deliveryCharge: _payloadDeliveryCharge,
+        advanceAmount: _payloadAdvanceAmount,
+        paymentMode: _payloadPaymentMode,
+        paymentStatus: _payloadPaymentStatus,
+        paidAmount: _payloadPaidAmount,
+        chequeNumber: _payloadChequeNumber,
         ...orderFields
       } = payload;
       const eo = existingOrder as any;
@@ -1265,13 +1395,46 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       const normalizedDeliveryComments = Array.isArray(orderFields.deliveryComments)
         ? orderFields.deliveryComments
         : safeJsonParse<any[]>((existingOrder as { deliveryComments?: string | null }).deliveryComments, []);
+
+      let nextAdvanceAmount = toNumber(existingOrder.advanceAmount);
+      let nextPaidAmount = toNumber(existingOrder.paidAmount);
+      let nextPaymentStatus = normalizePaymentStatus(totalAmount, nextPaidAmount, payload.paymentStatus);
+      let nextPaymentMode = (existingOrder as { paymentMode?: string | null }).paymentMode ?? null;
+
+      if (advanceAmountProvided || paymentModeProvided) {
+        const synced = await syncAdvancePaymentOnOrderUpdate(tx, id, {
+          totalAmount,
+          existingAdvanceAmount: toNumber(existingOrder.advanceAmount),
+          nextAdvanceAmount: advanceAmountProvided ? Number(payload.advanceAmount ?? 0) : undefined,
+          paymentMode: paymentModeProvided
+            ? payload.paymentMode
+            : (existingOrder as { paymentMode?: string | null }).paymentMode,
+          chequeNumber: typeof payload.chequeNumber === "string" ? payload.chequeNumber : null,
+          advanceAmountProvided,
+          paymentModeProvided,
+        });
+        nextAdvanceAmount = synced.advanceAmount;
+        nextPaidAmount = synced.paidAmount;
+        nextPaymentStatus = advanceAmountProvided
+          ? synced.paymentStatus
+          : normalizePaymentStatus(totalAmount, synced.paidAmount, payload.paymentStatus);
+        if (paymentModeProvided && typeof payload.paymentMode === "string") {
+          nextPaymentMode = payload.paymentMode;
+        }
+      } else if (totalAmount !== toNumber(existingOrder.totalAmount)) {
+        nextPaymentStatus = normalizePaymentStatus(totalAmount, nextPaidAmount, payload.paymentStatus);
+      }
+
       await tx.order.update({
         where: { id },
         data: {
           ...orderFields,
           branchId: nextOrderBranchId,
           status: safeStatus,
-          paymentStatus,
+          advanceAmount: String(nextAdvanceAmount),
+          paidAmount: String(nextPaidAmount),
+          paymentStatus: nextPaymentStatus,
+          ...(paymentModeProvided ? { paymentMode: nextPaymentMode } : {}),
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           deliveryCharge: String(nextDeliveryCharge),

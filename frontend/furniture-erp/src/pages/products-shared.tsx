@@ -377,10 +377,13 @@ export const emptyVariantForm: VariantFormValues = {
   attributes: [],
 };
 
+const MANAGE_SELECT_SENTINEL = "__manage__";
+
 export function attrsToJson(attrs: { key: string; value: string }[]): string | null {
   const obj: Record<string, string> = {};
   attrs.forEach(({ key, value }) => {
-    if (key.trim()) obj[key.trim()] = value;
+    const k = key.trim();
+    if (k && k !== MANAGE_SELECT_SENTINEL) obj[k] = value;
   });
   return Object.keys(obj).length ? JSON.stringify(obj) : null;
 }
@@ -493,34 +496,18 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
             render={({ field }) => (
               <FormItem className="flex-1 min-w-0">
                 <FormControl>
-                  <Select
-                    value={field.value || undefined}
-                    onValueChange={(v) => {
-                      if (v === "__manage__") {
-                        setManageTypesOpen(true);
-                        return;
-                      }
-                      field.onChange(v);
-                    }}
-                  >
-                    <SelectTrigger className="rounded-lg">
-                      <SelectValue placeholder="Type (e.g. Color)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {keys.map((k) => (
-                        <SelectItem key={k.id} value={k.name}>
-                          {k.name}
-                        </SelectItem>
-                      ))}
-                      <SelectSeparator />
-                      <SelectItem value="__manage__" className="gap-2">
-                        <span className="flex items-center gap-2">
-                          <Settings2 className="h-4 w-4 shrink-0 opacity-70" />
-                          Manage attributes…
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <AttributeKeyDropdown
+                    value={
+                      typeof field.value === "string" &&
+                      field.value &&
+                      field.value !== MANAGE_SELECT_SENTINEL
+                        ? field.value
+                        : ""
+                    }
+                    onChange={(next) => field.onChange(next)}
+                    catalogKeys={keys}
+                    onOpenManage={() => setManageTypesOpen(true)}
+                  />
                 </FormControl>
               </FormItem>
             )}
@@ -649,6 +636,58 @@ export function AttributesEditorBlock({ control, namePrefix = "attributes" }: { 
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function AttributeKeyDropdown({
+  value,
+  onChange,
+  catalogKeys,
+  onOpenManage,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  catalogKeys: { id: number; name: string; values: string[] }[];
+  onOpenManage: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Select
+      open={open}
+      onOpenChange={setOpen}
+      value={value && value !== MANAGE_SELECT_SENTINEL ? value : undefined}
+      onValueChange={(v) => {
+        if (v === MANAGE_SELECT_SENTINEL) return;
+        onChange(v);
+      }}
+    >
+      <SelectTrigger className="rounded-lg">
+        <SelectValue placeholder="Type (e.g. Color)" />
+      </SelectTrigger>
+      <SelectContent>
+        {catalogKeys.map((k) => (
+          <SelectItem key={k.id} value={k.name}>
+            {k.name}
+          </SelectItem>
+        ))}
+        {catalogKeys.length > 0 ? <SelectSeparator /> : null}
+        <button
+          type="button"
+          className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm text-left outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(false);
+            onOpenManage();
+          }}
+        >
+          <span className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 shrink-0 opacity-70" />
+            Manage attributes…
+          </span>
+        </button>
+      </SelectContent>
+    </Select>
   );
 }
 

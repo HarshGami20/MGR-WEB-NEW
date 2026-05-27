@@ -15,6 +15,7 @@
     "seed": "prisma db seed",
     "seed:admin": "tsx prisma/seed-admin-only.ts",
     "clear:stock": "tsx --env-file=.env prisma/clear-stock.ts",
+    "recalc:order-totals": "tsx --env-file=.env prisma/recalc-order-totals.ts",
     "worker:notifications": "node --env-file=.env --enable-source-maps ./dist/workers/notification-worker.mjs"
   },
   "prisma": {

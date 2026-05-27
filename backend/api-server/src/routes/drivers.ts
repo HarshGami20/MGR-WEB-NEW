@@ -163,6 +163,11 @@ router.get("/drivers/:id", requireAuth, requirePermission("deliveries", "read"),
     _sum: { amount: true },
   });
 
+  const chargeTotalAgg = await prisma.order.aggregate({
+    where: { driverId: id },
+    _sum: { deliveryCharge: true },
+  });
+
   res.json({
     ...enrichDriverRow(driver),
     orders: orders.map((o) => ({
@@ -183,6 +188,7 @@ router.get("/drivers/:id", requireAuth, requirePermission("deliveries", "read"),
       order: p.order,
       recordedBy: p.createdBy?.name ?? null,
     })),
+    chargeTotal: toNumber(chargeTotalAgg._sum.deliveryCharge ?? 0),
     paidTotal: toNumber(paidTotal._sum.amount ?? 0),
   });
 });

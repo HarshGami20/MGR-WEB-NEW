@@ -66,6 +66,45 @@ function ProductNameCell({ product }: { product: ProductRow }) {
   );
 }
 
+function ProductCategoryCell({ product }: { product: ProductRow }) {
+  const category = product.category as { name?: string; parentId?: number | null } | null | undefined;
+  const categoryPath = String(product.categoryPath ?? "").trim();
+
+  if (!category?.name && !categoryPath) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+
+  const subName = category?.name?.trim();
+  const hasSubCategory = Boolean(category?.parentId && subName);
+
+  if (hasSubCategory) {
+    const parentName =
+      categoryPath && subName && categoryPath.endsWith(` · ${subName}`)
+        ? categoryPath.slice(0, -(subName.length + 3))
+        : categoryPath.includes(" · ")
+          ? categoryPath.split(" · ")[0]?.trim()
+          : categoryPath || "—";
+
+    return (
+      <div className="flex max-w-[180px] flex-col gap-0.5 text-sm leading-snug">
+        <span className="truncate text-muted-foreground" title={parentName}>
+          {parentName || "—"}
+        </span>
+        <span className="truncate font-medium text-foreground" title={subName}>
+          {subName}
+        </span>
+      </div>
+    );
+  }
+
+  const label = subName || categoryPath || "—";
+  return (
+    <span className="block max-w-[180px] truncate text-sm text-muted-foreground" title={label}>
+      {label}
+    </span>
+  );
+}
+
 export default function Products() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
@@ -130,14 +169,8 @@ export default function Products() {
       {
         id: "category",
         header: "Category",
-        cell: ({ row }) => (
-          <span
-            className="block max-w-[180px] truncate text-sm text-muted-foreground"
-            title={String(row.original.categoryPath || row.original.category?.name || "—")}
-          >
-            {row.original.categoryPath || row.original.category?.name || "—"}
-          </span>
-        ),
+        meta: { cellClassName: "align-top py-3" },
+        cell: ({ row }) => <ProductCategoryCell product={row.original} />,
       },
       {
         accessorKey: "price",

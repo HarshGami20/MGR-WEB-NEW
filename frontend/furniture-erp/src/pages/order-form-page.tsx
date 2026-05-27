@@ -49,7 +49,11 @@ import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { zodFields } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 import { getAuthToken } from "@/lib/auth-storage";
-import { buildOrderFormValues } from "@/lib/order-form-values";
+import {
+  buildOrderFormValues,
+  DELIVERY_CHARGE_INPUT_RE,
+  parseDeliveryChargeFormValue,
+} from "@/lib/order-form-values";
 import type { Driver } from "@/lib/driver-api";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
@@ -75,7 +79,12 @@ const orderSchema = z.object({
   assigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryAssigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryDate: z.string().nullable().optional(),
-  deliveryCharge: z.coerce.number().min(0).optional().default(0),
+  deliveryCharge: z
+    .string()
+    .default("")
+    .refine((v) => v === "" || DELIVERY_CHARGE_INPUT_RE.test(v), {
+      message: "Enter a valid amount (numbers only)",
+    }),
   driverId: z.number().int().positive().nullable().optional(),
   challanImages: z
     .array(
@@ -169,7 +178,7 @@ const ORDER_FORM_DEFAULTS: OrderFormValues = {
   assigneeUserIds: [],
   deliveryAssigneeUserIds: [],
   deliveryDate: null,
-  deliveryCharge: 0,
+  deliveryCharge: "",
   driverId: null,
   challanImages: [{ imageUrl: "" }],
   photoComments: [{ imageUrl: "", comment: "" }],
@@ -469,8 +478,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     };
   }, [watchedItems, watchedAdvance, isGstInvoice]);
 
-  const paidAmountDisplay =
-    isEdit && order ? Number(order.paidAmount ?? 0) : Number(watchedAdvance ?? 0);
+  const otherPaidOnOrder = useMemo(() => {
+    if (!isEdit || !order) return 0;
+    const orderAny = order as { paidAmount?: number; advanceAmount?: number | string | null };
+    return Math.max(0, Number(orderAny.paidAmount ?? 0) - Number(orderAny.advanceAmount ?? 0));
+  }, [isEdit, order]);
+
+  const paidAmountDisplay = isEdit
+    ? otherPaidOnOrder + Number(watchedAdvance ?? 0)
+    : Number(watchedAdvance ?? 0);
   const balanceAmountDisplay = Math.max(0, orderSummary.total - paidAmountDisplay);
   const selectedSlot =
     isEdit && order
@@ -523,6 +539,40 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       return;
     }
 
+    const lineTotals = computeOrderTotalsFromLines(
+      data.items.map((item) => ({
+        unitPrice: Number(item.unitPrice || 0),
+        quantity: Number(item.quantity || 0),
+        gstPercent: Number(item.gstPercent || 0),
+      })),
+      !!data.isGst,
+    );
+    const nextAdvance = Number(data.advanceAmount ?? 0);
+    const maxAdvanceAllowed =
+      isEdit && order
+        ? Math.max(
+            0,
+            lineTotals.total -
+              Math.max(
+                0,
+                Number(order.paidAmount ?? 0) -
+                  Number((order as { advanceAmount?: number | string | null }).advanceAmount ?? 0),
+              ),
+          )
+        : lineTotals.total;
+    if (nextAdvance > maxAdvanceAllowed) {
+      form.setError("advanceAmount", {
+        type: "manual",
+        message: `exceed order total (${formatInr(maxAdvanceAllowed)} max for advance)`,
+      });
+      toast({
+        title: "Invalid advance amount",
+        description: `Advance cannot exceed ${formatInr(maxAdvanceAllowed)} for this order.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     for (let i = 0; i < data.items.length; i += 1) {
       const item = data.items[i];
       if (item.isCustom) continue;
@@ -553,7 +603,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         (id) => Number.isFinite(id) && id > 0,
       ),
       deliveryDate: data.deliveryDate || null,
-      deliveryCharge: Number(data.deliveryCharge ?? 0),
+      deliveryCharge: parseDeliveryChargeFormValue(data.deliveryCharge),
       driverId: data.driverId ?? null,
       challanImages: data.challanImages.map((x) => x.imageUrl).filter(Boolean),
       photoComments: data.photoComments
@@ -674,7 +724,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Order details</h2>
-                <p className="text-xs text-muted-foreground">Customer identity and delivery address.</p>
+                {/* <p className="text-xs text-muted-foreground">Customer identity and delivery address.</p> */}
               </div>
               <div className="grid sm:grid-cols-2 gap-x-4 gap-y-3">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
@@ -837,7 +887,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight">Line items</h2>
-                  <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p>
+                  {/* <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p> */}
                 </div>
                 <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => append({ ...defaultCatalogLineItem })}>
                   <Plus className="h-4 w-4 mr-0.5" /> Add item
@@ -868,7 +918,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
             <FormSection
               title="Delivery"
-              description="Delivery charge, driver, date, and staff who can update delivery status."
+              // description="Delivery charge, driver, date, and staff who can update delivery status."
             >
               <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
                 <FormField control={form.control} name="deliveryCharge" render={({ field }) => (
@@ -876,14 +926,26 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <FormLabel>Delivery charge (₹)</FormLabel>
                     <FormControl>
                       <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={field.value ?? 0}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="0"
+                        value={field.value ?? ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            field.onChange("");
+                            return;
+                          }
+                          if (!DELIVERY_CHARGE_INPUT_RE.test(raw)) return;
+                          field.onChange(raw);
+                        }}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
                       />
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">Added to order total (before payments).</p>
+                    {/* <p className="text-xs text-muted-foreground">Tracked under delivery only — not added to the order total or payment balance.</p> */}
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -956,9 +1018,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                               : "Select delivery staff…"
                         }
                       />
-                      <p className="text-xs text-muted-foreground">
+                      {/* <p className="text-xs text-muted-foreground">
                         Only these users and Super Admin can change delivery status for this order.
-                      </p>
+                      </p> */}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -983,13 +1045,13 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Comments &amp; notes</h2>
-                <p className="text-xs text-muted-foreground">Internal staff notes and delivery instructions.</p>
+                {/* <p className="text-xs text-muted-foreground">Internal staff notes and delivery instructions.</p> */}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
                   <div>
                     <h3 className="text-sm font-medium">Staff comments</h3>
-                    <p className="text-xs text-muted-foreground">One comment per line is saved separately.</p>
+                    {/* <p className="text-xs text-muted-foreground">One comment per line is saved separately.</p> */}
                   </div>
                   <FormField
                     control={form.control}
@@ -1013,9 +1075,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 <div className="space-y-2">
                   <div>
                     <h3 className="text-sm font-medium">Delivery comments / notes</h3>
-                    <p className="text-xs text-muted-foreground">
+                    {/* <p className="text-xs text-muted-foreground">
                       Instructions for drivers (one note per line).
-                    </p>
+                    </p> */}
                   </div>
                   <FormField
                     control={form.control}
@@ -1042,7 +1104,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             </div>
             
             <aside className="order-2 space-y-6 lg:order-2 lg:col-span-4 lg:sticky lg:top-6 lg:self-start">
-              <FormSection title="Payment summary" description="Totals from line items">
+              <FormSection title="Payment summary" >
                 <div className="space-y-3">
                   {isGstInvoice ? (
                     <>
@@ -1083,7 +1145,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </div>
               </FormSection>
 
-              <FormSection title="Payment" description={isEdit ? "Payment mode and advance on save" : "Initial payment details"}>
+              <FormSection title="Payment" >
                 <div className="space-y-4">
                   <FormField control={form.control} name="paymentStatus" render={({ field }) => (
                     <FormItem>
@@ -1136,10 +1198,12 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       </FormItem>
                     )} />
                     <div className="space-y-2">
-                      <label className="text-sm font-medium leading-none">Remaining</label>
+                      <label className="text-sm font-medium leading-none">
+                        {isEdit ? "Due after save" : "Remaining"}
+                      </label>
                       <Input
                         className="rounded-xl"
-                        value={orderSummary.remaining.toFixed(2)}
+                        value={(isEdit ? balanceAmountDisplay : orderSummary.remaining).toFixed(2)}
                         disabled
                       />
                     </div>
@@ -1150,7 +1214,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight">Challan &amp; photos</h2>
-                  <p className="text-xs text-muted-foreground">Signed challan is required. Site photos are optional.</p>
+                  {/* <p className="text-xs text-muted-foreground">Signed challan is required. Site photos are optional.</p> */}
                 </div>
 
                 <FormField

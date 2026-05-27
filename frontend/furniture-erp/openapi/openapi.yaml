@@ -902,6 +902,19 @@ paths:
           description: Filter orders that include at least one line item in this category (includes child categories when a parent is selected).
           schema:
             type: integer
+        - name: paymentStatus
+          in: query
+          description: Filter by payment status. `unpaid` matches both `due` and `partially_paid`.
+          schema:
+            type: string
+            enum: [all, paid, unpaid, due, partially_paid]
+        - name: sort
+          in: query
+          description: Sort by created date. Defaults to newest first.
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
       responses:
         "200":
           description: Orders list

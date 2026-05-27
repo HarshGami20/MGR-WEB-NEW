@@ -7,6 +7,20 @@ export function parseApiBoolean(value: unknown): boolean {
   return value === true || value === 1 || value === "true" || value === "1";
 }
 
+export const DELIVERY_CHARGE_INPUT_RE = /^\d*(?:\.\d{0,2})?$/;
+
+export function parseDeliveryChargeFormValue(value: string | number | null | undefined): number {
+  if (value == null || value === "" || value === ".") return 0;
+  const n = Number(String(value).trim());
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+export function deliveryChargeToFormValue(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? String(n) : "";
+}
+
 export type OrderFormSource = {
   id?: number;
   customerName?: string | null;
@@ -70,7 +84,7 @@ export function buildOrderFormValues(order: OrderFormSource) {
       ? order.deliveryAssignees.map((a) => a.id).filter((x) => Number.isFinite(x))
       : [],
     deliveryDate: order.deliveryDate ? String(order.deliveryDate).slice(0, 10) : null,
-    deliveryCharge: Number(order.deliveryCharge ?? 0),
+    deliveryCharge: deliveryChargeToFormValue(order.deliveryCharge),
     driverId:
       order.driver?.id ??
       (typeof order.driverId === "number" && order.driverId > 0 ? order.driverId : null),

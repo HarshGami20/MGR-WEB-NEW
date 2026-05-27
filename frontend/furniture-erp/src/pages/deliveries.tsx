@@ -18,6 +18,7 @@ import {
   type DeliveryOrderRow,
 } from "@/lib/delivery-stats";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
+import { tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
 import { useAuth } from "@/lib/auth";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
@@ -966,14 +967,15 @@ export default function DeliveriesPage() {
                           <TableHead>Label</TableHead>
                           <TableHead className="text-right">Capacity</TableHead>
                           <TableHead>Pincodes</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
+                          <TableHead className={tableStickyHeadClassName("text-right")}>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredRows.map((r) => (
                           <TableRow
                             key={r.id}
-                            className={selectedSlotIds.includes(r.id) ? "bg-muted/40" : undefined}
+                            data-state={selectedSlotIds.includes(r.id) ? "selected" : undefined}
+                            className={tableRowWithStickyActionsClassName()}
                           >
                             {can("deliveries", "delete") ? (
                               <TableCell className="w-[44px] pr-0">
@@ -998,7 +1000,7 @@ export default function DeliveriesPage() {
                             <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
                               {(r.servicePincodes ?? []).length ? (r.servicePincodes ?? []).join(", ") : "All"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className={tableStickyCellClassName("text-right")}>
                               {can("deliveries", "edit") ? (
                                 <Button variant="ghost" size="icon" onClick={() => openEdit(r)}>
                                   <Pencil className="h-4 w-4" />
