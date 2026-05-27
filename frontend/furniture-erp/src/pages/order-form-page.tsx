@@ -686,9 +686,10 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{isEdit ? "Edit order" : "Create order"}</h1>
                   {isEdit ? (
-                    <Badge variant="secondary" className="font-normal">
-                      #{orderId}
-                    </Badge>
+                    <></>
+                    // <Badge variant="secondary" className="font-normal">
+                    //   #{orderId}
+                    // </Badge>
                   ) : (
                     <Badge variant="outline" className="font-normal">
                       New
