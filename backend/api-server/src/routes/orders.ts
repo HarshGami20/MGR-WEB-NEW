@@ -1747,32 +1747,99 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
     res.status(access.status).json({ error: access.message });
     return;
   }
-  const rawSt = typeof (parsed.data as any).status === "string" ? (parsed.data as any).status : "order_received";
-  const norm = rawSt === "delivered" ? "complete" : rawSt;
-  const nextStatus = ORDER_STATUSES.has(norm) ? norm : "order_received";
-  const eo = existing as any;
-  const del = normalizeDeliveryStatus(eo.deliveryStatus);
-  if (nextStatus !== "ready_to_ship" && del === "out_for_delivery") {
-    res.status(400).json({
-      error:
-        "Delivery is Out for delivery. Set delivery to Pending or Delivered before changing order status away from Ready to ship.",
-    });
+
+  const body = parsed.data as Record<string, unknown>;
+  const hasStatus = typeof body.status === "string";
+  const hasPaymentStatus = typeof body.paymentStatus === "string";
+  if (!hasStatus && !hasPaymentStatus) {
+    res.status(400).json({ error: "Provide status and/or paymentStatus" });
     return;
   }
-  const order = await prisma.order.update({ where: { id }, data: { status: nextStatus } }).catch(() => null);
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  const prevStatus = normalizeMainOrderStatus(String(existing.status));
-  if (prevStatus !== nextStatus) {
-    const actorId = (req as { user?: { id: number } }).user?.id;
-    emitSafe("ORDER_STATUS_CHANGED", {
-      orderId: id,
-      orderNumber: order.orderNumber,
-      branchId: order.branchId,
-      previousStatus: prevStatus,
-      nextStatus,
-      changedById: actorId,
-    });
+
+  let nextStatus = normalizeMainOrderStatus(String(existing.status));
+  if (hasStatus) {
+    const rawSt = body.status as string;
+    const norm = rawSt === "delivered" ? "complete" : rawSt;
+    nextStatus = ORDER_STATUSES.has(norm) ? norm : nextStatus;
+    const eo = existing as { deliveryStatus?: string | null };
+    const del = normalizeDeliveryStatus(eo.deliveryStatus);
+    if (nextStatus !== "ready_to_ship" && del === "out_for_delivery") {
+      res.status(400).json({
+        error:
+          "Delivery is Out for delivery. Set delivery to Pending or Delivered before changing order status away from Ready to ship.",
+      });
+      return;
+    }
   }
+
+  let nextPaymentStatus = (existing as { paymentStatus?: string | null }).paymentStatus ?? "due";
+  if (hasPaymentStatus) {
+    const ps = String(body.paymentStatus).trim();
+    if (!PAYMENT_STATUSES.has(ps)) {
+      res.status(400).json({ error: "Invalid payment status" });
+      return;
+    }
+    nextPaymentStatus = ps;
+  }
+
+  const order = await prisma.order
+    .update({
+      where: { id },
+      data: {
+        ...(hasStatus ? { status: nextStatus } : {}),
+        ...(hasPaymentStatus ? { paymentStatus: nextPaymentStatus } : {}),
+      },
+    })
+    .catch(() => null);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  if (hasStatus) {
+    const prevStatus = normalizeMainOrderStatus(String(existing.status));
+    if (prevStatus !== nextStatus) {
+      const actorId = (req as { user?: { id: number } }).user?.id;
+      emitSafe("ORDER_STATUS_CHANGED", {
+        orderId: id,
+        orderNumber: order.orderNumber,
+        branchId: order.branchId,
+        previousStatus: prevStatus,
+        nextStatus,
+        changedById: actorId,
+      });
+    }
+  }
+
+  res.json(await enrichOrder(order));
+});
+
+router.patch("/orders/:id/payment-status", requireAuth, requirePermission("orders", "update"), async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  const paymentStatusRaw = typeof (req.body as { paymentStatus?: unknown })?.paymentStatus === "string"
+    ? String((req.body as { paymentStatus: string }).paymentStatus).trim()
+    : "";
+  if (!PAYMENT_STATUSES.has(paymentStatusRaw)) {
+    res.status(400).json({ error: "Invalid payment status" });
+    return;
+  }
+
+  const existing = await prisma.order.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null } }).user;
+  if (!authUser) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const access = await assertOrderAccessibleBySalesScope(id, authUser);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.message });
+    return;
+  }
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { paymentStatus: paymentStatusRaw },
+  });
   res.json(await enrichOrder(order));
 });
 

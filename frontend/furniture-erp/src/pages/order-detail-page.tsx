@@ -7,6 +7,7 @@ import {
   useGetSettings,
   useListPayments,
   useUpdateOrder,
+  useUpdateOrderStatus,
 } from "@/api-client";
 import {
   ArrowLeft,
@@ -380,6 +381,23 @@ export default function OrderDetailPage() {
       onError: (error: any) => toast({ title: "Update failed", description: error?.response?.data?.error ?? error?.message, variant: "destructive" }),
     },
   });
+  const updateOrderStatus = useUpdateOrderStatus({
+    mutation: {
+      onSuccess: (updated, { id }) => {
+        if (updated) {
+          queryClient.setQueryData(getGetOrderQueryKey(id), updated);
+        }
+        void refreshOrderDetail(id);
+        toast({ title: "Status updated" });
+      },
+      onError: (error: any) =>
+        toast({
+          title: "Status update failed",
+          description: error?.response?.data?.error ?? error?.message,
+          variant: "destructive",
+        }),
+    },
+  });
   const createPayment = useCreatePayment({
     mutation: {
       onSuccess: (_payment, { data }) => {
@@ -453,7 +471,7 @@ export default function OrderDetailPage() {
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
   const applyStatusUpdate = () => {
-    updateOrder.mutate({
+    updateOrderStatus.mutate({
       id: order.id,
       data: {
         status,
@@ -1322,7 +1340,7 @@ export default function OrderDetailPage() {
                     type="button"
                     className="w-full rounded-xl"
                     onClick={applyStatusUpdate}
-                    disabled={updateOrder.isPending}
+                    disabled={updateOrderStatus.isPending}
                   >
                     Update status
                   </Button>

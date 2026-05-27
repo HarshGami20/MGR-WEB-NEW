@@ -5,13 +5,13 @@ import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { 
   useListOrders, 
   useDeleteOrder, 
-  useUpdateOrder,
   useUpdateOrderStatus,
   getListOrdersQueryKey
 } from "@/api-client";
 import { useAuth } from "@/lib/auth";
 import { assignedUserBranchIds, useBranch } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
+import { patchOrderPaymentStatus } from "@/lib/order-api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,19 +161,19 @@ export default function Orders() {
     },
   });
 
-  const updatePaymentStatus = useUpdateOrder({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-        toast({ title: "Payment status updated" });
-      },
-      onError: (error: any) =>
-        toast({
-          title: "Payment update failed",
-          description: error?.response?.data?.error ?? error?.message,
-          variant: "destructive",
-        }),
+  const updatePaymentStatus = useMutation({
+    mutationFn: (vars: { orderId: number; paymentStatus: "due" | "partially_paid" | "paid" }) =>
+      patchOrderPaymentStatus(vars.orderId, headerBranchId, { paymentStatus: vars.paymentStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Payment status updated" });
     },
+    onError: (error: Error) =>
+      toast({
+        title: "Payment update failed",
+        description: error.message,
+        variant: "destructive",
+      }),
   });
 
   const patchDelivery = useMutation({
@@ -547,7 +547,7 @@ export default function Orders() {
           const ord = row.original as { id: number; paymentStatus?: string | null };
           const pay = String(ord.paymentStatus ?? "due");
           const rowPending =
-            updatePaymentStatus.isPending && updatePaymentStatus.variables?.id === ord.id;
+            updatePaymentStatus.isPending && updatePaymentStatus.variables?.orderId === ord.id;
           if (!canEditOrders) {
             return getPaymentStatusBadge(pay);
           }
@@ -557,8 +557,8 @@ export default function Orders() {
               disabled={rowPending}
               onValueChange={(val: "due" | "partially_paid" | "paid") =>
                 updatePaymentStatus.mutate({
-                  id: ord.id,
-                  data: { paymentStatus: val } as any,
+                  orderId: ord.id,
+                  paymentStatus: val,
                 })
               }
             >
@@ -639,7 +639,9 @@ export default function Orders() {
       selectedCount,
       selectedOrderIds,
       updateStatus,
-      updatePaymentStatus,
+      updatePaymentStatus.isPending,
+      updatePaymentStatus.variables?.orderId,
+      updatePaymentStatus.mutate,
       user,
       canDeleteOrders,
       canEditOrders,

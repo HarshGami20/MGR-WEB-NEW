@@ -1060,6 +1060,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/Order"
 
+  /orders/{id}/payment-status:
+    patch:
+      operationId: updateOrderPaymentStatus
+      tags: [orders]
+      summary: Update order payment status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderPaymentStatusBody"
+      responses:
+        "200":
+          description: Payment status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
   # INVOICES
   /invoices:
     get:
@@ -2597,8 +2622,18 @@ components:
       properties:
         status:
           type: string
-          enum: [pending, confirmed, processing, completed, cancelled]
-      required: [status]
+          enum: [order_received, manufacturing, ready_to_ship, complete, cancelled]
+        paymentStatus:
+          type: string
+          enum: [due, partially_paid, paid]
+
+    UpdateOrderPaymentStatusBody:
+      type: object
+      properties:
+        paymentStatus:
+          type: string
+          enum: [due, partially_paid, paid]
+      required: [paymentStatus]
 
     OrderListResponse:
       type: object
