@@ -22,6 +22,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Badge } from "@/components/ui/badge";
 import { branchFormSchema, type BranchFormValues } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
+import { usePermissions } from "@/lib/permissions";
 
 const branchSchema = branchFormSchema;
 
@@ -43,6 +44,11 @@ export default function Branches() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { can } = usePermissions();
+  const canAdd = can("branches", "add");
+  const canEdit = can("branches", "edit");
+  const canDelete = can("branches", "delete");
+  const hasRowActions = canEdit || canDelete;
 
   const { data: branchesData, isLoading } = useListBranches({
     search: search || undefined,
@@ -180,38 +186,48 @@ export default function Branches() {
             <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
           ),
       },
-      {
-        id: "actions",
-        header: () => <span className="sr-only">Actions</span>,
-        meta: { headerClassName: "w-[140px]", cellClassName: "text-right" },
-        cell: ({ row }) => {
-          const branch = row.original;
-          return (
-            <div className="flex items-center justify-end gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                title={branch.isActive ? "Deactivate" : "Activate"}
-                onClick={() => toggleActive.mutate({ id: branch.id })}
-              >
-                {branch.isActive ? (
-                  <ToggleRight className="h-4 w-4 text-green-600" />
-                ) : (
-                  <ToggleLeft className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => openEditDialog(branch)}>
-                <Edit className="h-4 w-4 text-muted-foreground" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => handleDelete(branch.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          );
-        },
-      },
+      ...(hasRowActions
+        ? [
+            {
+              id: "actions",
+              header: () => <span className="sr-only">Actions</span>,
+              meta: { headerClassName: "w-[140px]", cellClassName: "text-right" },
+              cell: ({ row }) => {
+                const branch = row.original;
+                return (
+                  <div className="flex items-center justify-end gap-1">
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={branch.isActive ? "Deactivate" : "Activate"}
+                        onClick={() => toggleActive.mutate({ id: branch.id })}
+                      >
+                        {branch.isActive ? (
+                          <ToggleRight className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <ToggleLeft className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(branch)}>
+                        <Edit className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(branch.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              },
+            } as ColumnDef<(typeof branches)[number]>,
+          ]
+        : []),
     ],
-    [openEditDialog, handleDelete, toggleActive.mutate],
+    [openEditDialog, handleDelete, toggleActive.mutate, canEdit, canDelete, hasRowActions],
   );
 
   return (
@@ -221,10 +237,12 @@ export default function Branches() {
           <h2 className="text-2xl font-bold tracking-tight">Branches</h2>
           <p className="text-muted-foreground">Manage your business locations and branches</p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Branch
-        </Button>
+        {canAdd && (
+          <Button onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Branch
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center bg-card p-4 rounded-lg border">
