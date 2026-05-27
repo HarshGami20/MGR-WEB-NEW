@@ -197,6 +197,21 @@ function FormSection({
   );
 }
 
+function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function isPastDeliveryDate(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const v = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  return v < todayIsoDate();
+}
+
 function formatDeliveryDateLabel(value: string | null | undefined): string {
   if (!value) return "";
   try {
@@ -277,6 +292,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const [uploading, setUploading] = useState(false);
   const [editFormHydrated, setEditFormHydrated] = useState(false);
   const editHydratedForOrderRef = useRef<number | null>(null);
+  const initialDeliveryDateRef = useRef<string | null>(null);
 
   const createOrder = useCreateOrder({
     mutation: {
@@ -324,17 +340,21 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   useEffect(() => {
     if (!isEdit) {
       editHydratedForOrderRef.current = null;
+      initialDeliveryDateRef.current = null;
       setEditFormHydrated(false);
       return;
     }
     if (!order?.id || order.id !== orderId) {
       editHydratedForOrderRef.current = null;
+      initialDeliveryDateRef.current = null;
       setEditFormHydrated(false);
       return;
     }
     if (editHydratedForOrderRef.current === order.id) return;
     editHydratedForOrderRef.current = order.id;
-    reset(buildOrderFormValues(order as Parameters<typeof buildOrderFormValues>[0]) as OrderFormValues, {
+    const hydrated = buildOrderFormValues(order as Parameters<typeof buildOrderFormValues>[0]) as OrderFormValues;
+    initialDeliveryDateRef.current = hydrated.deliveryDate ? String(hydrated.deliveryDate).slice(0, 10) : null;
+    reset(hydrated, {
       keepDefaultValues: false,
     });
     setEditFormHydrated(true);
@@ -480,6 +500,24 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       toast({
         title: "Select a branch",
         description: "Choose a working branch in the header before saving this order.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const nextDeliveryDate = data.deliveryDate ? String(data.deliveryDate).slice(0, 10) : null;
+    if (
+      nextDeliveryDate &&
+      isPastDeliveryDate(nextDeliveryDate) &&
+      nextDeliveryDate !== initialDeliveryDateRef.current
+    ) {
+      form.setError("deliveryDate", {
+        type: "manual",
+        message: "Date of delivery cannot be in the past",
+      });
+      toast({
+        title: "Invalid date of delivery",
+        description: "Please choose today or a future date.",
         variant: "destructive",
       });
       return;
@@ -875,9 +913,26 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Date of delivery</FormLabel><FormControl><Input type="date" value={field.value || ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => {
+                  const minDate =
+                    isEdit && initialDeliveryDateRef.current && isPastDeliveryDate(initialDeliveryDateRef.current)
+                      ? initialDeliveryDateRef.current
+                      : todayIsoDate();
+                  return (
+                    <FormItem>
+                      <FormLabel>Date of delivery</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          min={minDate}
+                          value={field.value || ""}
+                          onChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
                 <FormField
                   control={form.control}
                   name="deliveryAssigneeUserIds"

@@ -2160,6 +2160,14 @@ components:
         variantCount:
           type: integer
           description: Number of product variants (from DB aggregate)
+        variantPriceMin:
+          type: number
+          nullable: true
+          description: Lowest price across variants (falls back to base price for variants without a price override). Omitted when product has no variants.
+        variantPriceMax:
+          type: number
+          nullable: true
+          description: Highest price across variants (falls back to base price for variants without a price override). Omitted when product has no variants.
         isLowStock:
           type: boolean
           nullable: true

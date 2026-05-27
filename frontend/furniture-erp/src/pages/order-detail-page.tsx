@@ -390,6 +390,8 @@ export default function OrderDetailPage() {
   const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
   const canUpdateDelivery =
     (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(orderAny, user);
+  const deliveryCharge = Number(orderAny.deliveryCharge ?? 0);
+  const orderTotalExclDelivery = Math.max(0, order.totalAmount - deliveryCharge);
   const balance = Math.max(0, order.totalAmount - order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -710,7 +712,7 @@ export default function OrderDetailPage() {
                       ) : null}
                       <div className="flex justify-between gap-8 text-sm">
                         <span className="text-muted-foreground">Order total{order.isGst ? " (incl. GST)" : ""}</span>
-                        <span className="font-semibold tabular-nums">{formatInr(order.totalAmount)}</span>
+                        <span className="font-semibold tabular-nums">{formatInr(orderTotalExclDelivery)}</span>
                       </div>
                     </div>
                   </div>
@@ -950,10 +952,10 @@ export default function OrderDetailPage() {
                     <Separator />
                   </>
                 ) : null}
-                {Number(orderAny.deliveryCharge ?? 0) > 0 ? (
+                {deliveryCharge > 0 ? (
                   <div className="flex justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">Delivery charge</span>
-                    <span className="tabular-nums">{formatInr(Number(orderAny.deliveryCharge))}</span>
+                    <span className="tabular-nums">{formatInr(deliveryCharge)}</span>
                   </div>
                 ) : null}
                 <div className="flex items-center justify-between gap-2">
@@ -961,7 +963,7 @@ export default function OrderDetailPage() {
                  
                     Total{order.isGst ? " (incl. GST)" : ""}
                   </span>
-                  <span className="text-xl font-bold tabular-nums">{formatInr(order.totalAmount)}</span>
+                  <span className="text-xl font-bold tabular-nums">{formatInr(orderTotalExclDelivery)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between gap-2 text-sm">

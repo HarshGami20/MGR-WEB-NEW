@@ -143,7 +143,32 @@ export default function Products() {
         accessorKey: "price",
         header: "Price (₹)",
         meta: { headerClassName: "text-right", cellClassName: "text-right tabular-nums font-medium" },
-        cell: ({ row }) => formatInr(Number(row.original.price ?? 0)),
+        cell: ({ row }) => {
+          const p = row.original;
+          const basePrice = Number(p.price ?? 0);
+          const hasVariants = Number(p.variantCount ?? 0) > 0;
+          const rawMin = p.variantPriceMin;
+          const rawMax = p.variantPriceMax;
+          if (
+            hasVariants &&
+            rawMin != null &&
+            rawMax != null &&
+            Number.isFinite(Number(rawMin)) &&
+            Number.isFinite(Number(rawMax))
+          ) {
+            const min = Number(rawMin);
+            const max = Number(rawMax);
+            if (min !== max) {
+              return (
+                <span className="whitespace-nowrap">
+                  {formatInr(min)} <span className="text-muted-foreground">–</span> {formatInr(max)}
+                </span>
+              );
+            }
+            return formatInr(min);
+          }
+          return formatInr(basePrice);
+        },
       },
       {
         id: "gst",

@@ -14,6 +14,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "seed": "prisma db seed",
     "seed:admin": "tsx prisma/seed-admin-only.ts",
+    "clear:stock": "tsx --env-file=.env prisma/clear-stock.ts",
     "worker:notifications": "node --env-file=.env --enable-source-maps ./dist/workers/notification-worker.mjs"
   },
   "prisma": {

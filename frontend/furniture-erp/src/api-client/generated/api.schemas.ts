@@ -224,6 +224,10 @@ export interface Product {
   categoryPath?: string | null;
   /** Number of product variants (from DB aggregate) */
   variantCount?: number;
+  /** Lowest price across variants (falls back to base price for variants without a price override). Omitted when product has no variants. */
+  variantPriceMin?: number | null;
+  /** Highest price across variants (falls back to base price for variants without a price override). Omitted when product has no variants. */
+  variantPriceMax?: number | null;
   /** True when simple SKU is below threshold or any variant is below its threshold */
   isLowStock?: boolean | null;
   price: number;

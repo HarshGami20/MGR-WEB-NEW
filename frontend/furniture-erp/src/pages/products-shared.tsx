@@ -919,7 +919,7 @@ export function VariantFormDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <VariantPriceField control={form.control} />
-              <FormField
+              {/* <FormField
                 control={form.control}
                 name="stockQty"
                 render={({ field }) => (
@@ -931,10 +931,8 @@ export function VariantFormDialog({
                     <FormMessage />
                   </FormItem>
                 )}
-              />
-            </div>
-
-            <FormField
+              /> */}
+                 <FormField
               control={form.control}
               name="lowStockThreshold"
               render={({ field }) => (
@@ -943,11 +941,14 @@ export function VariantFormDialog({
                   <FormControl>
                     <Input type="number" className="max-w-[200px]" {...field} />
                   </FormControl>
-                  <p className="text-xs text-muted-foreground">Alert when this variant is at or below this quantity.</p>
+                  <p className="text-xs text-muted-foreground">Alert when this is at below this quantity.</p>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            </div>
+
+         
 
             <FormField
               control={form.control}

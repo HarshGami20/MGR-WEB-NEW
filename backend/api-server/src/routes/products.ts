@@ -70,7 +70,10 @@ const productImageUpload = multer({
   },
 });
 
-async function enrichProduct(p: any, extras?: { isLowStock?: boolean }) {
+async function enrichProduct(
+  p: any,
+  extras?: { isLowStock?: boolean; variantPrices?: number[] },
+) {
   const { _count, category: catRow, ...rest } = p;
   let category = catRow ? { ...catRow, children: [] as never[] } : null;
   if (!category && rest.categoryId) {
@@ -94,15 +97,37 @@ async function enrichProduct(p: any, extras?: { isLowStock?: boolean }) {
   }
 
   const imageUrls = parseImageUrlsJson(rest.imageUrls, rest.imageUrl);
+
+  const basePrice = toNumber(rest.price);
+  let variantPriceMin: number | undefined;
+  let variantPriceMax: number | undefined;
+  if (variantCount && variantCount > 0) {
+    const prices =
+      extras?.variantPrices && extras.variantPrices.length > 0
+        ? extras.variantPrices
+        : (
+            await prisma.productVariant.findMany({
+              where: { productId: rest.id },
+              select: { price: true },
+            })
+          ).map((v) => (v.price == null ? basePrice : toNumber(v.price)));
+    if (prices.length > 0) {
+      variantPriceMin = Math.min(...prices);
+      variantPriceMax = Math.max(...prices);
+    }
+  }
+
   return {
     ...rest,
     imageUrls,
     imageUrl: imageUrls[0] ?? null,
-    price: toNumber(rest.price),
+    price: basePrice,
     gstPercent: toNumber(rest.gstPercent),
     category,
     categoryPath,
     variantCount,
+    variantPriceMin,
+    variantPriceMax,
     isLowStock: extras?.isLowStock,
   };
 }
@@ -224,13 +249,21 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
 
   const idsWithVariants = products.filter((p) => p._count.variants > 0).map((p) => p.id);
   const lowFromVariant = new Map<number, boolean>();
+  const variantPricesByProduct = new Map<number, number[]>();
   if (idsWithVariants.length) {
     const vrows = await prisma.productVariant.findMany({
       where: { productId: { in: idsWithVariants } },
-      select: { productId: true, stockQty: true, lowStockThreshold: true },
+      select: { productId: true, stockQty: true, lowStockThreshold: true, price: true },
     });
+    const baseById = new Map<number, number>(
+      products.map((p) => [p.id, toNumber(p.price)]),
+    );
     for (const v of vrows) {
       if (v.stockQty <= v.lowStockThreshold) lowFromVariant.set(v.productId, true);
+      const list = variantPricesByProduct.get(v.productId) ?? [];
+      const basePrice = baseById.get(v.productId) ?? 0;
+      list.push(v.price == null ? basePrice : toNumber(v.price));
+      variantPricesByProduct.set(v.productId, list);
     }
   }
 
@@ -246,7 +279,10 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
   const branchStocks = await branchStockByProduct(pageRows.map((row) => row.id));
   const data = await Promise.all(
     pageRows.map(async (row) => ({
-      ...(await enrichProduct(row, { isLowStock: rowIsLow(row) })),
+      ...(await enrichProduct(row, {
+        isLowStock: rowIsLow(row),
+        variantPrices: variantPricesByProduct.get(row.id),
+      })),
       branchStocks: branchStocks.get(row.id) ?? [],
     })),
   );
