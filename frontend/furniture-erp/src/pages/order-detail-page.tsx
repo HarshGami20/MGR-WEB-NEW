@@ -799,42 +799,42 @@ export default function OrderDetailPage() {
               {photoComments.length > 0 ? (
                 <div className="space-y-3 pt-2 border-t border-border/50">
                   <h3 className="text-sm font-medium">Photos and comments</h3>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {photoComments.map((entry: { imageUrl?: string; comment?: string }, index: number) => (
-                        <div
-                          key={index}
-                          className="overflow-hidden rounded-lg border border-border/60 bg-muted/10"
-                        >
-                          {entry.imageUrl ? (
-                            <button
-                              type="button"
-                              className="relative block aspect-square w-full cursor-zoom-in overflow-hidden bg-muted/20 hover:opacity-95 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() =>
-                                openImageGallery(
-                                  sitePhotoSlides,
-                                  sitePhotoSlides.findIndex((s) => s.src === entry.imageUrl),
-                                )
-                              }
-                              aria-label={`View site photo ${index + 1}`}
-                            >
-                              <img
-                                src={entry.imageUrl}
-                                alt={`Site photo ${index + 1}`}
-                                className="h-full w-full object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex aspect-square items-center justify-center bg-muted/20 text-xs text-muted-foreground">
-                              No photo
-                            </div>
-                          )}
-                          <p
-                            className="line-clamp-3 border-t border-border/50 px-2.5 py-2 pb-0 text-xs leading-snug text-foreground/90"
-                            title={entry.comment?.trim() || undefined}
+                      <div
+                        key={index}
+                        className="flex min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/10 p-2.5"
+                      >
+                        {entry.imageUrl ? (
+                          <button
+                            type="button"
+                            className="shrink-0 cursor-zoom-in rounded-md border focus:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90 transition-opacity"
+                            onClick={() =>
+                              openImageGallery(
+                                sitePhotoSlides,
+                                sitePhotoSlides.findIndex((s) => s.src === entry.imageUrl),
+                              )
+                            }
+                            aria-label={`View site photo ${index + 1}`}
                           >
-                            {entry.comment?.trim() || "No comment"}
-                          </p>
-                        </div>
+                            <img
+                              src={entry.imageUrl}
+                              alt={`Site photo ${index + 1}`}
+                              className="h-24 w-24 rounded-md object-cover border"
+                            />
+                          </button>
+                        ) : (
+                          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-md border bg-muted/20 text-xs text-muted-foreground">
+                            No photo
+                          </div>
+                        )}
+                        <p
+                          className="min-w-0 flex-1 pt-0.5 text-xs leading-snug text-foreground/90"
+                          title={entry.comment?.trim() || undefined}
+                        >
+                          {entry.comment?.trim() || "No comment"}
+                        </p>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1130,8 +1130,8 @@ export default function OrderDetailPage() {
                             key={payment.id}
                             className="rounded-xl border border-border/70 bg-card p-4 shadow-sm"
                           >
-                            <p className="text-sm leading-none">
-                              <span className="text-muted-foreground text-sm">Date :- </span>
+                            <p className="text-sm leading-none flex items-center gap-2 justify-between">
+                              <span className="text-muted-foreground text-sm">Date </span>
                               <span className="font-medium text-sm text-primary/75">
                                 {formatPaymentRecordDate(payment.createdAt)}
                               </span>
