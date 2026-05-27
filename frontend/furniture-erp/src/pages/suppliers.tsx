@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { useListSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, getListSuppliersQueryKey } from "@/api-client";
@@ -10,13 +10,28 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { partnerContactSchema, type PartnerContactFormValues } from "@/lib/form-validation";
+import {
+  supplierWithPortalSchema,
+  type SupplierWithPortalFormValues,
+} from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 
-const supplierSchema = partnerContactSchema;
-type SupplierFormValues = PartnerContactFormValues;
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
+
+const supplierSchema = supplierWithPortalSchema;
+type SupplierFormValues = SupplierWithPortalFormValues;
 
 export default function Suppliers() {
   const [search, setSearch] = useState("");
@@ -33,6 +48,32 @@ export default function Suppliers() {
     limit: 10,
   });
 
+  function handleSupplierMutationError(e: any, action: "create" | "update") {
+    const description: string =
+      e?.data?.error ??
+      e?.response?.data?.error ??
+      e?.message ??
+      "Please try again.";
+    const field = (e?.data?.field as string | undefined) ?? inferConflictField(description);
+    const isConflict =
+      e?.status === 409 || /already (exists|in use|registered)/i.test(description);
+    if (isConflict && (field === "mobile" || field === "email")) {
+      form.setError(field as "mobile" | "email", { type: "server", message: description });
+      form.setFocus(field as "mobile" | "email");
+      toast({
+        title: "Supplier conflict",
+        description,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: action === "create" ? "Failed to create supplier" : "Failed to update supplier",
+      description,
+      variant: "destructive",
+    });
+  }
+
   const createSupplier = useCreateSupplier({
     mutation: {
       onSuccess: () => {
@@ -40,6 +81,7 @@ export default function Suppliers() {
         toast({ title: "Supplier created successfully" });
         setIsDialogOpen(false);
       },
+      onError: (e: any) => handleSupplierMutationError(e, "create"),
     },
   });
 
@@ -50,6 +92,7 @@ export default function Suppliers() {
         toast({ title: "Supplier updated successfully" });
         setIsDialogOpen(false);
       },
+      onError: (e: any) => handleSupplierMutationError(e, "update"),
     },
   });
 
@@ -71,6 +114,7 @@ export default function Suppliers() {
       email: "",
       address: "",
       gstNumber: "",
+      portalPassword: "",
     },
   });
 
@@ -83,6 +127,7 @@ export default function Suppliers() {
       email: "",
       address: "",
       gstNumber: "",
+      portalPassword: "",
     });
     setIsDialogOpen(true);
   };
@@ -96,15 +141,38 @@ export default function Suppliers() {
       email: supplier.email || "",
       address: supplier.address || "",
       gstNumber: supplier.gstNumber || "",
+      portalPassword: "",
     });
     setIsDialogOpen(true);
   };
 
   const onSubmit = (data: SupplierFormValues) => {
+    const portalPassword = data.portalPassword?.trim() ?? "";
+    const mobile = (data.mobile ?? "").trim();
+
+    if (!editingId) {
+      if (!portalPassword) {
+        form.setError("portalPassword", { message: "Supplier portal password is required" });
+        return;
+      }
+      if (!mobile) {
+        form.setError("mobile", { message: "Mobile is required to create the portal login" });
+        return;
+      }
+    } else if (portalPassword && !mobile) {
+      form.setError("mobile", { message: "Mobile is required to reset the portal login" });
+      return;
+    }
+
+    const payload = {
+      ...data,
+      portalPassword: portalPassword || undefined,
+    };
+
     if (editingId) {
-      updateSupplier.mutate({ id: editingId, data });
+      updateSupplier.mutate({ id: editingId, data: payload as any });
     } else {
-      createSupplier.mutate({ data });
+      createSupplier.mutate({ data: payload as any });
     }
   };
 
@@ -254,6 +322,32 @@ export default function Suppliers() {
                 />
               </div>
 
+              <FormField
+                control={form.control}
+                name="portalPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {editingId ? "Supplier Portal Password (optional reset)" : "Supplier Portal Password*"}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        {...field}
+                        value={field.value || ""}
+                        placeholder={editingId ? "Leave blank to keep current password" : "Set supplier portal password"}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      {editingId
+                        ? "If provided, this will reset the linked supplier portal user password."
+                        : "This creates the direct supplier portal login from Procurement."}
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -311,4 +405,11 @@ export default function Suppliers() {
       </Dialog>
     </div>
   );
+}
+
+function inferConflictField(message: string): "mobile" | "email" | null {
+  const lower = (message || "").toLowerCase();
+  if (lower.includes("mobile")) return "mobile";
+  if (lower.includes("email")) return "email";
+  return null;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { useListManufacturers, useCreateManufacturer, useUpdateManufacturer, useDeleteManufacturer, getListManufacturersQueryKey } from "@/api-client";
@@ -8,15 +8,30 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2 } from "lucide-react";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage as BaseFormMessage,
+} from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { manufacturerFormSchema, type ManufacturerFormValues } from "@/lib/form-validation";
+import {
+  manufacturerWithPortalSchema,
+  type ManufacturerWithPortalFormValues,
+} from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 
-const manufacturerSchema = manufacturerFormSchema;
+function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
+  return <BaseFormMessage className={cn("static mt-1", className)} {...props} />;
+}
+
+const manufacturerSchema = manufacturerWithPortalSchema;
+type ManufacturerPortalFormValues = ManufacturerWithPortalFormValues;
 
 export default function Manufacturers() {
   const [search, setSearch] = useState("");
@@ -33,6 +48,32 @@ export default function Manufacturers() {
     limit: 10,
   });
 
+  function handleManufacturerMutationError(e: any, action: "create" | "update") {
+    const description: string =
+      e?.data?.error ??
+      e?.response?.data?.error ??
+      e?.message ??
+      "Please try again.";
+    const field = (e?.data?.field as string | undefined) ?? inferConflictField(description);
+    const isConflict =
+      e?.status === 409 || /already (exists|in use|registered)/i.test(description);
+    if (isConflict && (field === "mobile" || field === "email")) {
+      form.setError(field as "mobile" | "email", { type: "server", message: description });
+      form.setFocus(field as "mobile" | "email");
+      toast({
+        title: "Manufacturer conflict",
+        description,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: action === "create" ? "Failed to create manufacturer" : "Failed to update manufacturer",
+      description,
+      variant: "destructive",
+    });
+  }
+
   const createManufacturer = useCreateManufacturer({
     mutation: {
       onSuccess: () => {
@@ -40,6 +81,7 @@ export default function Manufacturers() {
         toast({ title: "Manufacturer created successfully" });
         setIsDialogOpen(false);
       },
+      onError: (e: any) => handleManufacturerMutationError(e, "create"),
     },
   });
 
@@ -50,6 +92,7 @@ export default function Manufacturers() {
         toast({ title: "Manufacturer updated successfully" });
         setIsDialogOpen(false);
       },
+      onError: (e: any) => handleManufacturerMutationError(e, "update"),
     },
   });
 
@@ -62,7 +105,7 @@ export default function Manufacturers() {
     },
   });
 
-  const form = useForm<ManufacturerFormValues>({
+  const form = useForm<ManufacturerPortalFormValues>({
     resolver: zodResolver(manufacturerSchema),
     defaultValues: {
       name: "",
@@ -71,6 +114,7 @@ export default function Manufacturers() {
       email: "",
       address: "",
       specialization: "",
+      portalPassword: "",
     },
   });
 
@@ -83,6 +127,7 @@ export default function Manufacturers() {
       email: "",
       address: "",
       specialization: "",
+      portalPassword: "",
     });
     setIsDialogOpen(true);
   };
@@ -96,15 +141,38 @@ export default function Manufacturers() {
       email: manufacturer.email || "",
       address: manufacturer.address || "",
       specialization: manufacturer.specialization || "",
+      portalPassword: "",
     });
     setIsDialogOpen(true);
   };
 
-  const onSubmit = (data: ManufacturerFormValues) => {
+  const onSubmit = (data: ManufacturerPortalFormValues) => {
+    const portalPassword = data.portalPassword?.trim() ?? "";
+    const mobile = (data.mobile ?? "").trim();
+
+    if (!editingId) {
+      if (!portalPassword) {
+        form.setError("portalPassword", { message: "Manufacturer portal password is required" });
+        return;
+      }
+      if (!mobile) {
+        form.setError("mobile", { message: "Mobile is required to create the portal login" });
+        return;
+      }
+    } else if (portalPassword && !mobile) {
+      form.setError("mobile", { message: "Mobile is required to reset the portal login" });
+      return;
+    }
+
+    const payload = {
+      ...data,
+      portalPassword: portalPassword || undefined,
+    };
+
     if (editingId) {
-      updateManufacturer.mutate({ id: editingId, data });
+      updateManufacturer.mutate({ id: editingId, data: payload as any });
     } else {
-      createManufacturer.mutate({ data });
+      createManufacturer.mutate({ data: payload as any });
     }
   };
 
@@ -295,6 +363,32 @@ export default function Manufacturers() {
                 )}
               />
 
+              <FormField
+                control={form.control}
+                name="portalPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {editingId ? "Manufacturer Portal Password (optional reset)" : "Manufacturer Portal Password*"}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        {...field}
+                        value={field.value || ""}
+                        placeholder={editingId ? "Leave blank to keep current password" : "Set manufacturer portal password"}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      {editingId
+                        ? "If provided, this will reset the linked manufacturer portal user password."
+                        : "This creates the direct manufacturer portal login from Procurement."}
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <div className="flex justify-end space-x-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
@@ -309,4 +403,11 @@ export default function Manufacturers() {
       </Dialog>
     </div>
   );
+}
+
+function inferConflictField(message: string): "mobile" | "email" | null {
+  const lower = (message || "").toLowerCase();
+  if (lower.includes("mobile")) return "mobile";
+  if (lower.includes("email")) return "email";
+  return null;
 }

@@ -9,8 +9,6 @@ import {
   useToggleUserActive,
   useListRoles,
   useListBranches,
-  useListSuppliers,
-  useListManufacturers,
   getListUsersQueryKey,
   getListRolesQueryKey,
 } from "@/api-client";
@@ -64,8 +62,6 @@ const emptyForm: UserFormValues = {
   password: "",
   roleId: 0,
   branchIds: [],
-  supplierId: null,
-  manufacturerId: null,
   isSales: false,
   ordersListScope: "all",
 };
@@ -98,8 +94,6 @@ export default function Users() {
     query: { staleTime: 0 },
   });
   const { data: branchesData } = useListBranches({ isActive: true, limit: 100 });
-  const { data: suppliersData } = useListSuppliers({ limit: 200 });
-  const { data: manufacturersData } = useListManufacturers({ limit: 200 });
 
   const createUser = useCreateUser({
     mutation: {
@@ -226,8 +220,6 @@ export default function Users() {
         if (user.branchId != null) return [user.branchId];
         return [];
       })(),
-      supplierId: user.supplierId ?? null,
-      manufacturerId: user.manufacturerId ?? null,
       isSales: user.isSales === true,
       ordersListScope:
         user.ordersListScope === "assigned_to_me" || user.ordersListScope === "created_by_me"
@@ -608,68 +600,6 @@ export default function Users() {
                   </FormItem>
                 )}
               />
-
-              <div className="grid grid-cols-2 gap-4 mb-5">
-                <FormField
-                  control={form.control}
-                  name="supplierId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Supplier portal (optional)</FormLabel>
-                      <Select
-                        value={field.value != null ? field.value.toString() : "none"}
-                        onValueChange={(val) => {
-                          const next = val === "none" ? null : parseInt(val, 10);
-                          field.onChange(next);
-                          if (next != null) form.setValue("manufacturerId", null);
-                        }}
-                      >
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {suppliersData?.data?.map((s: any) => (
-                            <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="manufacturerId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Manufacturer portal (optional)</FormLabel>
-                      <Select
-                        value={field.value != null ? field.value.toString() : "none"}
-                        onValueChange={(val) => {
-                          const next = val === "none" ? null : parseInt(val, 10);
-                          field.onChange(next);
-                          if (next != null) form.setValue("supplierId", null);
-                        }}
-                      >
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {manufacturersData?.data?.map((m: any) => (
-                            <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              {/* <p className="text-xs text-muted-foreground -mt-2">
-                Links this login to procurement POs for that supplier or manufacturer. Only one link per user.
-              </p> */}
 
               <FormField
                 control={form.control}

@@ -345,6 +345,31 @@ export const manufacturerFormSchema = partnerContactSchema.extend({
 
 export type ManufacturerFormValues = z.infer<typeof manufacturerFormSchema>;
 
+/** Portal password — optional, but when present must meet length rules. */
+const portalPasswordField = z
+  .string()
+  .optional()
+  .refine(
+    (v) => !v || (v.length >= FIELD_LIMITS.passwordMin && v.length <= FIELD_LIMITS.passwordMax),
+    {
+      message: `Password must be ${FIELD_LIMITS.passwordMin}–${FIELD_LIMITS.passwordMax} characters`,
+    },
+  );
+
+/** Supplier form with optional portal credentials (mobile + password create/reset portal login). */
+export const supplierWithPortalSchema = partnerContactSchema.extend({
+  portalPassword: portalPasswordField,
+});
+
+export type SupplierWithPortalFormValues = z.infer<typeof supplierWithPortalSchema>;
+
+/** Manufacturer form with optional portal credentials. */
+export const manufacturerWithPortalSchema = manufacturerFormSchema.extend({
+  portalPassword: portalPasswordField,
+});
+
+export type ManufacturerWithPortalFormValues = z.infer<typeof manufacturerWithPortalSchema>;
+
 export const branchFormSchema = z.object({
   name: zodFields.companyName("Branch name"),
   code: zodFields.branchCode(),
@@ -365,14 +390,8 @@ export const userFormSchema = z
     password: zodFields.passwordOptional(),
     roleId: z.coerce.number().min(1, "Role is required"),
     branchIds: z.array(z.coerce.number()).default([]),
-    supplierId: z.number().nullable().optional(),
-    manufacturerId: z.number().nullable().optional(),
     isSales: z.boolean().default(false),
     ordersListScope: z.enum(["all", "assigned_to_me", "created_by_me"]).nullable().optional(),
-  })
-  .refine((d) => !(d.supplierId != null && d.manufacturerId != null), {
-    message: "Link a supplier or a manufacturer, not both.",
-    path: ["manufacturerId"],
   })
   .refine((d) => !d.isSales || (d.ordersListScope != null && d.ordersListScope.length > 0), {
     message: "Choose which orders this sales user can access.",
