@@ -38,7 +38,6 @@ import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
 import { getSalesOrderScopeConfig } from "@/lib/sales-order-scope";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
-import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { usePermissions } from "@/lib/permissions";
 import { OrdersExportDialog } from "@/components/orders-export-dialog";
 import { formatInr } from "@/lib/format-currency";
@@ -54,7 +53,9 @@ export default function Orders() {
     "all" | "due" | "partially_paid" | "paid"
   >("all");
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
-  const [assignmentScope, setAssignmentScope] = useState<"all" | "created_by_me" | "assigned_to_me">("all");
+  const [assignmentScope, setAssignmentScope] = useState<
+    "all" | "created_by_me" | "assigned_to_me" | "own"
+  >("all");
   const [createdDateRange, setCreatedDateRange] = useState<DateRangeValue>({});
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
@@ -449,10 +450,8 @@ export default function Orders() {
             } | null;
           };
           const del = String(ord.deliveryStatus ?? "pending");
-          const main = String(ord.status) === "delivered" ? "complete" : String(ord.status ?? "order_received");
           const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === ord.id;
-          const canEditDelivery =
-            (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(ord, user);
+          const canEditDelivery = canEditOrders || canEditDeliveries;
           const dateSource = ord.deliveryDate ?? ord.deliverySlot?.slotDate ?? null;
           const dateStr =
             dateSource != null && String(dateSource).trim() !== ""
@@ -516,24 +515,8 @@ export default function Orders() {
               </Tooltip>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem
-                  value="out_for_delivery"
-                  disabled={main !== "ready_to_ship"}
-                  title={
-                    main !== "ready_to_ship"
-                      ? "Set main order status to Ready to ship first"
-                      : undefined
-                  }
-                >
-                  Out for delivery
-                </SelectItem>
-                <SelectItem
-                  value="delivered"
-                  disabled={del !== "out_for_delivery"}
-                  title={del !== "out_for_delivery" ? "Set Out for delivery first" : undefined}
-                >
-                  Delivered
-                </SelectItem>
+                <SelectItem value="out_for_delivery">Out for delivery</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
               </SelectContent>
             </Select>
           );

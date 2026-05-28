@@ -34,6 +34,7 @@ import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-f
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { categoryIdToParam } from "@/lib/list-category-filter";
 import { formatInr } from "@/lib/format-currency";
+import { remainingInrPaymentAmount, roundInrPaymentAmount } from "@/lib/payment-amount";
 
 const paymentSchema = z
   .object({
@@ -166,18 +167,22 @@ export default function Payments() {
   };
 
   const onSubmit = (data: PaymentFormValues) => {
-    const remaining = selectedOrderDetails
-      ? Math.max(0, Number(selectedOrderDetails.totalAmount || 0) - Number(selectedOrderDetails.paidAmount || 0))
+    const maxPayment = selectedOrderDetails
+      ? remainingInrPaymentAmount(
+          Number(selectedOrderDetails.totalAmount || 0),
+          Number(selectedOrderDetails.paidAmount || 0),
+        )
       : 0;
-    if (selectedOrderDetails && Number(data.amount) > remaining) {
+    const amount = roundInrPaymentAmount(Number(data.amount));
+    if (selectedOrderDetails && amount > maxPayment) {
       form.setError("amount", {
-        message: `Amount cannot be greater than remaining amount (${formatInr(remaining)})`,
+        message: `Amount cannot be greater than remaining amount (${formatInr(maxPayment)})`,
       });
       return;
     }
     const payload: Record<string, unknown> = {
       orderId: data.orderId,
-      amount: data.amount,
+      amount,
       mode: data.mode,
       notes: data.notes ?? null,
     };
@@ -191,10 +196,12 @@ export default function Payments() {
     
     const order = ordersData?.data?.find(o => o.id === orderId);
     if (order) {
-      const remaining = Math.max(0, Number(order.totalAmount || 0) - Number(order.paidAmount || 0));
+      const maxPayment = remainingInrPaymentAmount(
+        Number(order.totalAmount || 0),
+        Number(order.paidAmount || 0),
+      );
       setSelectedOrderDetails(order);
-      // Auto-fill amount with remaining balance
-      form.setValue("amount", remaining);
+      form.setValue("amount", maxPayment);
       setOrderPickerOpen(false);
     }
   };
@@ -368,7 +375,7 @@ export default function Payments() {
                     dueOrders.map((order: any) => {
                       const total = Number(order.totalAmount || 0);
                       const paid = Number(order.paidAmount || 0);
-                      const remaining = Math.max(0, total - paid);
+                      const remaining = remainingInrPaymentAmount(total, paid);
                       return (
                         <tr key={order.id} className="border-t">
                           <td className="px-4 py-2 font-mono">{order.orderNumber}</td>
@@ -476,8 +483,10 @@ export default function Payments() {
                               ? (() => {
                                   const selected = payableOrders.find((o: any) => o.id === Number(field.value));
                                   if (!selected) return "Select order";
-                                  const remaining =
-                                    Math.max(0, Number(selected.totalAmount || 0) - Number(selected.paidAmount || 0));
+                                  const remaining = remainingInrPaymentAmount(
+                                    Number(selected.totalAmount || 0),
+                                    Number(selected.paidAmount || 0),
+                                  );
                                   return `${selected.orderNumber} - ${selected.customerName} (Remaining: ${formatInr(remaining)})`;
                                 })()
                               : "Select order"}
@@ -491,8 +500,10 @@ export default function Payments() {
                               <CommandEmpty>No order found.</CommandEmpty>
                               <CommandGroup>
                                 {payableOrders.map((o: any) => {
-                                  const remaining =
-                                    Math.max(0, Number(o.totalAmount || 0) - Number(o.paidAmount || 0));
+                                  const remaining = remainingInrPaymentAmount(
+                                    Number(o.totalAmount || 0),
+                                    Number(o.paidAmount || 0),
+                                  );
                                   return (
                                     <CommandItem
                                       key={o.id}
@@ -535,7 +546,14 @@ export default function Payments() {
                   </div>
                   <div className="flex justify-between pt-1 border-t mt-1 font-bold">
                     <span>Due Amount:</span>
-                    <span className="text-destructive">{formatInr(selectedOrderDetails.totalAmount - selectedOrderDetails.paidAmount)}</span>
+                    <span className="text-destructive">
+                      {formatInr(
+                        remainingInrPaymentAmount(
+                          Number(selectedOrderDetails.totalAmount || 0),
+                          Number(selectedOrderDetails.paidAmount || 0),
+                        ),
+                      )}
+                    </span>
                   </div>
                 </div>
               )}
@@ -563,28 +581,31 @@ export default function Payments() {
                           min="1"
                           max={
                             selectedOrderDetails
-                              ? Math.max(
-                                  0,
-                                  Number(selectedOrderDetails.totalAmount || 0) -
-                                    Number(selectedOrderDetails.paidAmount || 0),
+                              ? remainingInrPaymentAmount(
+                                  Number(selectedOrderDetails.totalAmount || 0),
+                                  Number(selectedOrderDetails.paidAmount || 0),
                                 )
                               : undefined
                           }
-                          step="0.01"
+                          step="1"
                           {...field}
                           onChange={(e) => {
                             const raw = e.target.value;
                             const value = Number(raw);
-                            if (!selectedOrderDetails || !Number.isFinite(value)) {
+                            if (!Number.isFinite(value)) {
                               field.onChange(raw);
                               return;
                             }
-                            const remaining = Math.max(
-                              0,
-                              Number(selectedOrderDetails.totalAmount || 0) -
-                                Number(selectedOrderDetails.paidAmount || 0),
+                            const rounded = roundInrPaymentAmount(value);
+                            if (!selectedOrderDetails) {
+                              field.onChange(rounded);
+                              return;
+                            }
+                            const maxPayment = remainingInrPaymentAmount(
+                              Number(selectedOrderDetails.totalAmount || 0),
+                              Number(selectedOrderDetails.paidAmount || 0),
                             );
-                            field.onChange(Math.min(value, remaining));
+                            field.onChange(Math.min(Math.max(0, rounded), maxPayment));
                           }}
                         />
                       </FormControl>

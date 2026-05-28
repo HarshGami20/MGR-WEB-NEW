@@ -77,16 +77,35 @@ const staffNavSections: StaffSection[] = [
     title: "Menu",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
+      // { label: "Orders", href: "/orders", icon: ShoppingCart, showPendingBadge: true },
       { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
-      { label: "Products", href: "/products", icon: Package },
-      { label: "Inventory", href: "/inventory", icon: Archive },
-      { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
-      { label: "Drivers", href: "/drivers", icon: Truck },
+      // { label: "Products", href: "/products", icon: Package },
+      // { label: "Inventory", href: "/inventory", icon: Archive },
+      // { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
+      // { label: "Drivers", href: "/drivers", icon: Truck },
       // { label: "Categories", href: "/categories", icon: Tags },
       { label: "Complaints", href: "/complaints", icon: Headphones },
     ],
   },
+
+  {
+    title: "Orders",
+    items: [
+      { label: "Orders", href: "/orders", icon: ShoppingCart },
+      { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
+      { label: "Drivers", href: "/drivers", icon: Truck },
+    ],
+  },
+
+  {
+    title: "Products",
+    items: [
+      { label: "Products", href: "/products", icon: Package },
+      { label: "Categories", href: "/categories", icon: Tags },
+      { label: "Inventory", href: "/inventory", icon: Archive },
+    ],
+  },
+
 
   {
     title: "Sales & billing",
@@ -398,7 +417,7 @@ export default function Layout({ children }: LayoutProps) {
             </span>
           </Link>
         ) : null}
-        <button
+        {/* <button
           type="button"
           onClick={() => {
             window.open(import.meta.env.VITE_HELP_URL ?? "mailto:support@mgrcasa.example", "_blank");
@@ -407,7 +426,8 @@ export default function Layout({ children }: LayoutProps) {
         >
           <HelpCircle className="h-[18px] w-[18px]" />
           Help
-        </button>
+        </button> */}
+        
         <button
           type="button"
           className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors font-medium"

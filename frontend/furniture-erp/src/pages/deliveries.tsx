@@ -21,7 +21,6 @@ import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
 import { useAuth } from "@/lib/auth";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
-import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import { usePermissions } from "@/lib/permissions";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -272,10 +271,7 @@ export default function DeliveriesPage() {
     };
   }, [bookedDateRange.from, bookedDateRange.to, bookedRangeFilterActive]);
   const canViewOrders = can("orders", "view");
-  const canUpdateDeliveryForOrder = useCallback(
-    (order: DeliveryOrderRow) => canUpdateOrderDeliveryStatus(order, user),
-    [user],
-  );
+  const canEditDeliveryStatuses = can("deliveries", "edit") || can("orders", "edit");
 
   const { data: ordersData, isLoading: ordersLoading } = useListOrders(
     {
@@ -700,7 +696,7 @@ export default function DeliveriesPage() {
               <CardTitle>Booked deliveries</CardTitle>
               <CardDescription>
                 All orders with a delivery date, grouped by day. Use the filter to narrow the list.
-                Only delivery assignees or Super Admin can update status.
+                Users with Orders or Deliveries edit permission can update delivery status.
                 {/* {bookedRange.fromYmd && bookedRange.toYmd ? (
                   <span className="block mt-1 text-foreground/90 tabular-nums">
                     Showing {bookedRange.fromYmd} → {bookedRange.toYmd}
@@ -748,7 +744,7 @@ export default function DeliveriesPage() {
                   fromYmd={bookedRange.fromYmd}
                   toYmd={bookedRange.toYmd}
                   loading={ordersLoading}
-                  canUpdateStatus={canUpdateDeliveryForOrder}
+                  canUpdateStatus={canEditDeliveryStatuses}
                   drivers={activeDrivers}
                   canAssignDriver={can("deliveries", "edit")}
                 />

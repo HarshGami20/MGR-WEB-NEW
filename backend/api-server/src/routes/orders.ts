@@ -45,7 +45,6 @@ import { parseImageUrlsJson } from "../lib/image-urls";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { DELIVERY_SLOTS_ENABLED } from "../lib/delivery-feature";
 import {
-  assertCanUpdateOrderDeliveryStatus,
   loadDeliveryAssigneesForOrder,
   replaceOrderDeliveryAssignees,
 } from "../lib/order-delivery-assignees";
@@ -69,48 +68,16 @@ const PatchOrderDeliveryBody = z.object({
   driverId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
 });
 
-/** Out for delivery only when main order is ready_to_ship; Delivered only after Out for delivery. */
-function assertDeliveryStatusTransition(params: {
+/** Delivery status can be set to any value independently of order status. */
+function assertDeliveryStatusTransition(_params: {
   mainStatus: string;
   prevDelivery: string;
   nextDelivery: string;
 }): { ok: true } | { ok: false; error: string } {
-  const main = normalizeMainOrderStatus(params.mainStatus);
-  const prev = normalizeDeliveryStatus(params.prevDelivery);
-  const next = normalizeDeliveryStatus(params.nextDelivery);
-  if (prev === next) return { ok: true };
-  if (next === "pending") return { ok: true };
-  if (next === "out_for_delivery") {
-    if (main !== "ready_to_ship") {
-      return {
-        ok: false,
-        error: "Delivery can be set to Out for delivery only when the order status is Ready to ship.",
-      };
-    }
-    return { ok: true };
-  }
-  if (next === "delivered") {
-    if (prev !== "out_for_delivery") {
-      return {
-        ok: false,
-        error: "Delivery can be marked Delivered only after it is Out for delivery.",
-      };
-    }
-    return { ok: true };
-  }
   return { ok: true };
 }
 
-/** Any persisted row: out_for_delivery requires main status ready_to_ship. */
-function assertOrderDeliveryCoherence(mainStatus: string, deliveryStatus: string): { ok: true } | { ok: false; error: string } {
-  const main = normalizeMainOrderStatus(mainStatus);
-  const del = normalizeDeliveryStatus(deliveryStatus);
-  if (del === "out_for_delivery" && main !== "ready_to_ship") {
-    return {
-      ok: false,
-      error: "Order is not Ready to ship but delivery is Out for delivery. Set delivery to Pending or move order to Ready to ship.",
-    };
-  }
+function assertOrderDeliveryCoherence(_mainStatus: string, _deliveryStatus: string): { ok: true } | { ok: false; error: string } {
   return { ok: true };
 }
 
@@ -1063,17 +1030,6 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
 
   const existingItems = await prisma.orderItem.findMany({ where: { orderId: id } });
   const payload = parsed.data as any;
-  if (payload.deliveryStatus !== undefined) {
-    const delAccess = await assertCanUpdateOrderDeliveryStatus(
-      user as { id: number; role?: { name?: string | null } | null },
-      id,
-    );
-    if (!delAccess.ok) {
-      res.status(delAccess.status).json({ error: delAccess.message });
-      return;
-    }
-  }
-
   const assigned = assignedBranchIds(user);
   let nextOrderBranchId: number | null = existingOrder.branchId;
   if (assigned.length === 1) {
@@ -1635,16 +1591,6 @@ router.patch(
       res.status(access.status).json({ error: access.message });
       return;
     }
-    if (wantsStatus) {
-      const delAccess = await assertCanUpdateOrderDeliveryStatus(
-        authUser as { id: number; role?: { name?: string | null } | null },
-        id,
-      );
-      if (!delAccess.ok) {
-        res.status(delAccess.status).json({ error: delAccess.message });
-        return;
-      }
-    }
     const branchId = existing.branchId; 
     if (branchId == null) {
       res.status(400).json({ error: "Order has no branch" });
@@ -1761,15 +1707,6 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
     const rawSt = body.status as string;
     const norm = rawSt === "delivered" ? "complete" : rawSt;
     nextStatus = ORDER_STATUSES.has(norm) ? norm : nextStatus;
-    const eo = existing as { deliveryStatus?: string | null };
-    const del = normalizeDeliveryStatus(eo.deliveryStatus);
-    if (nextStatus !== "ready_to_ship" && del === "out_for_delivery") {
-      res.status(400).json({
-        error:
-          "Delivery is Out for delivery. Set delivery to Pending or Delivered before changing order status away from Ready to ship.",
-      });
-      return;
-    }
   }
 
   let nextPaymentStatus = (existing as { paymentStatus?: string | null }).paymentStatus ?? "due";

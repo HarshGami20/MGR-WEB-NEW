@@ -149,9 +149,9 @@ export default function ProductNew() {
                     New
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">
+                {/* <p className="text-sm text-muted-foreground">
                   Catalog details, inventory type, photos, and pricing.
-                </p>
+                </p> */}
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">

@@ -97,7 +97,7 @@ model User {
   isActive         Boolean  @default(true) @map("is_active")
   /// Sales staff: order list access can be restricted to assigned, created-by, or all orders.
   isSales          Boolean  @default(false) @map("is_sales")
-  /// When `isSales` is true: `all` | `assigned_to_me` | `created_by_me`. Null when not sales.
+  /// When `isSales` is true: `own` (created/assigned only) or legacy `all`. Null when not sales.
   ordersListScope  String?  @map("orders_list_scope")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

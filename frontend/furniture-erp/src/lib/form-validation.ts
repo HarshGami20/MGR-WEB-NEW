@@ -238,6 +238,14 @@ export const zodFields = {
       .max(FIELD_LIMITS.companyName, `Use at most ${FIELD_LIMITS.companyName} characters`)
       .regex(COMPANY_NAME_REGEX, `${label} has invalid characters`),
 
+  categoryName: (label = "Category name") =>
+    z
+      .string()
+      .trim()
+      .min(1, `${label} is required`)
+      .max(FIELD_LIMITS.categoryName, `Use at most ${FIELD_LIMITS.categoryName} characters`)
+      .regex(LETTERS_REGEX, `${label} can only contain letters`),
+
   mobileRequired: () =>
     z
       .string()
@@ -391,12 +399,12 @@ export const userFormSchema = z
     roleId: z.coerce.number().min(1, "Role is required"),
     branchIds: z.array(z.coerce.number()).default([]),
     isSales: z.boolean().default(false),
-    ordersListScope: z.enum(["all", "assigned_to_me", "created_by_me"]).nullable().optional(),
+    ordersListScope: z.enum(["all", "own", "assigned_to_me", "created_by_me"]).nullable().optional(),
   })
-  .refine((d) => !d.isSales || (d.ordersListScope != null && d.ordersListScope.length > 0), {
-    message: "Choose which orders this sales user can access.",
-    path: ["ordersListScope"],
-  });
+  .transform((d) => ({
+    ...d,
+    ordersListScope: d.isSales ? "own" : null,
+  }));
 
 export type UserFormValues = z.infer<typeof userFormSchema>;
 
@@ -425,7 +433,7 @@ export const profileFormSchema = z.object({
 export type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export const categoryFormSchema = z.object({
-  name: zodFields.personName("Category name"),
+  name: zodFields.categoryName("Category name"),
   parentId: z.number().nullable().optional(),
 });
 

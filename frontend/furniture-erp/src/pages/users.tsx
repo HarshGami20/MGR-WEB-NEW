@@ -63,7 +63,7 @@ const emptyForm: UserFormValues = {
   roleId: 0,
   branchIds: [],
   isSales: false,
-  ordersListScope: "all",
+  ordersListScope: null,
 };
 
 export default function Users() {
@@ -177,7 +177,6 @@ export default function Users() {
 
   const roleRows = coerceRoleList(rolesData) as { id: number; name: string }[];
   const roleIdWatch = form.watch("roleId");
-  const isSalesWatch = form.watch("isSales");
   const selectedRoleIsSuperAdmin = useMemo(() => {
     const r = roleRows.find((x) => x.id === roleIdWatch);
     return r?.name === "Super Admin";
@@ -220,19 +219,19 @@ export default function Users() {
         if (user.branchId != null) return [user.branchId];
         return [];
       })(),
-      isSales: user.isSales === true,
-      ordersListScope:
-        user.ordersListScope === "assigned_to_me" || user.ordersListScope === "created_by_me"
-          ? user.ordersListScope
-          : "all",
+      isSales:
+        user.isSales === true &&
+        user.ordersListScope !== "all" &&
+        user.ordersListScope !== null,
     });
     setIsDialogOpen(true);
   };
 
   const onSubmit = (data: UserFormValues) => {
-    const payload: UserFormValues = {
+    const payload = {
       ...data,
-      ordersListScope: data.isSales ? data.ordersListScope ?? "all" : null,
+      isSales: data.isSales,
+      ordersListScope: data.isSales ? "own" : null,
     };
     if (editingId) {
       const roleExists = roleRows.some((r) => r.id === payload.roleId);
@@ -609,60 +608,16 @@ export default function Users() {
                     <div className="space-y-0.5">
                       <FormLabel>Sales user</FormLabel>
                       <p className="text-xs text-muted-foreground">
-                        Restrict which orders this user can view in the orders list and detail pages.
+                        When on, this user only sees orders they created or are assigned to. When off, they see all
+                        orders (subject to role permissions).
                       </p>
                     </div>
                     <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={(checked) => {
-                          field.onChange(checked);
-                          if (checked && !form.getValues("ordersListScope")) {
-                            form.setValue("ordersListScope", "all", { shouldValidate: true });
-                          }
-                          if (!checked) {
-                            form.setValue("ordersListScope", null, { shouldValidate: true });
-                          }
-                        }}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
               />
-
-              {isSalesWatch ? (
-                <FormField
-                  control={form.control}
-                  name="ordersListScope"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Orders access</FormLabel>
-                      <Select
-                        value={field.value ?? "all"}
-                        onValueChange={(val) =>
-                          field.onChange(val as "all" | "assigned_to_me" | "created_by_me")
-                        }
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select scope" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="all">All orders (can switch filter on orders page)</SelectItem>
-                          <SelectItem value="assigned_to_me">Assigned to me only (forced)</SelectItem>
-                          <SelectItem value="created_by_me">Created by me only (forced)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Forced scopes hide the orders filter and always apply that restriction. All orders lets the
-                        user choose All / Created / Assigned on the orders page.
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
 
               <FormField
                 control={form.control}

@@ -38,7 +38,6 @@ import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { usePermissions } from "@/lib/permissions";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
-import { canUpdateOrderDeliveryStatus } from "@/lib/order-delivery-access";
 import {
   OrderImageGalleryDialog,
   type GallerySlide,
@@ -46,6 +45,7 @@ import {
 import { OrderPaymentFollowUpPanel } from "@/components/payment-follow-up-panel";
 import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-follow-up-api";
 import { formatInr } from "@/lib/format-currency";
+import { remainingInrPaymentAmount, roundInrPaymentAmount } from "@/lib/payment-amount";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
@@ -465,9 +465,8 @@ export default function OrderDetailPage() {
         | undefined)
     : null;
   const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
-  const canUpdateDelivery =
-    (canEditOrders || canEditDeliveries) && canUpdateOrderDeliveryStatus(orderAny, user);
-  const balance = Math.max(0, order.totalAmount - order.paidAmount);
+  const canUpdateDelivery = canEditOrders || canEditDeliveries;
+  const balance = remainingInrPaymentAmount(order.totalAmount, order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
   const applyStatusUpdate = () => {
@@ -1061,11 +1060,20 @@ export default function OrderDetailPage() {
                   <Input
                     type="number"
                     min="0"
-                    step="0.01"
-                    placeholder="Amount"
+                    step="1"
+                    placeholder="Amount (whole ₹)"
                     className="rounded-xl"
                     value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "" || raw === "-") {
+                        setPaymentAmount(raw);
+                        return;
+                      }
+                      const n = Number(raw);
+                      if (!Number.isFinite(n)) return;
+                      setPaymentAmount(String(Math.max(0, roundInrPaymentAmount(n))));
+                    }}
                   />
                   <Select value={paymentMode} onValueChange={setPaymentMode}>
                     <SelectTrigger className="rounded-xl">
@@ -1101,9 +1109,22 @@ export default function OrderDetailPage() {
                       toast({ title: "Cheque number required", variant: "destructive" });
                       return;
                     }
+                    const amount = roundInrPaymentAmount(Number(paymentAmount || 0));
+                    if (amount <= 0) {
+                      toast({ title: "Enter a valid amount", variant: "destructive" });
+                      return;
+                    }
+                    if (amount > balance) {
+                      toast({
+                        title: "Amount too high",
+                        description: `Maximum payment is ${formatInr(balance)}`,
+                        variant: "destructive",
+                      });
+                      return;
+                    }
                     const payload: Record<string, unknown> = {
                       orderId: order.id,
-                      amount: Number(paymentAmount || 0),
+                      amount,
                       mode: paymentMode,
                       notes: paymentNote || null,
                     };
@@ -1256,40 +1277,15 @@ export default function OrderDetailPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem
-                          value="out_for_delivery"
-                          disabled={status !== "ready_to_ship"}
-                          title={
-                            status !== "ready_to_ship"
-                              ? "Set main order status to Ready to ship first"
-                              : undefined
-                          }
-                        >
-                          Out for delivery
-                        </SelectItem>
-                        <SelectItem
-                          value="delivered"
-                          disabled={serverDeliveryStatus !== "out_for_delivery"}
-                          title={
-                            serverDeliveryStatus !== "out_for_delivery"
-                              ? "Save Out for delivery first, then you can mark Delivered"
-                              : undefined
-                          }
-                        >
-                          Delivered
-                        </SelectItem>
+                        <SelectItem value="out_for_delivery">Out for delivery</SelectItem>
+                        <SelectItem value="delivered">Delivered</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button
                       type="button"
                       variant="secondary"
                       className="w-full rounded-xl"
-                      disabled={
-                        patchDelivery.isPending ||
-                        deliveryStatus === serverDeliveryStatus ||
-                        (deliveryStatus === "out_for_delivery" && status !== "ready_to_ship") ||
-                        (deliveryStatus === "delivered" && serverDeliveryStatus !== "out_for_delivery")
-                      }
+                      disabled={patchDelivery.isPending || deliveryStatus === serverDeliveryStatus}
                       onClick={() =>
                         patchDelivery.mutate(deliveryStatus as "pending" | "out_for_delivery" | "delivered")
                       }
@@ -1297,11 +1293,7 @@ export default function OrderDetailPage() {
                       Save delivery status
                     </Button>
                   </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Only delivery assignees or Super Admin can change delivery status.
-                  </p>
-                )}
+                ) : null}
               </div>
             </DetailSection>
 

@@ -885,8 +885,8 @@ paths:
           in: query
           schema:
             type: string
-            enum: [all, created_by_me, assigned_to_me]
-          description: Filter by creator or assignee for the signed-in user. Use `all` or omit for every order.
+            enum: [all, own, created_by_me, assigned_to_me]
+          description: Filter orders for the signed-in user. `own` = created by or assigned to me. Sales users with restricted scope always get `own` server-side.
         - name: createdFrom
           in: query
           schema:
@@ -1930,12 +1930,12 @@ components:
           type: boolean
         isSales:
           type: boolean
-          description: Sales staff flag; enables configurable order list scope.
+          description: When true, user only sees orders they created or are assigned to. When false, all orders (subject to permissions).
         ordersListScope:
           type: string
           nullable: true
-          enum: [all, assigned_to_me, created_by_me]
-          description: When isSales is true, limits which orders the user can list and open.
+          enum: [all, own, assigned_to_me, created_by_me]
+          description: Persisted scope; use `own` with isSales for restricted access. Legacy values map to `own`.
         createdAt:
           type: string
           format: date-time
@@ -1997,7 +1997,7 @@ components:
         ordersListScope:
           type: string
           nullable: true
-          enum: [all, assigned_to_me, created_by_me]
+          enum: [all, own, assigned_to_me, created_by_me]
       required: [name, mobile, password, roleId]
 
     UpdateUserBody:
@@ -2030,7 +2030,7 @@ components:
         ordersListScope:
           type: string
           nullable: true
-          enum: [all, assigned_to_me, created_by_me]
+          enum: [all, own, assigned_to_me, created_by_me]
 
     UserListResponse:
       type: object

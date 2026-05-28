@@ -4,6 +4,7 @@ import { CreateManufacturerBody, GetManufacturerParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { hashPassword } from "../lib/auth";
+import { ensureManufacturerPortalRoleId } from "../lib/portal-roles";
 
 const router: IRouter = Router();
 
@@ -31,14 +32,6 @@ function prismaConflictField(e: unknown): "mobile" | "email" | null {
   return null;
 }
 
-async function manufacturerPortalRoleId(): Promise<number | null> {
-  const role = await prisma.role.findFirst({
-    where: { name: "Manufacturer Portal" },
-    select: { id: true },
-  });
-  return role?.id ?? null;
-}
-
 router.get("/manufacturers", requireAuth, requirePermission("manufacturers", "read"), async (req, res): Promise<void> => {
   const { search, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
@@ -52,11 +45,6 @@ router.get("/manufacturers", requireAuth, requirePermission("manufacturers", "re
 router.post("/manufacturers", requireAuth, requirePermission("manufacturers", "create"), async (req, res): Promise<void> => {
   const parsed = CreateManufacturerBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const roleId = await manufacturerPortalRoleId();
-  if (!roleId) {
-    res.status(400).json({ error: "Manufacturer Portal role is missing. Please contact admin." });
-    return;
-  }
   const payload = parsed.data as Record<string, unknown>;
   const portalPassword = readOptionalString(payload.portalPassword);
   const mobile = readOptionalString(payload.mobile);
@@ -86,9 +74,10 @@ router.post("/manufacturers", requireAuth, requirePermission("manufacturers", "c
   delete manufacturerData.portalPassword;
 
   try {
+    const roleId = portalPassword && mobile ? await ensureManufacturerPortalRoleId() : null;
     const manufacturer = await prisma.$transaction(async (tx) => {
       const created = await tx.manufacturer.create({ data: manufacturerData as any });
-      if (portalPassword && mobile) {
+      if (portalPassword && mobile && roleId) {
         await tx.user.create({
           data: {
             name: manufacturerName,
@@ -134,11 +123,6 @@ router.put("/manufacturers/:id", requireAuth, requirePermission("manufacturers",
   const id = parseInt(raw, 10);
   const parsed = CreateManufacturerBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const roleId = await manufacturerPortalRoleId();
-  if (!roleId) {
-    res.status(400).json({ error: "Manufacturer Portal role is missing. Please contact admin." });
-    return;
-  }
 
   const payload = parsed.data as Record<string, unknown>;
   const portalPassword = readOptionalString(payload.portalPassword);
@@ -158,6 +142,9 @@ router.put("/manufacturers/:id", requireAuth, requirePermission("manufacturers",
     where: { manufacturerId: id, supplierId: null },
     select: { id: true },
   });
+
+  const roleId =
+    portalPassword || linkedUserPre ? await ensureManufacturerPortalRoleId() : null;
 
   if (mobile) {
     const conflict = await prisma.user.findFirst({
@@ -188,7 +175,7 @@ router.put("/manufacturers/:id", requireAuth, requirePermission("manufacturers",
         select: { id: true },
       });
 
-      if (linkedUser) {
+      if (linkedUser && roleId) {
         const nextUserData: Record<string, unknown> = {
           name: manufacturerName,
           email,
@@ -200,7 +187,7 @@ router.put("/manufacturers/:id", requireAuth, requirePermission("manufacturers",
         if (mobile) nextUserData.mobile = mobile;
         if (portalPassword) nextUserData.passwordHash = await hashPassword(portalPassword);
         await tx.user.update({ where: { id: linkedUser.id }, data: nextUserData as any });
-      } else if (portalPassword && mobile) {
+      } else if (portalPassword && mobile && roleId) {
         await tx.user.create({
           data: {
             name: manufacturerName,

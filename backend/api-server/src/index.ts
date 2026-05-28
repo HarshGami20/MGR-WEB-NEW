@@ -5,10 +5,14 @@ import { attachSocketIo } from "./realtime/socket-server";
 import { startNotificationReminderScheduler } from "./jobs/notification-reminders";
 import { registerNotificationEventListeners } from "./listeners/notification-listeners";
 import { registerWhatsAppEventListeners } from "./listeners/whatsapp-listeners";
+import { ensurePortalRoles } from "./lib/portal-roles";
 
 registerNotificationEventListeners();
 registerWhatsAppEventListeners();
 startNotificationReminderScheduler();
+void ensurePortalRoles().catch((err) => {
+  logger.error({ err }, "Failed to ensure supplier/manufacturer portal roles");
+});
 
 const rawPort = process.env["PORT"];
 

@@ -64,6 +64,7 @@ export type UserOrdersListScope = typeof UserOrdersListScope[keyof typeof UserOr
 
 export const UserOrdersListScope = {
   all: 'all',
+  own: 'own',
   assigned_to_me: 'assigned_to_me',
   created_by_me: 'created_by_me',
 } as const;
@@ -119,6 +120,7 @@ export type CreateUserBodyOrdersListScope = typeof CreateUserBodyOrdersListScope
 
 export const CreateUserBodyOrdersListScope = {
   all: 'all',
+  own: 'own',
   assigned_to_me: 'assigned_to_me',
   created_by_me: 'created_by_me',
 } as const;
@@ -142,6 +144,7 @@ export type UpdateUserBodyOrdersListScope = typeof UpdateUserBodyOrdersListScope
 
 export const UpdateUserBodyOrdersListScope = {
   all: 'all',
+  own: 'own',
   assigned_to_me: 'assigned_to_me',
   created_by_me: 'created_by_me',
 } as const;
@@ -867,6 +870,7 @@ export type ListOrdersAssignmentScope = typeof ListOrdersAssignmentScope[keyof t
 
 export const ListOrdersAssignmentScope = {
   all: 'all',
+  own: 'own',
   created_by_me: 'created_by_me',
   assigned_to_me: 'assigned_to_me',
 } as const;

@@ -213,7 +213,7 @@ async function main() {
       branchId: branchAndheri.id,
       isActive: true,
       isSales: true,
-      ordersListScope: "assigned_to_me",
+      ordersListScope: "own",
       userBranches: { create: [{ branchId: branchAndheri.id }] },
     },
   });
@@ -227,8 +227,8 @@ async function main() {
       roleId: roleSales.id,
       branchId: branchPune.id,
       isActive: true,
-      isSales: true,
-      ordersListScope: "all",
+      isSales: false,
+      ordersListScope: null,
       userBranches: { create: [{ branchId: branchPune.id }] },
     },
   });

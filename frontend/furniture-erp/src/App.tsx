@@ -146,9 +146,9 @@ function Router() {
       <Route path="/products">
         <ProtectedRoute viewModule="products" component={Products} />
       </Route>
-      {/* <Route path="/categories">
+      <Route path="/categories">
         <ProtectedRoute viewModule="categories" component={Categories} />
-      </Route> */}
+      </Route>
       <Route path="/inventory">
         <ProtectedRoute viewModule="inventory" component={Inventory} />
       </Route>

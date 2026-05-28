@@ -7,6 +7,7 @@ import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { remainingInrPaymentAmount, roundInrPaymentAmount } from "../lib/payment-amount";
 
 const router: IRouter = Router();
 function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "partially_paid" | "paid" {
@@ -91,20 +92,30 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
   const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId } });
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const paymentAmount = Number(parsed.data.amount ?? 0);
-  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+  const paymentAmount = roundInrPaymentAmount(Number(parsed.data.amount ?? 0));
+  if (paymentAmount <= 0) {
     res.status(400).json({ error: "Payment amount must be greater than 0" });
     return;
   }
-  const remainingAmount = Math.max(0, toNumber(order.totalAmount) - toNumber(order.paidAmount));
-  if (paymentAmount > remainingAmount) {
-    res.status(400).json({ error: `Payment amount cannot exceed remaining amount (${remainingAmount})` });
+
+  const totalAmount = toNumber(order.totalAmount);
+  const paidAmount = toNumber(order.paidAmount);
+  const maxPayment = remainingInrPaymentAmount(totalAmount, paidAmount);
+  if (maxPayment <= 0) {
+    res.status(400).json({ error: "Order is already fully paid" });
+    return;
+  }
+  if (paymentAmount > maxPayment) {
+    res.status(400).json({ error: `Payment amount cannot exceed remaining amount (${maxPayment})` });
     return;
   }
 
-  const nextPaidAmount = Math.min(toNumber(order.totalAmount), toNumber(order.paidAmount) + paymentAmount);
-  const appliedAmount = nextPaidAmount - toNumber(order.paidAmount);
-  if (appliedAmount <= 0) {
+  const payingRoundedRemainder = paymentAmount >= maxPayment;
+  const appliedAmount = payingRoundedRemainder ? maxPayment : paymentAmount;
+  const nextPaidAmount = payingRoundedRemainder
+    ? totalAmount
+    : Math.min(totalAmount, paidAmount + paymentAmount);
+  if (nextPaidAmount <= paidAmount) {
     res.status(400).json({ error: "Order is already fully paid" });
     return;
   }

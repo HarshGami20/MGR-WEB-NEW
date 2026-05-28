@@ -7,7 +7,6 @@ import {
   buildDateSlotSchedule,
   formatYmdLabel,
   normalizeDeliveryStatus,
-  normalizeMainStatus,
   type DeliveryOrderRow,
   type DeliveryStatusValue,
 } from "@/lib/delivery-stats";
@@ -120,7 +119,6 @@ export function DeliveryScheduleList({
 
   const renderOrderRow = (order: DeliveryOrderRow) => {
     const del = normalizeDeliveryStatus(order.deliveryStatus);
-    const main = normalizeMainStatus(order.status);
     const rowPending = patchDelivery.isPending && patchDelivery.variables?.orderId === order.id;
     const canUpdate =
       typeof canUpdateStatus === "function" ? canUpdateStatus(order) : canUpdateStatus;
@@ -194,12 +192,8 @@ export function DeliveryScheduleList({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="out_for_delivery" disabled={main !== "ready_to_ship"}>
-                  Out for delivery
-                </SelectItem>
-                <SelectItem value="delivered" disabled={del !== "out_for_delivery"}>
-                  Delivered
-                </SelectItem>
+                <SelectItem value="out_for_delivery">Out for delivery</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
               </SelectContent>
             </Select>
           ) : (
