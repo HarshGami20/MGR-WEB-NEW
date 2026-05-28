@@ -44,6 +44,38 @@ import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 
+type ComplaintProductPickOption = { productId: number; label: string };
+
+/** One select entry per product — duplicate lines on the same order/PO share productId and break Radix Select. */
+function buildUniqueProductPickOptions(
+  items: Array<{
+    productId: number | null;
+    quantity?: number;
+    isCustom?: boolean;
+    product?: { name?: string | null; sku?: string | null } | null;
+  }>,
+): ComplaintProductPickOption[] {
+  const byId = new Map<number, { label: string; qty: number }>();
+  for (const item of items) {
+    if (item.productId == null || item.isCustom) continue;
+    const id = item.productId;
+    const name = item.product?.name?.trim() || `Product #${id}`;
+    const sku = item.product?.sku?.trim();
+    const base = sku ? `${name} · ${sku}` : name;
+    const lineQty = item.quantity ?? 1;
+    const existing = byId.get(id);
+    if (existing) {
+      existing.qty += lineQty;
+    } else {
+      byId.set(id, { label: base, qty: lineQty });
+    }
+  }
+  return Array.from(byId.entries()).map(([productId, row]) => ({
+    productId,
+    label: row.qty > 1 ? `${row.label} (×${row.qty})` : row.label,
+  }));
+}
+
 function getComplaintStatusBadge(status: ComplaintStatus) {
   switch (status) {
     case "open":
@@ -491,15 +523,15 @@ export default function ComplaintsPage() {
 
   const columns = isPoTab ? poColumns : salesColumns;
 
-  const poProductOptions = useMemo(() => {
-    if (!selectedPo?.items) return [];
-    return selectedPo.items
-      .filter((item) => item.productId != null && !item.isCustom)
-      .map((item) => ({
-        productId: item.productId!,
-        label: item.product?.name ?? `Product #${item.productId}`,
-      }));
-  }, [selectedPo]);
+  const poProductOptions = useMemo(
+    () => buildUniqueProductPickOptions(selectedPo?.items ?? []),
+    [selectedPo],
+  );
+
+  const orderProductOptions = useMemo(
+    () => buildUniqueProductPickOptions(selectedOrder?.items ?? []),
+    [selectedOrder],
+  );
 
   return (
     <div className="space-y-6">
@@ -703,9 +735,9 @@ export default function ComplaintsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">All / general issue</SelectItem>
-                      {(selectedOrder?.items ?? []).map((item) => (
-                        <SelectItem key={item.productId} value={String(item.productId)}>
-                          {item.product?.name ?? `Product #${item.productId}`}
+                      {orderProductOptions.map((opt) => (
+                        <SelectItem key={opt.productId} value={String(opt.productId)}>
+                          {opt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
