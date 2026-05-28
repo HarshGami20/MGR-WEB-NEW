@@ -157,12 +157,15 @@ function StaffDashboard() {
 
   const revenueBarData = useMemo(
     () => [
-      { name: "Due", value: kpiBreakdown.revenueDue, fill: "hsl(var(--chart-3))" },
-      { name: "Received", value: kpiBreakdown.revenuePaid, fill: "hsl(var(--chart-1))" },
-      { name: "Total", value: kpiBreakdown.revenueTotal, fill: "hsl(var(--chart-2))" },
+      { name: "Due", value: kpiBreakdown.revenueDue, fill: "#f59e0b", labelClass: "text-amber-700 dark:text-amber-400" },
+      { name: "Received", value: kpiBreakdown.revenuePaid, fill: "#10b981", labelClass: "text-emerald-700 dark:text-emerald-400" },
+      { name: "Total", value: kpiBreakdown.revenueTotal, fill: "hsl(var(--primary))", labelClass: "text-primary" },
     ],
     [kpiBreakdown.revenueDue, kpiBreakdown.revenuePaid, kpiBreakdown.revenueTotal],
   );
+
+  const revenueRangeLabel =
+    kpiRange === "today" ? "today" : kpiRange === "week" ? "this week" : "this month";
 
   const yearOptions = useMemo(
     () => Array.from({ length: 6 }, (_, idx) => currentYear - idx),
@@ -408,34 +411,40 @@ function StaffDashboard() {
         </div>
       </section>
 
-      {/* Total Revenue 3-bar chart + Annual Revenue rings */}
+      {/* Total Revenue + Annual Revenue rings */}
       <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
         <div className="lg:col-span-8 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Total Revenue</h2>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Due, received & total revenue — {kpiRange === "today" ? "today" : kpiRange === "week" ? "this week" : "this month"}
+                Due, received & total revenue — {revenueRangeLabel}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-xl text-xs">
-                Total ₹{formatCompactCurrency(kpiBreakdown.revenueTotal)}
-              </Badge>
-              <Badge variant="outline" className="rounded-xl text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
-                Received ₹{formatCompactCurrency(kpiBreakdown.revenuePaid)}
-              </Badge>
-              <Badge variant="outline" className="rounded-xl text-xs bg-amber-50 text-amber-700 border-amber-200">
-                Due ₹{formatCompactCurrency(kpiBreakdown.revenueDue)}
-              </Badge>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" aria-hidden />
+                Due
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden />
+                Received
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-primary" aria-hidden />
+                Total
+              </span>
             </div>
           </div>
+
           <div className="h-[260px] w-full mt-4">
             {analyticsOrdersLoading ? (
               <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                 Loading revenue…
               </div>
-            ) : kpiBreakdown.revenueTotal === 0 ? (
+            ) : kpiBreakdown.revenueTotal === 0 &&
+              kpiBreakdown.revenuePaid === 0 &&
+              kpiBreakdown.revenueDue === 0 ? (
               <div className="h-full flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
                 No revenue recorded for the selected range
               </div>
@@ -447,7 +456,7 @@ function StaffDashboard() {
                   margin={{ top: 8, bottom: 8, left: 12, right: 24 }}
                   barCategoryGap="28%"
                 >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis
                     type="number"
                     tickLine={false}
@@ -461,28 +470,42 @@ function StaffDashboard() {
                     tickLine={false}
                     axisLine={false}
                     width={80}
-                    tick={{ fill: "hsl(var(--foreground))", fontSize: 13, fontWeight: 600 }}
+                    tick={({ x, y, payload }) => {
+                      const row = revenueBarData.find((r) => r.name === payload?.value);
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          dy={4}
+                          textAnchor="end"
+                          fill="currentColor"
+                          className={cn("text-[13px] font-semibold", row?.labelClass)}
+                        >
+                          {payload?.value}
+                        </text>
+                      );
+                    }}
                   />
                   <RechartsTooltip
-                    cursor={{ fill: "hsl(var(--accent))", radius: 12 }}
+                    cursor={{ fill: "hsl(var(--muted) / 0.5)", radius: 8 }}
                     content={({
                       payload,
                     }: {
-                      payload?: Array<{ payload: { name: string; value: number } }>;
+                      payload?: Array<{ payload: { name: string; value: number; fill: string } }>;
                     }) =>
                       payload?.length ? (
                         <div className="rounded-2xl border bg-card px-3 py-2 text-sm shadow-md">
-                          <p className="font-semibold">{payload[0]?.payload.name}</p>
-                          <p className="text-muted-foreground mt-1">
-                            <span className="font-medium text-foreground">
-                              {formatInr(payload[0]?.payload.value ?? 0)}
-                            </span>
+                          <p className="font-semibold" style={{ color: payload[0]?.payload.fill }}>
+                            {payload[0]?.payload.name}
+                          </p>
+                          <p className="mt-1 font-medium text-foreground">
+                            {formatInr(payload[0]?.payload.value ?? 0)}
                           </p>
                         </div>
                       ) : null
                     }
                   />
-                  <Bar dataKey="value" radius={[0, 12, 12, 0]} maxBarSize={40}>
+                  <Bar dataKey="value" radius={[0, 12, 12, 0]} maxBarSize={44}>
                     {revenueBarData.map((entry) => (
                       <Cell key={entry.name} fill={entry.fill} />
                     ))}
