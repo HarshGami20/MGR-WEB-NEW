@@ -325,13 +325,13 @@ export default function PartnerPurchaseOrdersListPage() {
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="open">Open orders</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="confirmed">Confirmed</SelectItem>
                 <SelectItem value="in_production">In production</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="all">All statuses</SelectItem>
               </SelectContent>
             </Select>
           </div>
