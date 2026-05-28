@@ -25,7 +25,11 @@ import {
 } from "../lib/order-staff-comments";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
-import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import {
+  orderMatchesCategoryFilter,
+  parseOrderCategoryId,
+  resolveCategoryFilterIds,
+} from "../lib/category-filter";
 import { collectOrderUploadUrls } from "../lib/collect-order-upload-urls";
 import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
 import {
@@ -492,6 +496,15 @@ async function enrichOrder(order: any) {
     });
     if (d) driver = d;
   }
+  let category: { id: number; name: string } | null = null;
+  const orderCategoryId = (order as { categoryId?: number | null }).categoryId;
+  if (orderCategoryId) {
+    const c = await prisma.category.findUnique({
+      where: { id: orderCategoryId },
+      select: { id: true, name: true },
+    });
+    if (c) category = c;
+  }
   return {
     ...order,
     driverId: eo.driverId ?? null,
@@ -517,6 +530,8 @@ async function enrichOrder(order: any) {
       [],
     ),
     items: enrichedItems,
+    categoryId: orderCategoryId ?? null,
+    category,
     branch,
     assignedTo,
     assignees,
@@ -626,7 +641,7 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
   }
   const categoryIds = await resolveCategoryFilterIds(categoryId);
   if (categoryIds) {
-    clauses.push(orderHasProductInCategories(categoryIds));
+    clauses.push(orderMatchesCategoryFilter(categoryIds));
   }
   if (clauses.length === 1) {
     Object.assign(where, clauses[0]);
@@ -744,8 +759,14 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     assigneeUserIds: inputAssigneeUserIds,
     deliveryAssigneeUserIds: inputDeliveryAssigneeUserIds,
     assignedToId: clientAssignedToId,
+    categoryId: rawCategoryId,
     ...orderData
   } = parsed.data as any;
+  const parsedCategoryId = await parseOrderCategoryId(rawCategoryId);
+  if (parsedCategoryId === "invalid") {
+    res.status(400).json({ error: "Invalid order category. Choose a main category." });
+    return;
+  }
   let resolvedItems: ResolvedOrderLine[];
   try {
     resolvedItems = await resolveOrderLineItems(items as IncomingLineItem[], !!orderData.isGst);
@@ -840,6 +861,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       const order = await tx.order.create({
         data: {
           ...orderData,
+          categoryId: parsedCategoryId,
           branchId,
           status,
           paymentStatus,
@@ -1222,8 +1244,18 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         paymentStatus: _payloadPaymentStatus,
         paidAmount: _payloadPaidAmount,
         chequeNumber: _payloadChequeNumber,
+        categoryId: payloadCategoryId,
         ...orderFields
       } = payload;
+      const categoryIdProvided = Object.prototype.hasOwnProperty.call(payload, "categoryId");
+      let nextCategoryId = (existingOrder as { categoryId?: number | null }).categoryId ?? null;
+      if (categoryIdProvided) {
+        const parsedCat = await parseOrderCategoryId(payloadCategoryId);
+        if (parsedCat === "invalid") {
+          throw new Error("Invalid order category. Choose a main category.");
+        }
+        nextCategoryId = parsedCat;
+      }
       const eo = existingOrder as any;
       const requestedStatusRaw =
         typeof orderFields.status === "string"
@@ -1386,6 +1418,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         where: { id },
         data: {
           ...orderFields,
+          categoryId: nextCategoryId,
           branchId: nextOrderBranchId,
           status: safeStatus,
           advanceAmount: String(nextAdvanceAmount),

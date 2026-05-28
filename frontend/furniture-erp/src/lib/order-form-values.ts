@@ -49,6 +49,8 @@ export type OrderFormSource = {
   photoComments?: Array<{ imageUrl?: string; comment?: string }>;
   staffComments?: Array<{ comment?: string }>;
   deliveryComments?: Array<{ comment?: string }>;
+  categoryId?: number | null;
+  category?: { id: number; name: string } | null;
 };
 
 /** Map GET /orders/:id payload → react-hook-form values for edit mode. */
@@ -104,5 +106,8 @@ export function buildOrderFormValues(order: OrderFormSource) {
       .map((entry) => entry?.comment)
       .filter(Boolean)
       .join("\n"),
+    categoryId:
+      order.categoryId ??
+      (typeof order.category?.id === "number" ? order.category.id : null),
   };
 }

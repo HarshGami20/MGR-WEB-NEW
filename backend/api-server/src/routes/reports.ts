@@ -2,7 +2,8 @@ import { Router, IRouter } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
-import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { orderMatchesCategoryFilter, resolveCategoryFilterIds } from "../lib/category-filter";
+import { buildCategoryRevenueMatrix } from "../lib/category-revenue-matrix";
 import { buildOrderExportRows } from "../lib/order-export";
 import { parseExportCreatedAt } from "../lib/export-date-filter";
 import {
@@ -52,29 +53,14 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     where: {
       ...branchFilter,
       ...(createdAtWhere.gte || createdAtWhere.lt ? { createdAt: createdAtWhere } : {}),
-      ...(categoryIds ? orderHasProductInCategories(categoryIds) : {}),
+      ...(categoryIds ? orderMatchesCategoryFilter(categoryIds) : {}),
     },
     select: {
       id: true,
       createdAt: true,
+      categoryId: true,
       totalAmount: true,
       paidAmount: true,
-      items: {
-        select: {
-          quantity: true,
-          totalPrice: true,
-          product: {
-            select: {
-              categoryId: true,
-              category: {
-                select: {
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-      },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -87,8 +73,8 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     totalOrders: number;
     months: Map<number, { month: number; monthLabel: string; revenue: number; received: number; due: number; orders: number }>;
   }>();
-  const byCategory = new Map<string, { categoryId: number | null; categoryName: string; revenue: number; orderItems: number; quantity: number }>();
   const byDay = new Map<string, { date: string; day: number; revenue: number; received: number; due: number; orders: number }>();
+  const byMonthPeriod = new Map<string, { revenue: number; received: number; due: number; orders: number }>();
 
   let overallRevenue = 0;
   let overallReceived = 0;
@@ -156,23 +142,16 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
       dayRow.orders += 1;
     }
 
-    for (const item of order.items) {
-      const categoryId = item.product?.categoryId ?? null;
-      const categoryName = item.product?.category?.name ?? "Uncategorized";
-      const key = `${categoryId ?? "none"}::${categoryName}`;
-      if (!byCategory.has(key)) {
-        byCategory.set(key, {
-          categoryId,
-          categoryName,
-          revenue: 0,
-          orderItems: 0,
-          quantity: 0,
-        });
+    if (hasValidYear && !hasValidMonth) {
+      const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+      if (!byMonthPeriod.has(monthKey)) {
+        byMonthPeriod.set(monthKey, { revenue: 0, received: 0, due: 0, orders: 0 });
       }
-      const catRow = byCategory.get(key)!;
-      catRow.revenue += toNumber(item.totalPrice);
-      catRow.orderItems += 1;
-      catRow.quantity += item.quantity;
+      const mp = byMonthPeriod.get(monthKey)!;
+      mp.revenue += revenue;
+      mp.received += received;
+      mp.due += due;
+      mp.orders += 1;
     }
   }
 
@@ -195,19 +174,6 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
       };
     });
 
-  let categoryWiseRows = Array.from(byCategory.values());
-  if (categoryIds) {
-    categoryWiseRows = categoryWiseRows.filter(
-      (c) => c.categoryId != null && categoryIds.includes(c.categoryId),
-    );
-  }
-  const categoryWise = categoryWiseRows
-    .sort((a, b) => b.revenue - a.revenue)
-    .map((c) => ({
-      ...c,
-      revenue: Number(c.revenue.toFixed(2)),
-    }));
-
   const daily =
     hasValidYear && hasValidMonth
       ? Array.from(byDay.values())
@@ -219,6 +185,58 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
             due: Number(d.due.toFixed(2)),
           }))
       : [];
+
+  const periodType: "day" | "month" =
+    hasValidYear && hasValidMonth ? "day" : hasValidYear ? "month" : "month";
+
+  let periodKeys: string[] = [];
+  const periodLabels = new Map<string, string>();
+
+  if (periodType === "day" && hasValidYear && hasValidMonth) {
+    const y = yearParam as number;
+    const m = monthParam as number;
+    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    for (let d = 1; d <= daysInMonth; d += 1) {
+      const key = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      periodKeys.push(key);
+      periodLabels.set(key, `${d} ${MONTH_NAMES[m - 1]}`);
+    }
+  } else if (periodType === "month" && hasValidYear) {
+    const y = yearParam as number;
+    for (let m = 1; m <= 12; m += 1) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      periodKeys.push(key);
+      periodLabels.set(key, MONTH_NAMES[m - 1]);
+    }
+  } else {
+    periodKeys = ["total"];
+    periodLabels.set("total", "Total");
+  }
+
+  const categoryWiseMatrix = await buildCategoryRevenueMatrix(orders, {
+    periodType: periodKeys.length === 1 && periodKeys[0] === "total" ? "month" : periodType,
+    periodKeys,
+    periodLabels,
+  });
+
+  let categoryWise = categoryWiseMatrix.rows
+    .map((r) => ({
+      categoryId: r.categoryId,
+      categoryName: r.categoryName,
+      revenue: r.totalRevenue,
+      orderItems: 0,
+      quantity: 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  if (categoryIds) {
+    categoryWise = categoryWise.filter(
+      (c) => c.categoryId != null && categoryIds.includes(c.categoryId),
+    );
+    categoryWiseMatrix.rows = categoryWiseMatrix.rows.filter(
+      (r) => r.categoryId != null && categoryIds.includes(r.categoryId),
+    );
+  }
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -238,6 +256,7 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     yearly,
     daily,
     categoryWise,
+    categoryWiseMatrix,
   });
 });
 

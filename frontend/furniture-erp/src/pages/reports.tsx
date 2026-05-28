@@ -39,6 +39,17 @@ type CategoryRevenue = {
   quantity: number;
 };
 
+type CategoryRevenueMatrix = {
+  periodType: "day" | "month";
+  periods: Array<{ key: string; label: string }>;
+  rows: Array<{
+    categoryId: number | null;
+    categoryName: string;
+    byPeriod: Record<string, number>;
+    totalRevenue: number;
+  }>;
+};
+
 type RevenueSummaryResponse = {
   generatedAt: string;
   filters: {
@@ -63,6 +74,7 @@ type RevenueSummaryResponse = {
     orders: number;
   }>;
   categoryWise: CategoryRevenue[];
+  categoryWiseMatrix: CategoryRevenueMatrix;
 };
 
 /** e.g. 2026-05-20 → 20 May 2026 (en-IN) */
@@ -177,12 +189,55 @@ export default function ReportsPage() {
     );
   };
 
-  const exportCategoryCsv = () => {
-    downloadCsv(
-      `revenue-category-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Category", "Revenue", "Order Items", "Quantity"],
-      (data?.categoryWise ?? []).map((c) => [c.categoryName, c.revenue.toFixed(2), c.orderItems, c.quantity]),
+  const categoryMatrix = useMemo(() => {
+    if (!data) {
+      return {
+        periodType: "month" as const,
+        periods: [] as CategoryRevenueMatrix["periods"],
+        rows: [] as CategoryRevenueMatrix["rows"],
+      };
+    }
+    return (
+      data.categoryWiseMatrix ?? {
+        periodType: "month" as const,
+        periods: [{ key: "total", label: "Total" }],
+        rows: (data.categoryWise ?? []).map((c) => ({
+          categoryId: c.categoryId,
+          categoryName: c.categoryName,
+          byPeriod: { total: c.revenue },
+          totalRevenue: c.revenue,
+        })),
+      }
     );
+  }, [data]);
+
+  const periodColumnLabel =
+    categoryMatrix.periodType === "day" ? "Date" : categoryMatrix.periodType === "month" ? "Month" : "Period";
+
+  const categoryColumns = categoryMatrix.rows;
+
+  const periodRows = useMemo(() => {
+    return categoryMatrix.periods.map((p) => ({
+      key: p.key,
+      label: p.label,
+      cells: categoryColumns.map((c) => c.byPeriod[p.key] ?? 0),
+    }));
+  }, [categoryMatrix.periods, categoryColumns]);
+
+  const exportCategoryCsv = () => {
+    if (!data) return;
+    if (!categoryMatrix.periods.length || !categoryColumns.length) {
+      downloadCsv(
+        `revenue-category-${new Date().toISOString().slice(0, 10)}.csv`,
+        ["Category", "Revenue"],
+        (data?.categoryWise ?? []).map((c) => [c.categoryName, c.revenue.toFixed(2)]),
+      );
+      return;
+    }
+    const header = [periodColumnLabel, ...categoryColumns.map((c) => c.categoryName)];
+    const body = periodRows.map((row) => [row.label, ...row.cells.map((v) => v.toFixed(2))]);
+    body.push(["Total", ...categoryColumns.map((c) => c.totalRevenue.toFixed(2))]);
+    downloadCsv(`revenue-category-${new Date().toISOString().slice(0, 10)}.csv`, header, body);
   };
 
   if (isLoading) return <div className="text-muted-foreground">Loading reports…</div>;
@@ -443,7 +498,17 @@ export default function ReportsPage() {
 
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle>Category-wise Revenue</CardTitle>
+            <div>
+              <CardTitle>Category-wise Revenue</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Revenue from each order's assigned Order category only (not line-item products)
+                {categoryMatrix.periodType === "day"
+                  ? " · one row per day in selected month"
+                  : categoryMatrix.periodType === "month"
+                    ? " · one row per month in selected year"
+                    : ""}
+              </p>
+            </div>
             <Button variant="outline" size="sm" className="rounded-lg" onClick={exportCategoryCsv}>
               <Download className="mr-2 h-4 w-4" />
               Export CSV
@@ -454,21 +519,61 @@ export default function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Order Items</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="sticky left-0 z-10 min-w-[120px] bg-muted/30">
+                      {periodColumnLabel}
+                    </TableHead>
+                    {categoryColumns.map((c) => (
+                      <TableHead
+                        key={`${c.categoryId ?? "none"}-${c.categoryName}`}
+                        className="text-right whitespace-nowrap min-w-[100px]"
+                      >
+                        {c.categoryName}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.categoryWise.map((c) => (
-                    <TableRow key={`${c.categoryId ?? "none"}-${c.categoryName}`}>
-                      <TableCell className="font-medium">{c.categoryName}</TableCell>
-                      <TableCell className="text-right">{c.orderItems}</TableCell>
-                      <TableCell className="text-right">{c.quantity}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatInr(c.revenue)}</TableCell>
+                  {periodRows.length === 0 || categoryColumns.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={categoryColumns.length + 1}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        No category revenue in this period.
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    <>
+                      {periodRows.map((row) => (
+                        <TableRow key={row.key}>
+                          <TableCell className="font-medium sticky left-0 z-10 bg-card whitespace-nowrap">
+                            {categoryMatrix.periodType === "day"
+                              ? formatReportDateYmd(row.key)
+                              : row.label}
+                          </TableCell>
+                          {row.cells.map((amount, idx) => (
+                            <TableCell
+                              key={`${row.key}-${categoryColumns[idx]?.categoryId ?? idx}`}
+                              className="text-right tabular-nums text-muted-foreground"
+                            >
+                              {amount > 0 ? formatInr(amount) : "—"}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/20 font-semibold">
+                        <TableCell className="sticky left-0 z-10 bg-muted/20">Total</TableCell>
+                        {categoryColumns.map((c) => (
+                          <TableCell
+                            key={`total-${c.categoryId ?? "none"}`}
+                            className="text-right tabular-nums"
+                          >
+                            {c.totalRevenue > 0 ? formatInr(c.totalRevenue) : "—"}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </>
+                  )}
                 </TableBody>
               </Table>
             </div>

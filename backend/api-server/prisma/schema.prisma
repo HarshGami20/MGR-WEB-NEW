@@ -231,6 +231,7 @@ model Category {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   products Product[]
+  orders   Order[]
 
   @@map("categories")
 }
@@ -351,6 +352,8 @@ model Order {
   paidAmount        Decimal  @default(0) @map("paid_amount") @db.Decimal(12, 2)
   notes             String?
   branchId          Int?     @map("branch_id")
+  /** Main (or sub) category chosen for this order — used in category-wise revenue reports */
+  categoryId        Int?     @map("category_id")
   deliverySlotId    Int?     @map("delivery_slot_id")
   /** Logistics: pending | out_for_delivery | delivered (separate from main order status) */
   deliveryStatus    String   @default("pending") @map("delivery_status")
@@ -362,6 +365,7 @@ model Order {
   updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   branch       Branch?       @relation(fields: [branchId], references: [id])
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   deliverySlot DeliverySlot? @relation(fields: [deliverySlotId], references: [id], onDelete: SetNull)
   assignedTo   User?         @relation("OrderAssignee", fields: [assignedToId], references: [id])
   createdBy    User?         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)

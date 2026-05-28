@@ -27,6 +27,7 @@ const SCALAR_FIELDS = [
   "deliveryDate",
   "deliverySlotId",
   "branchId",
+  "categoryId",
   "assignedToId",
   "isGst",
 ] as const satisfies readonly (keyof Order)[];

@@ -5,6 +5,7 @@ import {
   useGetOrder,
   useListAssignableOrderUsers,
   useListProducts,
+  useListCategories,
   useGetSettings,
   useUpdateOrder,
   getGetOrderQueryKey,
@@ -72,6 +73,7 @@ const orderSchema = z.object({
   isGst: z.boolean(),
   customerGstNumber: zodFields.gstNumberOptional(),
   items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
+  categoryId: z.number().int().positive().nullable().optional(),
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
   advanceAmount: z.coerce.number().min(0).default(0),
@@ -171,6 +173,7 @@ const ORDER_FORM_DEFAULTS: OrderFormValues = {
   isGst: false,
   customerGstNumber: "",
   items: [{ ...defaultCatalogLineItem }],
+  categoryId: null,
   status: "order_received",
   paymentStatus: "due",
   advanceAmount: 0,
@@ -285,6 +288,14 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         : selectedBranchId;
 
   const { data: productsData } = useListProducts({ limit: 1000 });
+  const { data: categoriesData } = useListCategories();
+  const mainCategories = useMemo(() => {
+    const roots = Array.isArray(categoriesData) ? categoriesData : [];
+    return roots
+      .filter((c: { id: number; name: string }) => c?.id && c?.name)
+      .map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categoriesData]);
   const { data: settingsData } = useGetSettings();
   const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
   const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
@@ -596,6 +607,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       isGst: !!data.isGst,
       customerGstNumber: data.customerGstNumber || null,
       items: data.items.map((item) => lineItemToApiPayload(item)),
+      categoryId: data.categoryId ?? null,
       status: isEdit ? data.status : "order_received",
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
@@ -918,6 +930,39 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 </Button>
             </div>
 
+            <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">Order category</h2>
+              </div>
+              <FormField
+                control={form.control}
+                name="categoryId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select
+                      value={field.value != null && field.value > 0 ? String(field.value) : "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v, 10))}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="max-w-md">
+                          <SelectValue placeholder="Select main category (optional)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">Not specified</SelectItem>
+                        {mainCategories.map((cat) => (
+                          <SelectItem key={cat.id} value={String(cat.id)}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormSection
               title="Delivery"

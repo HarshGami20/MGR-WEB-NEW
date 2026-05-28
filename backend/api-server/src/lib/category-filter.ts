@@ -38,6 +38,53 @@ export function orderHasProductInCategories(ids: number[]): Prisma.OrderWhereInp
   };
 }
 
+/** Match orders by Order category field only (set on create/edit — not line items). */
+export function orderMatchesCategoryFilter(ids: number[]): Prisma.OrderWhereInput {
+  return { categoryId: { in: ids } };
+}
+
+export function categoryNodeById(nodes: CategoryNode[]): Map<number, CategoryNode> {
+  return new Map(nodes.map((n) => [n.id, n]));
+}
+
+/** Walk parent chain to the top-level (main) category id. */
+export function resolveMainCategoryId(
+  categoryId: number | null | undefined,
+  byId: Map<number, CategoryNode>,
+): number | null {
+  if (categoryId == null) return null;
+  let cur = byId.get(categoryId);
+  if (!cur) return null;
+  while (cur.parentId != null) {
+    const parent = byId.get(cur.parentId);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur.id;
+}
+
+export function mainCategoryName(
+  mainCategoryId: number | null,
+  byId: Map<number, CategoryNode>,
+): string {
+  if (mainCategoryId == null) return "Uncategorized";
+  return byId.get(mainCategoryId)?.name ?? "Uncategorized";
+}
+
+/** Parse order body categoryId; must reference an existing main category (parentId null). */
+export async function parseOrderCategoryId(raw: unknown): Promise<number | null | "invalid"> {
+  if (raw === null || raw === undefined || raw === "" || raw === "none") return null;
+  const id = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+  if (!Number.isFinite(id) || id <= 0) return "invalid";
+  const cat = await prisma.category.findUnique({
+    where: { id },
+    select: { id: true, parentId: true },
+  });
+  if (!cat) return "invalid";
+  if (cat.parentId != null) return "invalid";
+  return cat.id;
+}
+
 export function purchaseOrderHasProductInCategories(ids: number[]): Prisma.PurchaseOrderWhereInput {
   return {
     items: {
