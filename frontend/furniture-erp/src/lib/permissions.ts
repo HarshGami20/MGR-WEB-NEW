@@ -155,7 +155,7 @@ export function usePermissions() {
       settings: { view: true },
       purchaseOrders: { view: true, edit: true },
       products: { view: true },
-      complaints: { view: true, add: true, edit: true },
+      complaints: { view: true, edit: true },
     };
 
     const can = (module: string, action: PermissionUiAction): boolean => {

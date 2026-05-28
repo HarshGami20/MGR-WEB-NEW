@@ -508,11 +508,11 @@ export default function ComplaintsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Complaints</h2>
           <p className="text-muted-foreground">
             {partnerUser
-              ? "Raise and track issues on your purchase orders"
+              ? "View and track issues on your purchase orders"
               : "Manage complaints for sales orders and purchase orders"}
           </p>
         </div>
-        {can("complaints", "add") && (
+        {can("complaints", "add") && !partnerUser && (
           <Button
             onClick={() => {
               resetForm();

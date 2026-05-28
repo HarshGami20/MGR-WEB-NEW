@@ -148,7 +148,7 @@ async function enrichPO(po: any) {
 }
 
 router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
-  const { type, status, branchId, page = "1", limit = "20", openOnly, createdFrom, createdTo, categoryId } =
+  const { type, status, branchId, page = "1", limit = "20", openOnly, createdFrom, createdTo, categoryId, search } =
     req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -193,6 +193,20 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", 
       where.AND = [where, catClause];
     } else {
       Object.assign(where, catClause);
+    }
+  }
+
+  const q = typeof search === "string" ? search.trim() : "";
+  if (q) {
+    const searchClause: Prisma.PurchaseOrderWhereInput = {
+      poNumber: { contains: q, mode: "insensitive" },
+    };
+    if (where.AND) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), searchClause];
+    } else if (Object.keys(where).length > 0) {
+      where.AND = [where, searchClause];
+    } else {
+      Object.assign(where, searchClause);
     }
   }
 

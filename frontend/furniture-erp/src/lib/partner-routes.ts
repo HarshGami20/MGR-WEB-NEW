@@ -11,7 +11,6 @@ export function partnerAllowedPath(location: string): boolean {
   if (/^\/complaints\/\d+$/.test(location)) return true;
   if (location === "/notifications") return true;
   if (location === "/settings") return true;
-  if (location === "/curtain-calculator") return true;
   return false;
 }
 

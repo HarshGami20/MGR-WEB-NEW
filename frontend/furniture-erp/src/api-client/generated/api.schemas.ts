@@ -961,6 +961,10 @@ createdTo?: string;
  * Filter purchase orders that include at least one catalog product in this category (includes child categories when a parent is selected).
  */
 categoryId?: number;
+/** Case-insensitive match on PO number. */
+search?: string;
+/** When true, only non-delivered/non-cancelled orders. */
+openOnly?: string;
 };
 
 export type ListPurchaseOrdersType = typeof ListPurchaseOrdersType[keyof typeof ListPurchaseOrdersType];

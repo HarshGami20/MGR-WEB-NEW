@@ -49,9 +49,11 @@ export default function Settings() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can } = usePermissions();
-  const canEdit = can("settings", "edit");
+  const canManageCompanySettings = can("settings", "edit");
 
-  const { data: settingsData, isLoading } = useGetSettings();
+  const { data: settingsData, isLoading } = useGetSettings({
+    query: { enabled: canManageCompanySettings },
+  });
 
   const updateSettings = useUpdateSettings({
     mutation: {
@@ -206,7 +208,7 @@ export default function Settings() {
     event.currentTarget.value = "";
   };
 
-  if (isLoading) {
+  if (canManageCompanySettings && isLoading) {
     return <div className="p-8">Loading settings...</div>;
   }
 
@@ -214,19 +216,23 @@ export default function Settings() {
     <div className="space-y-6 max-w-4xl pb-10">
       <div>
         <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Settings2 className="h-6 w-6 text-primary" />
-          System Settings
+          {/* <Settings2 className="h-6 w-6 text-primary" /> */}
+          {canManageCompanySettings ? "System Settings" : "Account Settings"}
         </h2>
-        <p className="text-muted-foreground">Manage your company profile and application preferences</p>
-        {!canEdit && (
-          <p className="text-sm text-muted-foreground mt-2 rounded-md border bg-muted/40 px-3 py-2">
-            You have read-only access. Editing requires Settings → Edit permission.
-          </p>
-        )}
+        <p className="text-muted-foreground">
+          {canManageCompanySettings
+            ? "Manage your company profile and application preferences"
+            : "Update your profile and password"}
+        </p>
       </div>
 
       <Form {...form}>
-        <form onSubmit={canEdit ? form.handleSubmit(onSubmit) : (e) => e.preventDefault()} className="space-y-8">
+        <form
+          onSubmit={
+            canManageCompanySettings ? form.handleSubmit(onSubmit) : (e) => e.preventDefault()
+          }
+          className="space-y-8"
+        >
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -481,7 +487,9 @@ export default function Settings() {
               </Form>
             </CardContent>
           </Card>
-          
+
+          {canManageCompanySettings ? (
+          <>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -501,7 +509,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Company Name</FormLabel>
                       <FormControl>
-                        <ValidatedInput field={field} rule="companyName" disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="companyName" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -514,7 +522,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>GSTIN</FormLabel>
                       <FormControl>
-                        <ValidatedInput field={field} rule="gstNumber" disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="gstNumber" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -530,7 +538,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
                       <FormControl>
-                        <Input type="email" {...field} value={field.value || ""} disabled={!canEdit} />
+                        <Input type="email" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -543,7 +551,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Contact Phone</FormLabel>
                       <FormControl>
-                        <ValidatedInput field={field} rule="mobile" disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="mobile" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -558,7 +566,7 @@ export default function Settings() {
                   <FormItem>
                     <FormLabel>Registered Address</FormLabel>
                     <FormControl>
-                      <ValidatedInput field={field} rule="address" disabled={!canEdit} />
+                      <ValidatedInput field={field} rule="address" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -586,7 +594,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Invoice Prefix</FormLabel>
                       <FormControl>
-                        <ValidatedInput field={field} rule="invoicePrefix" placeholder="e.g. INV-2024-" disabled={!canEdit} />
+                        <ValidatedInput field={field} rule="invoicePrefix" placeholder="e.g. INV-2024-" />
                       </FormControl>
                       <p className="text-xs text-muted-foreground mt-1">
                         Resulting invoice: {field.value}0001
@@ -602,7 +610,7 @@ export default function Settings() {
                     <FormItem>
                       <FormLabel>Default GST Rate (%)</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} disabled={!canEdit} />
+                        <Input type="number" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -612,13 +620,13 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          {canEdit && (
           <div className="flex justify-end">
             <Button type="submit" size="lg" disabled={updateSettings.isPending}>
               {updateSettings.isPending ? "Saving..." : "Save Settings"}
             </Button>
           </div>
-          )}
+          </>
+          ) : null}
         </form>
       </Form>
     </div>

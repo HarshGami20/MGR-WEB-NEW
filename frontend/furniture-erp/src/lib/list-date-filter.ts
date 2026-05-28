@@ -7,6 +7,8 @@ import {
   ymdToDate,
 } from "@/lib/date-range";
 
+export type { DateRangeValue };
+
 /** Maps list pages to consistent date filter labels. */
 export type ListDateFilterContext =
   | "orders"

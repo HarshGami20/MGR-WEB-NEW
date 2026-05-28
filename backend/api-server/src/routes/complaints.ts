@@ -300,14 +300,15 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
   }
 
   const partnerScope = await getPartnerScope(req);
-  let kind = parsed.data.kind;
   if (partnerScope) {
-    if (kind !== "purchase_order") {
-      res.status(403).json({ error: "Forbidden", message: "Portal users can only raise purchase order complaints" });
-      return;
-    }
-    kind = "purchase_order";
+    res.status(403).json({
+      error: "Forbidden",
+      message: "Supplier and manufacturer portal users cannot raise complaints",
+    });
+    return;
   }
+
+  let kind = parsed.data.kind;
 
   const imageUrls =
     parsed.data.imageUrls && parsed.data.imageUrls.length > 0 ? JSON.stringify(parsed.data.imageUrls) : null;

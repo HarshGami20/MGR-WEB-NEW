@@ -9,7 +9,7 @@ function portalPermissionsJson(): string {
     dashboard: { view: true, add: false, edit: false, delete: false },
     purchaseOrders: { view: true, add: false, edit: true, delete: false },
     products: { view: true, add: false, edit: false, delete: false },
-    complaints: { view: true, add: true, edit: true, delete: false },
+    complaints: { view: true, add: false, edit: true, delete: false },
     settings: { view: true, add: false, edit: false, delete: false },
   };
   return JSON.stringify(ensureFullUiPermissionsMatrix(partial));
@@ -19,7 +19,7 @@ async function ensurePortalRoleId(name: string): Promise<number> {
   const role = await prisma.role.upsert({
     where: { name },
     create: { name, permissions: portalPermissionsJson() },
-    update: {},
+    update: { permissions: portalPermissionsJson() },
     select: { id: true },
   });
   return role.id;

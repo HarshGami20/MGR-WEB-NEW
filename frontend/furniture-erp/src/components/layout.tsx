@@ -143,7 +143,6 @@ function partnerNavItemsForUser(user: { supplierId?: number | null; manufacturer
     { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
     { label: "Notifications", href: "/notifications", icon: Bell },
     { label: "Settings", href: "/settings", icon: Settings },
-    { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
   ];
 }
 
@@ -767,14 +766,14 @@ export default function Layout({ children }: LayoutProps) {
                   <AvatarImage src={(user as any)?.avatarUrl || undefined} alt={user?.name || "User"} />
                   <AvatarFallback className="text-xs rounded-2xl bg-primary/15 text-primary font-bold">{getInitials(user?.name)}</AvatarFallback>
                 </Avatar>
-                {!partnerUser && (
+                {/* {!partnerUser && ( */}
                   <div className="hidden lg:flex flex-col items-start min-w-0">
                     <span className="text-sm font-semibold truncate max-w-[140px] leading-tight">{user?.name}</span>
                     <span className="text-xs text-muted-foreground truncate max-w-[180px]">
                       {(user?.email ?? user?.mobile) || user?.role?.name}
                     </span>
                   </div>
-                )}
+                {/* )} */}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
