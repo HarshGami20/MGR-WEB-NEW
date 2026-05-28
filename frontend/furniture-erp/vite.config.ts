@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
     base: basePath,
     optimizeDeps: {
       include: ["pdfmake/build/pdfmake.js", "pdfmake/build/vfs_fonts.js"],
+      needsInterop: ["pdfmake/build/pdfmake.js", "pdfmake/build/vfs_fonts.js"],
     },
     plugins: [
       react(),
@@ -56,6 +57,9 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist/public"),
       emptyOutDir: true,
+      commonjsOptions: {
+        transformMixedEsModules: true,
+      },
     },
     server: {
       port,

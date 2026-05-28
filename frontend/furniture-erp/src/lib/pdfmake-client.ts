@@ -1,4 +1,7 @@
 import type { TDocumentDefinitions } from "pdfmake/interfaces";
+// Static imports avoid a separate lazy chunk (fixes "Failed to fetch dynamically imported module" on LAN/IP hosts).
+import pdfMakeModule from "pdfmake/build/pdfmake.js";
+import vfsFontsModule from "pdfmake/build/vfs_fonts.js";
 
 /** Browser pdfmake instance (pdfmake 0.3+ singleton with createPdf). */
 export type PdfMakeBrowser = {
@@ -27,23 +30,34 @@ function assertRobotoFonts(vfs: Record<string, string>): void {
   }
 }
 
-/** Lazy-load pdfmake + vfs fonts for browser PDF downloads (Vite-compatible). */
-export async function getPdfMake(): Promise<PdfMakeBrowser> {
-  const [pdfMakeMod, vfsMod] = await Promise.all([
-    import("pdfmake/build/pdfmake.js"),
-    import("pdfmake/build/vfs_fonts.js"),
-  ]);
-  const pdfMake =
-    (pdfMakeMod as unknown as { default?: PdfMakeBrowser }).default ?? (pdfMakeMod as unknown as PdfMakeBrowser);
-  const vfs =
-    (vfsMod as { default?: Record<string, string> }).default ?? (vfsMod as unknown as Record<string, string>);
+let pdfMakeInstance: PdfMakeBrowser | null = null;
+
+function resolvePdfMakeModule(mod: unknown): PdfMakeBrowser {
+  return (mod as { default?: PdfMakeBrowser }).default ?? (mod as PdfMakeBrowser);
+}
+
+function resolveVfs(mod: unknown): Record<string, string> {
+  return (mod as { default?: Record<string, string> }).default ?? (mod as Record<string, string>);
+}
+
+function initializePdfMake(): PdfMakeBrowser {
+  if (pdfMakeInstance) return pdfMakeInstance;
+
+  const pdfMake = resolvePdfMakeModule(pdfMakeModule);
+  const vfs = resolveVfs(vfsFontsModule);
   assertRobotoFonts(vfs);
-  if (typeof pdfMake.addVirtualFileSystem === "function") {
-    pdfMake.addVirtualFileSystem(vfs);
-  } else {
+
+  if (typeof pdfMake.addVirtualFileSystem !== "function") {
     throw new Error("Unsupported pdfmake version.");
   }
-  return pdfMake;
+  pdfMake.addVirtualFileSystem(vfs);
+  pdfMakeInstance = pdfMake;
+  return pdfMakeInstance;
+}
+
+/** pdfmake + vfs fonts (initialized once per page load). */
+export async function getPdfMake(): Promise<PdfMakeBrowser> {
+  return initializePdfMake();
 }
 
 /** Generate a PDF and download it via a direct browser save (works without file-saver). */
