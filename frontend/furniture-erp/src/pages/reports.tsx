@@ -500,14 +500,14 @@ export default function ReportsPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle>Category-wise Revenue</CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
+              {/* <p className="text-xs text-muted-foreground mt-1">
                 Revenue from each order's assigned Order category only (not line-item products)
                 {categoryMatrix.periodType === "day"
                   ? " · one row per day in selected month"
                   : categoryMatrix.periodType === "month"
                     ? " · one row per month in selected year"
                     : ""}
-              </p>
+              </p> */}
             </div>
             <Button variant="outline" size="sm" className="rounded-lg" onClick={exportCategoryCsv}>
               <Download className="mr-2 h-4 w-4" />
