@@ -450,7 +450,7 @@
             <div className="space-y-6 lg:col-span-8">
               <DetailSection
                 title="Purchase order details"
-                description={`${items.length} product${items.length === 1 ? "" : "s"} on this purchase order`}
+                // description={`${items.length} product${items.length === 1 ? "" : "s"} on this purchase order`}
               >
                 {vendor ? (
                   <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50">
@@ -633,7 +633,7 @@
               {!partnerUser ? (
               <DetailSection
                 title="Staff comments"
-                description="Internal notes visible to staff"
+                // description="Internal notes visible to staff"
                 action={
                   can("purchaseOrders", "edit") && !showStaffCommentForm ? (
                     <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setShowStaffCommentForm(true)}>
@@ -702,7 +702,7 @@
 
             {/* Sidebar — summary, status, vendor, schedule */}
             <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
-              <DetailSection title="Summary" description="Amount and delivery">
+              <DetailSection title="Summary" >
                 <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground flex items-center gap-1.5">
@@ -724,17 +724,17 @@
                     <span className="font-medium">{items.length}</span>
                   </div>
                 </div>
-                {!partnerUser && po.status === "delivered" ? (
+                {/* {!partnerUser && po.status === "delivered" ? (
                   <p className="text-xs text-muted-foreground rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-green-800">
                     Stock was added to inventory when this PO was marked delivered.
                   </p>
-                ) : null}
+                ) : null} */}
               </DetailSection>
 
               {can("purchaseOrders", "edit") ? (
                 <DetailSection
                   title={partnerUser ? "Delivery status" : "Status"}
-                  description={partnerUser ? "Update progress for this order" : "Update procurement progress"}
+                  // description={partnerUser ? "Update progress for this order" : "Update procurement progress"}
                 >
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -772,7 +772,7 @@
               ) : null}
 
               {can("purchaseOrders", "edit") && !partnerUser ? (
-                <DetailSection title="Schedule & notes" description="Expected delivery and internal notes">
+                <DetailSection title="Schedule & notes" >
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Expected delivery</label>

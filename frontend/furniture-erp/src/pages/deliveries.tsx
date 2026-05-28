@@ -694,15 +694,6 @@ export default function DeliveriesPage() {
           <Card>
             <CardHeader>
               <CardTitle>Booked deliveries</CardTitle>
-              <CardDescription>
-                All orders with a delivery date, grouped by day. Use the filter to narrow the list.
-                Users with Orders or Deliveries edit permission can update delivery status.
-                {/* {bookedRange.fromYmd && bookedRange.toYmd ? (
-                  <span className="block mt-1 text-foreground/90 tabular-nums">
-                    Showing {bookedRange.fromYmd} → {bookedRange.toYmd}
-                  </span>
-                ) : null} */}
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
@@ -761,9 +752,7 @@ export default function DeliveriesPage() {
                   <Truck className="h-5 w-5" />
                   Drivers
                 </CardTitle>
-                <CardDescription>
-                  Assign drivers on booked deliveries. Open a driver to see all deliveries and record payments.
-                </CardDescription>
+               
               </div>
               {can("deliveries", "add") ? (
                 <Link href="/drivers">

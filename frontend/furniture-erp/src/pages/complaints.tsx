@@ -611,11 +611,11 @@ export default function ComplaintsPage() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Register complaint</DialogTitle>
-            <DialogDescription>
+            {/* <DialogDescription>
               {isPoTab
                 ? "Link a purchase order, describe the issue, and attach photos if needed."
                 : "Link a sales order, describe the issue, and attach photos if needed."}
-            </DialogDescription>
+            </DialogDescription> */}
           </DialogHeader>
           <div className="space-y-4 py-2">
             {isPoTab ? (
@@ -735,9 +735,9 @@ export default function ComplaintsPage() {
                         : "Select staff who will handle this complaint…"
                   }
                 />
-                <p className="text-xs text-muted-foreground">
+                {/* <p className="text-xs text-muted-foreground">
                   Only assigned staff and Super Admin can change complaint status.
-                </p>
+                </p> */}
               </div>
             ) : null}
 
@@ -754,7 +754,7 @@ export default function ComplaintsPage() {
             <div className="space-y-3 border-t border-border/60 pt-4">
               <div>
                 <p className="text-sm font-semibold">Issue photos</p>
-                <p className="text-xs text-muted-foreground">Optional. Camera or gallery.</p>
+                {/* <p className="text-xs text-muted-foreground">Optional. Camera or gallery.</p> */}
               </div>
               <input
                 id="complaint-create-photo-input"

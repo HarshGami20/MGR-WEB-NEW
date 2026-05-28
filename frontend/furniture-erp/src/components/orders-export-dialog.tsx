@@ -132,9 +132,7 @@ export function OrdersExportDialog({ categoryId, triggerClassName }: OrdersExpor
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Includes customer, amounts, payments, line items, assignees, staff/delivery/site comments, and more.
-          </p>
+    
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={exporting}>

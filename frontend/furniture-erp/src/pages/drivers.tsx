@@ -219,9 +219,6 @@ export default function DriversPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Drivers</h1>
-          <p className="text-sm text-muted-foreground">
-            Delivery personnel, assigned deliveries, and driver payments.
-          </p>
         </div>
         {can("deliveries", "add") && (
           <Button className="rounded-xl" onClick={openCreate}>

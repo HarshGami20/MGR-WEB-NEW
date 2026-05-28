@@ -158,9 +158,6 @@ export default function DriverDetailPage() {
             <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Deliveries</h2>
-                <p className="text-xs text-muted-foreground">
-                  {orders.length} order{orders.length === 1 ? "" : "s"} assigned to this driver
-                </p>
               </div>
               {orders.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No deliveries assigned yet.</p>
@@ -206,9 +203,6 @@ export default function DriverDetailPage() {
             <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6 space-y-4">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Payment history</h2>
-                <p className="text-xs text-muted-foreground">
-                  {driver.payments.length} payment{driver.payments.length === 1 ? "" : "s"} recorded
-                </p>
               </div>
               {driver.payments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No payments recorded.</p>
@@ -270,7 +264,6 @@ export default function DriverDetailPage() {
             <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-3">
               <div>
                 <h2 className="text-base font-semibold tracking-tight">Payment summary</h2>
-                <p className="text-xs text-muted-foreground">Delivery charges vs payments to driver</p>
               </div>
               <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -295,7 +288,6 @@ export default function DriverDetailPage() {
                   <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
                     Record payment
                   </h2>
-                  <p className="text-xs text-muted-foreground">Pay driver for a delivery or general.</p>
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-2">

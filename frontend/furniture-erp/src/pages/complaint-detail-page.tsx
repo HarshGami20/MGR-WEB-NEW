@@ -282,13 +282,13 @@ export default function ComplaintDetailPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-6 lg:col-span-8">
-            <DetailSection title="Issue description" description="Reported problem details">
+            <DetailSection title="Issue description" >
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{complaint.description}</p>
             </DetailSection>
 
             <DetailSection
               title={isPoComplaint ? "Purchase order" : "Customer & order"}
-              description={isPoComplaint ? "Linked purchase order" : "Linked sales order and customer"}
+              // description={isPoComplaint ? "Linked purchase order" : "Linked sales order and customer"}
             >
               {isPoComplaint ? (
                 purchaseOrder ? (
@@ -401,7 +401,7 @@ export default function ComplaintDetailPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
 
           <div className="lg:col-span-6">
-            <DetailSection title="Complaint status" description="Workflow state">
+            <DetailSection title="Complaint status" >
               {mayChangeStatus ? (
                 <Select
                   value={complaint.status}
@@ -438,7 +438,7 @@ export default function ComplaintDetailPage() {
             {!partnerUser ? (
               <DetailSection
                 title="Assigned staff"
-                description="Only assignees and Super Admin can update status"
+                // description="Only assignees and Super Admin can update status"
               >
                 {mayEditAssignees ? (
                   branchIdForAssignees != null ? (
@@ -483,11 +483,11 @@ export default function ComplaintDetailPage() {
 
             <DetailSection
               title="Comments"
-              description={
-                partnerUser
-                  ? "Discussion with MGR CASA on this complaint"
-                  : "Internal notes (not visible to customers)"
-              }
+              // description={
+              //   partnerUser
+              //     ? "Discussion with MGR CASA on this complaint"
+              //     : "Internal notes (not visible to customers)"
+              // }
             >
               {complaint.comments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No comments yet.</p>
@@ -530,7 +530,7 @@ export default function ComplaintDetailPage() {
 
           {(isPoComplaint && purchaseOrder?.items && purchaseOrder.items.length > 0) ||
             (!isPoComplaint && order?.items && order.items.length > 0) ? (
-              <DetailSection title="Line items" description="Products on the linked document">
+              <DetailSection title="Line items" >
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -561,7 +561,7 @@ export default function ComplaintDetailPage() {
             ) : null}
 
 
-            <DetailSection title="Issue photos" description="Photos of the issue">
+            <DetailSection title="Issue photos" >
               <input
                 id="complaint-detail-photo-input"
                 type="file"

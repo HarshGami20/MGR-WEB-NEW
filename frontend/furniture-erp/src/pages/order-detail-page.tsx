@@ -630,7 +630,7 @@ export default function OrderDetailPage() {
           <div className="space-y-6 lg:col-span-8">
             <DetailSection
               title="Order Details"
-              description={`${itemCount} item${itemCount === 1 ? "" : "s"} on this order`}
+              // description={`${itemCount} item${itemCount === 1 ? "" : "s"} on this order`}
             >
               <div className="rounded-lg border bg-muted/10 px-3 py-2.5 pb-3 mb-3 border-b border-border/50">
                 <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
@@ -796,7 +796,7 @@ export default function OrderDetailPage() {
 
             <DetailSection
               title="Challan & photos"
-              description={`${challanImages.length} challan image${challanImages.length === 1 ? "" : "s"}`}
+              // description={`${challanImages.length} challan image${challanImages.length === 1 ? "" : "s"}`}
             >
               {challanImages.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No challan images uploaded.</p>
@@ -860,7 +860,7 @@ export default function OrderDetailPage() {
 
             <DetailSection
               title="Staff comments"
-              description="Internal notes visible to staff"
+              // description="Internal notes visible to staff"
               action={
                 canEditOrders && !showStaffCommentForm ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowStaffCommentForm(true)}>
@@ -925,7 +925,7 @@ export default function OrderDetailPage() {
 
             <DetailSection
               title="Delivery notes"
-              description="Driver instructions, gate codes, reschedule notes"
+              // description="Driver instructions, gate codes, reschedule notes"
               action={
                 canEditOrders && !showDeliveryCommentForm ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowDeliveryCommentForm(true)}>
@@ -1011,7 +1011,7 @@ export default function OrderDetailPage() {
           </div>
 
           <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
-            <DetailSection title="Payment summary" description="Totals and balance">
+            <DetailSection title="Payment summary" >
               <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
                 {order.isGst ? (
                   <>
@@ -1049,7 +1049,7 @@ export default function OrderDetailPage() {
             </DetailSection>
 
             {canAddPayments ? (
-            <DetailSection title="Record payment" description="Add payments against this order">
+            <DetailSection title="Record payment" >
               <div className="space-y-3">
                 <div
                   className={cn(
@@ -1213,7 +1213,7 @@ export default function OrderDetailPage() {
             </DetailSection>
             ) : null}
 
-            <DetailSection title="Delivery status" description="Driver, charge, and logistics status">
+            <DetailSection title="Delivery status" >
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">{deliveryStatusBadge(serverDeliveryStatus)}</div>
                 {orderAny.driver?.name ? (
@@ -1297,7 +1297,7 @@ export default function OrderDetailPage() {
               </div>
             </DetailSection>
 
-            <DetailSection title="Order status" description="Manufacturing progress and payment status">
+            <DetailSection title="Order status" >
               {canEditOrders ? (
                 <div className="space-y-4">
                   <div className="space-y-2">
