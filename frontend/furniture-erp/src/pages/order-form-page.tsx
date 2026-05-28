@@ -470,13 +470,14 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         gstPercent: Number(item?.gstPercent || 0),
       })),
       isGstInvoice,
+      defaultGstPercent,
     );
     const advance = Number(watchedAdvance ?? 0);
     return {
       ...totals,
       remaining: Math.max(0, totals.total - advance),
     };
-  }, [watchedItems, watchedAdvance, isGstInvoice]);
+  }, [watchedItems, watchedAdvance, isGstInvoice, defaultGstPercent]);
 
   const otherPaidOnOrder = useMemo(() => {
     if (!isEdit || !order) return 0;
@@ -546,6 +547,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         gstPercent: Number(item.gstPercent || 0),
       })),
       !!data.isGst,
+      defaultGstPercent,
     );
     const nextAdvance = Number(data.advanceAmount ?? 0);
     const maxAdvanceAllowed =

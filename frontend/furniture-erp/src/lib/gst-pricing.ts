@@ -26,41 +26,54 @@ export type OrderTotalsSummary = {
   enteredLinesTotal: number;
 };
 
-/** Form lines use GST-inclusive unit prices when `pricesIncludeGst` is true. */
+/**
+ * Payment summary for the order form. Line amounts never change when toggling GST;
+ * `showGstBreakdown` only controls whether subtotal + GST rows are shown.
+ */
 export function computeOrderTotalsFromLines(
   lines: GstLineInput[],
-  pricesIncludeGst: boolean,
+  showGstBreakdown: boolean,
+  defaultGstPercent = 18,
 ): OrderTotalsSummary {
+  let enteredLinesTotal = 0;
+  for (const line of lines) {
+    const qty = Number(line.quantity) || 0;
+    const unit = Number(line.unitPrice) || 0;
+    enteredLinesTotal += unit * qty;
+  }
+  enteredLinesTotal = roundMoney(enteredLinesTotal);
+
+  if (!showGstBreakdown) {
+    return {
+      taxableSubtotal: enteredLinesTotal,
+      taxAmount: 0,
+      total: enteredLinesTotal,
+      enteredLinesTotal,
+    };
+  }
+
   let taxableSubtotal = 0;
   let taxAmount = 0;
-  let enteredLinesTotal = 0;
-
   for (const line of lines) {
     const qty = Number(line.quantity) || 0;
     const unit = Number(line.unitPrice) || 0;
     const gst = Number(line.gstPercent) || 0;
-    enteredLinesTotal += unit * qty;
-
-    if (pricesIncludeGst && gst > 0) {
-      const exUnit = exclusiveUnitFromInclusive(unit, gst);
+    const rate = gst > 0 ? gst : defaultGstPercent;
+    const lineTotal = roundMoney(unit * qty);
+    if (rate > 0) {
+      const exUnit = exclusiveUnitFromInclusive(unit, rate);
       const lineTaxable = roundMoney(exUnit * qty);
-      const lineTotal = roundMoney(unit * qty);
       taxableSubtotal += lineTaxable;
       taxAmount += roundMoney(lineTotal - lineTaxable);
-    } else if (!pricesIncludeGst && gst > 0) {
-      const lineTaxable = roundMoney(unit * qty);
-      taxableSubtotal += lineTaxable;
-      taxAmount += roundMoney((lineTaxable * gst) / 100);
     } else {
-      const lineTaxable = roundMoney(unit * qty);
-      taxableSubtotal += lineTaxable;
+      taxableSubtotal += lineTotal;
     }
   }
 
   return {
     taxableSubtotal: roundMoney(taxableSubtotal),
     taxAmount: roundMoney(taxAmount),
-    total: roundMoney(taxableSubtotal + taxAmount),
-    enteredLinesTotal: roundMoney(enteredLinesTotal),
+    total: enteredLinesTotal,
+    enteredLinesTotal,
   };
 }

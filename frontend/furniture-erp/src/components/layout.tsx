@@ -84,7 +84,6 @@ const staffNavSections: StaffSection[] = [
       // { label: "Deliveries", href: "/deliveries", icon: CalendarClock },
       // { label: "Drivers", href: "/drivers", icon: Truck },
       // { label: "Categories", href: "/categories", icon: Tags },
-      { label: "Complaints", href: "/complaints", icon: Headphones },
     ],
   },
 
@@ -142,7 +141,6 @@ function partnerNavItemsForUser(user: { supplierId?: number | null; manufacturer
   return [
     { label: "Dashboard", href: "/dashboard", icon: PanelIcon },
     { label: "Purchase orders", href: "/purchase-orders", icon: ClipboardList },
-    { label: "Complaints", href: "/complaints", icon: Headphones },
     { label: "Notifications", href: "/notifications", icon: Bell },
     { label: "Settings", href: "/settings", icon: Settings },
     { label: "Curtain calculator", href: "/curtain-calculator", icon: Calculator },
@@ -158,6 +156,8 @@ function getPageTitle(location: string, partnerUser: boolean, user?: { supplierI
   if (partnerUser && location === "/purchase-orders") return "Purchase orders";
   if (partnerUser && location.startsWith("/purchase-orders/")) return "Purchase order";
   if (partnerUser && location.startsWith("/products/")) return "Product";
+  if (location === "/complaints") return "Complaints";
+  if (location.startsWith("/complaints/")) return "Complaint";
   if (partnerUser && user) {
     const found = partnerNavItemsForUser(user).find((item) => item.href === location);
     return found?.label ?? "MGR Casa";
@@ -165,7 +165,6 @@ function getPageTitle(location: string, partnerUser: boolean, user?: { supplierI
   const flat = staffNavSections.flatMap((s) => s.items);
   const hit = flat.find((item) => item.href === location);
   if (hit) return hit.label;
-  if (location.startsWith("/complaints/")) return "Complaint";
   if (location.startsWith("/products/")) {
     if (location === "/products/new") return "Add Product";
     if (location.endsWith("/edit")) return "Edit Product";
@@ -409,6 +408,21 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="px-3 pb-4 pt-2 space-y-2 shrink-0 border-t border-border/50">
         <p className="px-3 pb-1 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">General</p>
+        {can("complaints", "view") ? (
+          <Link href="/complaints" className="block" onClick={() => setMobileSidebarOpen(false)}>
+            <span
+              className={cn(
+                "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                location === "/complaints" || location.startsWith("/complaints/")
+                  ? "bg-primary/10 font-semibold text-primary"
+                  : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+              )}
+            >
+              <Headphones className="h-[18px] w-[18px]" />
+              Complaints
+            </span>
+          </Link>
+        ) : null}
         {can("settings", "view") ? (
           <Link href="/settings" className="block" onClick={() => setMobileSidebarOpen(false)}>
             <span className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors">
@@ -507,7 +521,7 @@ export default function Layout({ children }: LayoutProps) {
           </ScrollArea>
 
           <div className="px-3 pb-4 pt-2 space-y-2 shrink-0 border-t border-border/50">
-            <div className="flex items-center gap-3 px-3 py-2 rounded-2xl text-sm">
+            {/* <div className="flex items-center gap-3 px-3 py-2 rounded-2xl text-sm">
               <Avatar className="h-9 w-9 shrink-0">
                 <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
                   {getInitials(user?.name)}
@@ -517,9 +531,24 @@ export default function Layout({ children }: LayoutProps) {
                 <p className="font-medium text-foreground truncate leading-tight">{user?.name}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{user?.role?.name}</p>
               </div>
-            </div>
+            </div> */}
 
             <p className="px-3 pb-1 text-[10px] font-bold text-muted-foreground/80 uppercase tracking-[0.16em]">General</p>
+            {can("complaints", "view") ? (
+              <Link href="/complaints" className="block" onClick={() => setMobileSidebarOpen(false)}>
+                <span
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                    location === "/complaints" || location.startsWith("/complaints/")
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                  )}
+                >
+                  <Headphones className="h-[18px] w-[18px]" />
+                  Complaints
+                </span>
+              </Link>
+            ) : null}
             {can("settings", "view") ? (
               <Link href="/settings" className="block" onClick={() => setMobileSidebarOpen(false)}>
                 <span className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors">
@@ -528,7 +557,7 @@ export default function Layout({ children }: LayoutProps) {
                 </span>
               </Link>
             ) : null}
-            <button
+            {/* <button
               type="button"
               onClick={() => {
                 window.open(import.meta.env.VITE_HELP_URL ?? "mailto:support@mgrcasa.example", "_blank");
@@ -537,7 +566,7 @@ export default function Layout({ children }: LayoutProps) {
             >
               <HelpCircle className="h-[18px] w-[18px]" />
               Help
-            </button>
+            </button> */}
             <button
               type="button"
               className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors font-medium"
@@ -562,7 +591,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">{renderSidebar({ rootClassName: " w-full rounded-2xl h-[calc(100vh-32px)]", staff: true })}</div>
       ) : (
         <div className="hidden md:flex shrink-0 w-[272px] p-4 pl-5">
-          {renderSidebar({ rootClassName: " w-full rounded-[1.65rem] h-[calc(100vh-32px)]" })}
+          {renderSidebar({ rootClassName: " w-full rounded-2xl h-[calc(100vh-32px)]" })}
         </div>
       )}
 
