@@ -5,6 +5,7 @@ import {
   type ComplaintStatusChangedPayload,
   type OrderCreatedPayload,
   type OrderDeliveryUpdatedPayload,
+  type OrderPaymentStatusChangedPayload,
   type OrderStatusChangedPayload,
   type PaymentFollowUpCreatedPayload,
   type PaymentReceivedPayload,
@@ -21,6 +22,7 @@ import {
   copyOrderStatusChanged,
   copyPaymentFollowUpScheduled,
   copyPaymentReceived,
+  copyPaymentStatusChanged,
   copyPurchaseOrderCreated,
   copyPurchaseOrderStatusChanged,
   copyPurchaseOrderUpdated,
@@ -196,6 +198,39 @@ export function registerNotificationEventListeners(): void {
         );
       } catch (err) {
         logger.error({ err }, "PAYMENT_RECEIVED notification listener failed");
+      }
+    })();
+  });
+
+  appEvents.on("ORDER_PAYMENT_STATUS_CHANGED", (payload: OrderPaymentStatusChangedPayload) => {
+    void (async () => {
+      try {
+        const recipientIds = await orderNotificationTargets(payload.orderId);
+        if (recipientIds.length === 0) return;
+        const copy = copyPaymentStatusChanged({
+          orderId: payload.orderId,
+          orderNumber: payload.orderNumber,
+          previousPaymentStatus: payload.previousPaymentStatus,
+          nextPaymentStatus: payload.nextPaymentStatus,
+        });
+        await notificationService.sendToUsers(
+          recipientIds,
+          {
+            title: copy.title,
+            message: copy.message,
+            notificationType: "ORDER_PAYMENT_STATUS_CHANGED",
+            module: "orders",
+            metadata: withActionMeta(copy.actionPath, {
+              orderId: payload.orderId,
+              orderNumber: payload.orderNumber,
+              previousPaymentStatus: payload.previousPaymentStatus,
+              nextPaymentStatus: payload.nextPaymentStatus,
+            }),
+          },
+          { senderUserId: null },
+        );
+      } catch (err) {
+        logger.error({ err }, "ORDER_PAYMENT_STATUS_CHANGED notification listener failed");
       }
     })();
   });

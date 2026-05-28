@@ -5,6 +5,7 @@ import {
   type OrderDeliveryUpdatedPayload,
   type OrderStaffCommentAddedPayload,
   type OrderStatusChangedPayload,
+  type OrderPaymentStatusChangedPayload,
   type OrderUpdatedPayload,
   type PaymentReceivedPayload,
   type PurchaseOrderCreatedPayload,
@@ -31,6 +32,7 @@ import {
   templateOrderStatusChanged,
   templateOrderUpdated,
   templatePaymentReceived,
+  templatePaymentStatusChanged,
   templatePurchaseOrderCreated,
   templatePurchaseOrderStatusChanged,
   templatePurchaseOrderUpdated,
@@ -253,6 +255,31 @@ export function registerWhatsAppEventListeners(): void {
     })();
   });
 
+  appEvents.on("ORDER_PAYMENT_STATUS_CHANGED", (payload: OrderPaymentStatusChangedPayload) => {
+    void (async () => {
+      try {
+        const order = await loadOrderWhatsAppContext(payload.orderId);
+        if (!order) return;
+
+        const changedBy = (await actorName(payload.changedById)) ?? "Staff";
+
+        await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
+          templatePaymentStatusChanged({
+            recipientName: recipient.name,
+            changedByName: changedBy,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            branchName: branchLabel(order),
+            previousPaymentStatus: payload.previousPaymentStatus,
+            nextPaymentStatus: payload.nextPaymentStatus,
+          }),
+        );
+      } catch (err) {
+        logger.error({ err }, "ORDER_PAYMENT_STATUS_CHANGED WhatsApp listener failed");
+      }
+    })();
+  });
+
   appEvents.on("ORDER_DELIVERY_UPDATED", (payload: OrderDeliveryUpdatedPayload) => {
     void (async () => {
       try {
@@ -401,7 +428,7 @@ export function registerWhatsAppEventListeners(): void {
     void (async () => {
       try {
         const updatedBy = (await actorName(payload.updatedById)) ?? "Staff";
-        const recipients = await inventoryUpdateRecipients(payload.updatedById);
+        const recipients = await inventoryUpdateRecipients();
         if (recipients.length === 0) return;
 
         let branchName = "—";
@@ -421,7 +448,6 @@ export function registerWhatsAppEventListeners(): void {
           templateInventoryUpdated({
             recipientName: recipient.name,
             updatedByName: updatedBy,
-            productId: payload.productId,
             branchName,
             inventoryDetail,
             adjustmentType: payload.adjustmentType,

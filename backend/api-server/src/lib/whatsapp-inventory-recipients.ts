@@ -30,12 +30,7 @@ async function superAdminUserIds(): Promise<number[]> {
   return users.filter((u) => isSuperAdminRole(u)).map((u) => u.id);
 }
 
-/** User who updated stock + all Super Admin users (deduped). */
-export async function inventoryUpdateRecipients(
-  updatedById?: number | null,
-): Promise<OrderAssigneeRecipient[]> {
-  const ids = new Set<number>();
-  if (updatedById) ids.add(updatedById);
-  for (const id of await superAdminUserIds()) ids.add(id);
-  return recipientsFromUserIds([...ids]);
+/** All active Super Admin users with a valid WhatsApp mobile. */
+export async function inventoryUpdateRecipients(): Promise<OrderAssigneeRecipient[]> {
+  return recipientsFromUserIds(await superAdminUserIds());
 }

@@ -16,6 +16,15 @@ export type PaymentReceivedPayload = {
   recordedById?: number | null;
 };
 
+export type OrderPaymentStatusChangedPayload = {
+  orderId: number;
+  orderNumber: string;
+  branchId: number | null;
+  previousPaymentStatus: string;
+  nextPaymentStatus: string;
+  changedById?: number | null;
+};
+
 export type OrderStaffCommentAddedPayload = {
   orderId: number;
   orderNumber: string;

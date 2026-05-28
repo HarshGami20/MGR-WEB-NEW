@@ -17,6 +17,7 @@ import {
 import type { Prisma } from "@prisma/client";
 import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
+import { emitOrderPaymentStatusChangedIfNeeded } from "../lib/order-payment-status-events";
 import { assigneeIdsKey, orderHasNonWorkflowFieldChanges } from "../lib/order-update-detect";
 import {
   findNewStaffComments,
@@ -1483,6 +1484,15 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     });
   }
 
+  emitOrderPaymentStatusChangedIfNeeded(
+    id,
+    order.orderNumber,
+    order.branchId,
+    (existingOrder as { paymentStatus?: string | null }).paymentStatus,
+    order.paymentStatus,
+    actorId,
+  );
+
   const nextAssigneeRows = await prisma.orderAssignee.findMany({
     where: { orderId: id },
     select: { userId: true },
@@ -1745,6 +1755,18 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
     }
   }
 
+  if (hasPaymentStatus) {
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    emitOrderPaymentStatusChangedIfNeeded(
+      id,
+      order.orderNumber,
+      order.branchId,
+      (existing as { paymentStatus?: string | null }).paymentStatus,
+      order.paymentStatus,
+      actorId,
+    );
+  }
+
   res.json(await enrichOrder(order));
 });
 
@@ -1777,6 +1799,17 @@ router.patch("/orders/:id/payment-status", requireAuth, requirePermission("order
     where: { id },
     data: { paymentStatus: paymentStatusRaw },
   });
+
+  const actorId = (req as { user?: { id: number } }).user?.id;
+  emitOrderPaymentStatusChangedIfNeeded(
+    id,
+    order.orderNumber,
+    order.branchId,
+    existing.paymentStatus,
+    order.paymentStatus,
+    actorId,
+  );
+
   res.json(await enrichOrder(order));
 });
 

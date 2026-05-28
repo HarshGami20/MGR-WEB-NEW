@@ -110,6 +110,28 @@ export function copyPaymentReceived(input: {
   };
 }
 
+function formatPaymentStatusLabel(status: string): string {
+  if (status === "partially_paid") return "Partially paid";
+  if (status === "paid") return "Paid";
+  if (status === "due") return "Due";
+  return humanizeToken(status);
+}
+
+export function copyPaymentStatusChanged(input: {
+  orderId: number;
+  orderNumber: string;
+  previousPaymentStatus: string;
+  nextPaymentStatus: string;
+}): NotificationCopy {
+  const prev = formatPaymentStatusLabel(input.previousPaymentStatus);
+  const next = formatPaymentStatusLabel(input.nextPaymentStatus);
+  return {
+    title: "Payment status updated",
+    message: `Order ${input.orderNumber}: payment status changed from ${prev} to ${next}.`,
+    actionPath: orderActionPath(input.orderId),
+  };
+}
+
 export async function copyPaymentFollowUpScheduled(input: {
   orderId: number;
   orderNumber: string;

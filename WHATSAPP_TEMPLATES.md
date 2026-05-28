@@ -16,6 +16,7 @@ When an order event occurs, the API sends **approved WhatsApp template messages*
 | Order status changed | `ORDER_STATUS_CHANGED` | `mgr_job_status_guj` | `en` |
 | Order edited (customer, items, assignees, etc.) | `ORDER_UPDATED` | `mgr_order_updated_guj` | `en` |
 | Payment recorded | `PAYMENT_RECEIVED` | `mgr_payment_status_guj` | `en` |
+| Order payment status changed | `ORDER_PAYMENT_STATUS_CHANGED` | `mgr_order_payment_status_guj` | `gu` |
 | Delivery status changed | `ORDER_DELIVERY_UPDATED` | `mgr_delivery_status_en` | `en` |
 | Staff comment added | `ORDER_STAFF_COMMENT_ADDED` | `mgr_order_comment_en` | `en` |
 | Purchase order created | `PURCHASE_ORDER_CREATED` | `mgr_po_created_guj` | `gu` |
@@ -35,7 +36,7 @@ Sending runs on the **backend only** (never from the browser). Implementation:
 | [`backend/api-server/src/routes/payments.ts`](backend/api-server/src/routes/payments.ts) | Emits `PAYMENT_RECEIVED` |
 | [`backend/api-server/src/routes/purchaseOrders.ts`](backend/api-server/src/routes/purchaseOrders.ts) | Emits purchase order events |
 | [`backend/api-server/src/lib/whatsapp-po-recipients.ts`](backend/api-server/src/lib/whatsapp-po-recipients.ts) | PO partner + creator phone resolution |
-| [`backend/api-server/src/lib/whatsapp-inventory-recipients.ts`](backend/api-server/src/lib/whatsapp-inventory-recipients.ts) | Inventory updater + Super Admin phones |
+| [`backend/api-server/src/lib/whatsapp-inventory-recipients.ts`](backend/api-server/src/lib/whatsapp-inventory-recipients.ts) | Super Admin phones only |
 | [`backend/api-server/src/routes/inventory.ts`](backend/api-server/src/routes/inventory.ts) | Inventory adjust + emits `INVENTORY_UPDATED` |
 
 Listeners are registered in [`backend/api-server/src/index.ts`](backend/api-server/src/index.ts) via `registerWhatsAppEventListeners()`.
@@ -71,6 +72,8 @@ Use these if your approved templates in Meta use **different names** or **langua
 | `WHATSAPP_TEMPLATE_ORDER_UPDATED_LANG` | Order update language | `en` |
 | `WHATSAPP_TEMPLATE_PAYMENT_RECEIVED` | Payment recorded | `mgr_payment_status_guj` |
 | `WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG` | Payment template language | `en` |
+| `WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED` | Order payment status changed | `mgr_order_payment_status_guj` |
+| `WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED_LANG` | Order payment status language | `gu` |
 | `WHATSAPP_TEMPLATE_DELIVERY_UPDATED` | Delivery status | `mgr_delivery_status_en` |
 | `WHATSAPP_TEMPLATE_DELIVERY_UPDATED_LANG` | Delivery template language | `en` |
 | `WHATSAPP_TEMPLATE_ORDER_COMMENT` | Staff comment | `mgr_order_comment_en` |
@@ -190,6 +193,28 @@ Template **names and parameter keys** must match what you configured in [Meta Bu
 
 ---
 
+### 3.4b Order payment status changed — `mgr_order_payment_status_guj`
+
+**When:** Payment status updated on an order without a new payment row — `PATCH /orders/:id/payment-status`, `PATCH /orders/:id` with `paymentStatus`, or order edit that changes `paymentStatus`.
+
+**Recipients:** Order assignees (same as other order WhatsApp alerts).
+
+| Component | Parameter name (Meta) | Value sent by API |
+|-----------|-------------------------|-------------------|
+| Body | `recipient_name` | Assignee receiving this message |
+| Body | `order_id` | `{orderNumber} (#{id})` |
+| Body | `branch_name` | Branch name |
+| Body | `previous_status` | `Due` / `Partially Paid` / `Paid` (before change) |
+| Body | `new_status` | Status after change |
+| Body | `changed_by_name` | User who changed the status |
+| Button (URL, index 0) | dynamic URL suffix | Numeric order `id` (omit button component if your Meta template uses a **static** URL) |
+
+**Button base URL:** `https://your-domain.com/orders/`
+
+**Note:** `POST /payments` sends **3.4 Payment received** only (not this event), to avoid duplicate messages. Full copy for Meta submission: **§10.4b** below.
+
+---
+
 ### 3.5 Delivery status — `mgr_delivery_status_en`
 
 **When:** Delivery status changes (`PUT /orders/:id` or `PATCH /orders/:id/delivery`).
@@ -279,7 +304,7 @@ Template **names and parameter keys** must match what you configured in [Meta Bu
 
 **When:** `POST /inventory/adjust`, product stock edit, or variant stock edit.
 
-**Recipients:** User who made the change + all **Super Admin** users (role name `Super Admin`).
+**Recipients:** All active **Super Admin** users only (role name `Super Admin`, staff account with mobile on file).
 
 | Component | Parameter name (Meta) | Value sent by API |
 |-----------|-------------------------|-------------------|
@@ -290,9 +315,8 @@ Template **names and parameter keys** must match what you configured in [Meta Bu
 | Body | `adjustment_type` | `Stock In` / `Stock Out` / `Stock Adjustment` |
 | Body | `new_stock_qty` | Stock quantity after update |
 | Body | `notes_preview` | Notes or `—` |
-| Button (URL, index 0) | dynamic URL suffix | Numeric product `id` |
 
-**Button base URL:** `https://your-domain.com/products/`
+**Button:** If the approved template includes a **Visit website** button, it must be a **static** URL in Meta (no `{{1}}` suffix). The API sends **body parameters only** — do not add button components unless your template uses a dynamic URL variable.
 
 ---
 
@@ -407,6 +431,8 @@ WHATSAPP_TEMPLATE_ORDER_UPDATED
 WHATSAPP_TEMPLATE_ORDER_UPDATED_LANG
 WHATSAPP_TEMPLATE_PAYMENT_RECEIVED
 WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG
+WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED
+WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED_LANG
 WHATSAPP_TEMPLATE_DELIVERY_UPDATED
 WHATSAPP_TEMPLATE_DELIVERY_UPDATED_LANG
 WHATSAPP_TEMPLATE_ORDER_COMMENT
@@ -735,6 +761,97 @@ MGR CASA
 
 ---
 
+### 10.4b Order payment status changed — `mgr_order_payment_status_guj`
+
+**Template name (submit in Meta):** `mgr_order_payment_status_guj`  
+**Category:** Utility  
+**Language:** Gujarati — `gu`
+
+**Body variables (names must match exactly):** `recipient_name`, `order_id`, `branch_name`, `previous_status`, `new_status`, `changed_by_name`
+
+**Body text (English):**
+
+```text
+*Order payment status | MGR CASA*
+
+Hello {{recipient_name}},
+
+Payment status was updated for order {{order_id}}.
+
+Branch: {{branch_name}}
+Previous: {{previous_status}}
+New status: {{new_status}}
+Changed by: {{changed_by_name}}
+
+Tap below to open the order.
+```
+
+**Body text (Gujarati) — copy into Meta:**
+
+```text
+*ઓર્ડર ચૂકવણી સ્થિતિ | MGR CASA*
+
+નમસ્તે {{recipient_name}},
+
+ઓર્ડર {{order_id}} ની ચૂકવણી સ્થિતિ બદલાઈ.
+
+શાખા: {{branch_name}}
+પહેલાં: {{previous_status}}
+નવી સ્થિતિ: {{new_status}}
+બદલાવ કરનાર: {{changed_by_name}}
+
+ઓર્ડર તપાસવા નીચે ટેપ કરો.
+```
+
+**Button:** Visit website — dynamic URL  
+**Base URL:** `https://your-domain.com/orders/`  
+**Suffix variable:** `{{1}}` = numeric order id (API sends this automatically)
+
+If Meta only allows a **static** button URL, create the template without `{{1}}` and tell dev to remove the button component in code (same as inventory template).
+
+**Preview (English, filled in):**
+
+```text
+*Order payment status | MGR CASA*
+
+Hello Amit Shah,
+
+Payment status was updated for order ORD-20260522-abc (#42).
+
+Branch: Ahmedabad Showroom
+Previous: Due
+New status: Partially Paid
+Changed by: Rajesh Patel
+
+Tap below to open the order.
+```
+
+**Preview (Gujarati, filled in):**
+
+```text
+*ઓર્ડર ચૂકવણી સ્થિતિ | MGR CASA*
+
+નમસ્તે Amit Shah,
+
+ઓર્ડર ORD-20260522-abc (#42) ની ચૂકવણી સ્થિતિ બદલાઈ.
+
+શાખા: Ahmedabad Showroom
+પહેલાં: Due
+નવી સ્થિતિ: Partially Paid
+બદલાવ કરનાર: Rajesh Patel
+
+ઓર્ડર તપાસવા નીચે ટેપ કરો.
+```
+
+**After approval — add to `backend/api-server/.env`:**
+
+```env
+WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED=mgr_order_payment_status_guj
+WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED_LANG=gu
+```
+
+---
+
 ### 10.5 Delivery status — `mgr_delivery_status_guj`
 
 **Template name (suggested):** `mgr_delivery_status_guj` or `mgr_delivery_status_en`  
@@ -925,6 +1042,18 @@ Hi {{recipient_name}}, {{order_id}} at {{branch_name}} — {{payment_status}}. R
 
 ```text
 *ચૂકવણી | MGR CASA* — નમસ્તે {{recipient_name}}, {{order_id}} ({{branch_name}}) — {{payment_status}}. નોંધ: {{recorded_by_name}}.
+```
+
+**Order payment status changed (minimal) — English:**
+
+```text
+Hi {{recipient_name}}, {{order_id}} at {{branch_name}}: {{previous_status}} → {{new_status}} by {{changed_by_name}}.
+```
+
+**Order payment status changed (minimal) — Gujarati:**
+
+```text
+*ચૂકવણી સ્થિતિ | MGR CASA* — નમસ્તે {{recipient_name}}, {{order_id}} ({{branch_name}}): {{previous_status}} → {{new_status}}. {{changed_by_name}}.
 ```
 
 **Delivery (minimal) — English:**

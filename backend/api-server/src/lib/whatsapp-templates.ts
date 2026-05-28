@@ -130,6 +130,41 @@ export function templateOrderUpdated(input: {
   };
 }
 
+function paymentStatusTemplateName(): string {
+  return process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED"]?.trim() || "mgr_payment_status_guj";
+}
+
+function paymentStatusTemplateLanguage(): string {
+  return process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG"]?.trim() || "en";
+}
+
+function templatePaymentStatusMessage(input: {
+  recipientName: string;
+  actorName: string;
+  orderId: number;
+  orderDetail: string;
+  branchName: string;
+  paymentStatus: string;
+}): WhatsAppTemplateMessage {
+  return {
+    name: paymentStatusTemplateName(),
+    language: { code: paymentStatusTemplateLanguage() },
+    components: [
+      {
+        type: "body",
+        parameters: [
+          bodyParam("recipient_name", input.recipientName),
+          bodyParam("branch_name", input.branchName),
+          bodyParam("order_id", input.orderDetail),
+          bodyParam("payment_status", humanizePaymentStatus(input.paymentStatus)),
+          bodyParam("recorded_by_name", input.actorName),
+        ],
+      },
+      orderButton(input.orderId),
+    ],
+  };
+}
+
 /** Payment recorded on order */
 export function templatePaymentReceived(input: {
   recipientName: string;
@@ -140,19 +175,44 @@ export function templatePaymentReceived(input: {
   paymentStatus: string;
   amount: string;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.orderNumber} | ${formatAmountText(input.amount)} received`;
+  return templatePaymentStatusMessage({
+    recipientName: input.recipientName,
+    actorName: input.recordedByName,
+    orderId: input.orderId,
+    orderDetail: `${input.orderNumber} | ${formatAmountText(input.amount)} received`,
+    branchName: input.branchName,
+    paymentStatus: input.paymentStatus,
+  });
+}
+
+/** Order payment status changed (dropdown / order edit — no new payment row) */
+export function templatePaymentStatusChanged(input: {
+  recipientName: string;
+  changedByName: string;
+  orderId: number;
+  orderNumber: string;
+  branchName: string;
+  previousPaymentStatus: string;
+  nextPaymentStatus: string;
+}): WhatsAppTemplateMessage {
   return {
-    name: process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED"]?.trim() || "mgr_payment_status_guj",
-    language: { code: process.env["WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG"]?.trim() || "en" },
+    name:
+      process.env["WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED"]?.trim() ||
+      "mgr_order_payment_status_guj",
+    language: {
+      code:
+        process.env["WHATSAPP_TEMPLATE_ORDER_PAYMENT_STATUS_CHANGED_LANG"]?.trim() || "gu",
+    },
     components: [
       {
         type: "body",
         parameters: [
           bodyParam("recipient_name", input.recipientName),
+          bodyParam("order_id", `${input.orderNumber} (#${input.orderId})`),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", detail),
-          bodyParam("payment_status", humanizePaymentStatus(input.paymentStatus)),
-          bodyParam("recorded_by_name", input.recordedByName),
+          bodyParam("previous_status", humanizePaymentStatus(input.previousPaymentStatus)),
+          bodyParam("new_status", humanizePaymentStatus(input.nextPaymentStatus)),
+          bodyParam("changed_by_name", input.changedByName),
         ],
       },
       orderButton(input.orderId),
@@ -321,26 +381,16 @@ export function templatePurchaseOrderStatusChanged(input: {
   };
 }
 
-function productButton(productId: number): WhatsAppTemplateComponent {
-  return {
-    type: "button",
-    sub_type: "url",
-    index: "0",
-    parameters: [{ type: "text", text: String(productId) }],
-  };
-}
-
 function humanizeAdjustmentType(type: string): string {
   if (type === "in") return "Stock In";
   if (type === "out") return "Stock Out";
   return "Stock Adjustment";
 }
 
-/** Inventory / stock updated */
+/** Inventory / stock updated (body only — Meta template URL button is static, no dynamic suffix). */
 export function templateInventoryUpdated(input: {
   recipientName: string;
   updatedByName: string;
-  productId: number;
   branchName: string;
   inventoryDetail: string;
   adjustmentType: string;
@@ -363,7 +413,6 @@ export function templateInventoryUpdated(input: {
           bodyParam("notes_preview", input.notesPreview),
         ],
       },
-      productButton(input.productId),
     ],
   };
 }

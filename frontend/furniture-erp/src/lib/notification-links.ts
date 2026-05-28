@@ -22,6 +22,7 @@ export function notificationHref(row: NotificationRow): string | null {
     case "ORDER_STATUS_CHANGED":
     case "ORDER_DELIVERY_UPDATED":
     case "PAYMENT_RECEIVED":
+    case "ORDER_PAYMENT_STATUS_CHANGED":
     case "PAYMENT_REMINDER":
       if (meta && typeof meta.orderId === "number") return `/orders/${meta.orderId}`;
       break;
