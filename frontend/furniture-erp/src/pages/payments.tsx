@@ -39,7 +39,11 @@ import { remainingInrPaymentAmount, roundInrPaymentAmount } from "@/lib/payment-
 const paymentSchema = z
   .object({
     orderId: z.coerce.number().min(1, "Order is required"),
-    amount: z.coerce.number().min(1, "Amount must be positive"),
+    amount: z
+      .string()
+      .min(1, "Amount is required")
+      .regex(/^\d+$/, "Enter whole rupees only")
+      .refine((s) => Number(s) >= 1, "Amount must be positive"),
     mode: z.enum(["cash", "bank_transfer", "upi", "cheque"]),
     chequeNumber: zodFields.chequeNumberOptional(),
     notes: z.string().optional().nullable(),
@@ -144,7 +148,7 @@ export default function Payments() {
     resolver: zodResolver(paymentSchema),
     defaultValues: {
       orderId: 0,
-      amount: 0,
+      amount: "",
       mode: "cash",
       chequeNumber: "",
       notes: "",
@@ -156,7 +160,7 @@ export default function Payments() {
   const openCreateDialog = () => {
     form.reset({
       orderId: 0,
-      amount: 0,
+      amount: "",
       mode: "cash",
       chequeNumber: "",
       notes: "",
@@ -201,7 +205,7 @@ export default function Payments() {
         Number(order.paidAmount || 0),
       );
       setSelectedOrderDetails(order);
-      form.setValue("amount", maxPayment);
+      form.setValue("amount", String(maxPayment));
       setOrderPickerOpen(false);
     }
   };
@@ -577,35 +581,29 @@ export default function Payments() {
                       </FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          min="1"
-                          max={
-                            selectedOrderDetails
-                              ? remainingInrPaymentAmount(
-                                  Number(selectedOrderDetails.totalAmount || 0),
-                                  Number(selectedOrderDetails.paidAmount || 0),
-                                )
-                              : undefined
-                          }
-                          step="1"
-                          {...field}
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Amount"
+                          value={field.value}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                           onChange={(e) => {
-                            const raw = e.target.value;
-                            const value = Number(raw);
-                            if (!Number.isFinite(value)) {
-                              field.onChange(raw);
+                            const digitsOnly = e.target.value.replace(/\D/g, "");
+                            if (digitsOnly === "") {
+                              field.onChange("");
                               return;
                             }
-                            const rounded = roundInrPaymentAmount(value);
+                            const rounded = roundInrPaymentAmount(Number(digitsOnly));
                             if (!selectedOrderDetails) {
-                              field.onChange(rounded);
+                              field.onChange(String(rounded));
                               return;
                             }
                             const maxPayment = remainingInrPaymentAmount(
                               Number(selectedOrderDetails.totalAmount || 0),
                               Number(selectedOrderDetails.paidAmount || 0),
                             );
-                            field.onChange(Math.min(Math.max(0, rounded), maxPayment));
+                            field.onChange(String(Math.min(rounded, maxPayment)));
                           }}
                         />
                       </FormControl>

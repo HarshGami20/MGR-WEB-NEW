@@ -22,7 +22,6 @@ import {
   Menu,
   X,
   Mail,
-  Search,
   HelpCircle,
   BadgeCheck,
   BarChart3,
@@ -35,8 +34,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,13 +43,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useListBranches, useGetDashboardSummary } from "@/api-client";
-import { useEffect, useState, useRef, useMemo, type ComponentType } from "react";
+import { useEffect, useState, useMemo, type ComponentType } from "react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
 import { ROUTE_VIEW_MODULE, usePermissions } from "@/lib/permissions";
 
-/** Must match `/orders` prefill cleanup key */
-const ERP_ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 const SIDEBAR_APP_PROMO_DISMISSED_KEY = "erp_sidebar_app_promo_dismissed";
 
 interface LayoutProps {
@@ -187,12 +182,10 @@ export default function Layout({ children }: LayoutProps) {
   const { selectedBranchId, setSelectedBranchId } = useBranch();
   const [location, setLocation] = useLocation();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [headerSearch, setHeaderSearch] = useState("");
   const [showSidebarAppPromo, setShowSidebarAppPromo] = useState(() => {
     if (typeof window === "undefined") return true;
     return localStorage.getItem(SIDEBAR_APP_PROMO_DISMISSED_KEY) !== "1";
   });
-  const searchRef = useRef<HTMLInputElement>(null);
   const dismissSidebarAppPromo = () => {
     setShowSidebarAppPromo(false);
     localStorage.setItem(SIDEBAR_APP_PROMO_DISMISSED_KEY, "1");
@@ -251,14 +244,6 @@ export default function Layout({ children }: LayoutProps) {
     setLocation("/login");
   };
 
-  const submitSearch = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const q = headerSearch.trim();
-    if (q) sessionStorage.setItem(ERP_ORDERS_SEARCH_PREFILL_KEY, q);
-    setMobileSidebarOpen(false);
-    setLocation("/orders");
-  };
-
   useEffect(() => {
     if (!mobileSidebarOpen) return;
     const prevOverflow = document.body.style.overflow;
@@ -276,22 +261,6 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileSidebarOpen]);
-
-  useEffect(() => {
-    if (partnerUser) return;
-    const onKeyDown = (ev: KeyboardEvent) => {
-      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") {
-        ev.preventDefault();
-        searchRef.current?.focus();
-      }
-      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "f") {
-        ev.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [partnerUser]);
 
   const sidebarAppPromoEl = showSidebarAppPromo ? (
     <div className="relative overflow-hidden rounded-2xl mt-5 bg-[linear-gradient(145deg,hsl(var(--primary-deep))_0%,hsl(var(--primary-dim))_48%,hsl(var(--primary))_100%)] p-4.5 text-white shadow-[0_16px_30px_rgba(56,39,67,0.28)]">
@@ -584,6 +553,69 @@ export default function Layout({ children }: LayoutProps) {
     </div>
   );
 
+  const renderHeaderBranchPicker = () => {
+    if (branchLocked) {
+      return (
+        <div
+          className="flex h-10 w-fit min-w-0 max-w-[220px] items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/5 px-3"
+          title="Your account is assigned to this branch"
+        >
+          <GitBranch className="h-4 w-4 text-primary shrink-0" />
+          <span className="text-sm truncate font-medium">{lockedBranchLabel}</span>
+        </div>
+      );
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 w-fit min-w-0 max-w-[220px] gap-1.5 border-primary/25 bg-primary/5 hover:bg-primary/10 px-3 rounded-xl"
+          >
+            <GitBranch className="h-4 w-4 text-primary shrink-0" />
+            <span className="text-sm truncate font-medium">
+              {selectedBranch ? selectedBranch.name : "All branches"}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-auto" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Working branch</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className={!selectedBranchId ? "bg-primary/5 text-primary font-medium rounded-lg" : "rounded-lg"}
+            onClick={() => setSelectedBranchId(null)}
+          >
+            <LayoutDashboard className="h-3.5 w-3.5 mr-2 shrink-0" />
+            All branches
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {branchesForPicker.length === 0 ? (
+            <DropdownMenuItem disabled>No branches found</DropdownMenuItem>
+          ) : (
+            branchesForPicker.map((branch) => (
+              <DropdownMenuItem
+                key={branch.id}
+                className={
+                  selectedBranchId === branch.id ? "bg-primary/5 text-primary font-medium rounded-lg" : "rounded-lg"
+                }
+                onClick={() => setSelectedBranchId(branch.id)}
+              >
+                <GitBranch className="h-3.5 w-3.5 mr-2 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="truncate">{branch.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{branch.code}</p>
+                </div>
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   return (
     <div className={cn("flex h-screen bg-background overflow-hidden")}>
       {!partnerUser ? (
@@ -665,27 +697,7 @@ export default function Layout({ children }: LayoutProps) {
           </Button>
 
           {!partnerUser ? (
-            <>
-              <form onSubmit={submitSearch} className="flex-1 min-w-0 max-w-xl hidden sm:flex items-center gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  <Input
-                    ref={searchRef}
-                    placeholder="Search orders…"
-                    value={headerSearch}
-                    onChange={(e) => setHeaderSearch(e.target.value)}
-                    className="h-11 rounded-xl bg-muted/40 border-0 pl-10 pr-[5.75rem] text-sm placeholder:text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-primary/30"
-                  />
-                  <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[11px] text-muted-foreground">
-                    <KbdGroup>
-                      <Kbd className="rounded-md px-1.5 h-6 min-w-[1.375rem]">⌘</Kbd>
-                      <Kbd className="rounded-md px-1.5">K</Kbd>
-                    </KbdGroup>
-                  </div>
-                </div>
-              </form>
-              <span className="sm:hidden flex-1 min-w-0 text-sm font-semibold truncate">{getPageTitle(location, false)}</span>
-            </>
+            <div className="flex items-center min-w-0">{renderHeaderBranchPicker()}</div>
           ) : (
             <div className="flex-1 min-w-0">
               <h2 className="text-base font-semibold truncate">{getPageTitle(location, true, user)}</h2>
@@ -694,66 +706,12 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex items-center gap-2">
 
-          {!partnerUser && branchLocked ? (
-            <div
-              className="hidden md:flex h-10 gap-1.5 min-w-0 max-w-[220px] items-center rounded-xl border border-primary/25 bg-primary/5 px-3"
-              title="Your account is assigned to this branch"
-            >
-              <GitBranch className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-sm truncate font-medium">{lockedBranchLabel}</span>
-            </div>
-          ) : null}
-
-          {!partnerUser && !branchLocked ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="hidden md:flex h-10 gap-1.5 min-w-0 max-w-[220px] border-primary/25 bg-primary/5 hover:bg-primary/10 px-3 rounded-xl"
-                >
-                  <GitBranch className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-sm truncate font-medium">{selectedBranch ? selectedBranch.name : "All branches"}</span>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-auto" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Working branch</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className={!selectedBranchId ? "bg-primary/5 text-primary font-medium rounded-lg" : "rounded-lg"}
-                  onClick={() => setSelectedBranchId(null)}
-                >
-                  <LayoutDashboard className="h-3.5 w-3.5 mr-2 shrink-0" />
-                  All branches
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {branchesForPicker.length === 0 ? (
-                  <DropdownMenuItem disabled>No branches found</DropdownMenuItem>
-                ) : (
-                  branchesForPicker.map((branch) => (
-                    <DropdownMenuItem
-                      key={branch.id}
-                      className={selectedBranchId === branch.id ? "bg-primary/5 text-primary font-medium rounded-lg" : "rounded-lg"}
-                      onClick={() => setSelectedBranchId(branch.id)}
-                    >
-                      <GitBranch className="h-3.5 w-3.5 mr-2 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate">{branch.name}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{branch.code}</p>
-                      </div>
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-
-          {!partnerUser && (
+          {/* {!partnerUser && (
             <Button variant="ghost" size="icon" type="button" className="shrink-0 rounded-xl hidden lg:flex relative" aria-label="Messages">
               <Mail className="h-5 w-5 text-muted-foreground" />
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" aria-hidden />
             </Button>
-          )}
+          )} */}
 
           <div className="hidden sm:flex">
             <NotificationBell />
