@@ -15,15 +15,8 @@ import {
   formatPaymentStatusLabel,
 } from "@/lib/payment-follow-up-api";
 import { CalendarClock, Bell } from "lucide-react";
-import { formatInr } from "@/lib/format-currency";
-
-function localTodayYmd(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+import { localTodayYmd, isPastYmdDate } from "@/lib/date-range";
+import { formatErrorMessage } from "@/lib/error-message";
 
 function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrderLink?: boolean }) {
   const order = row.order;
@@ -81,8 +74,20 @@ export function OrderPaymentFollowUpPanel({ orderId }: { orderId: number }) {
       toast({ title: "Follow-up scheduled" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed", description: err.message, variant: "destructive" }),
+      toast({ title: "Failed", description: formatErrorMessage(err), variant: "destructive" }),
   });
+
+  const handleAddFollowUp = () => {
+    if (isPastYmdDate(followUpDate)) {
+      toast({
+        title: "Invalid follow-up date",
+        description: "Please choose today or a future date.",
+        variant: "destructive",
+      });
+      return;
+    }
+    createMutation.mutate();
+  };
 
   const rows = data?.data ?? [];
 
@@ -100,7 +105,15 @@ export function OrderPaymentFollowUpPanel({ orderId }: { orderId: number }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-sm font-medium">Follow-up date</label>
-          <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+          <Input
+            type="date"
+            min={localTodayYmd()}
+            value={followUpDate}
+            onChange={(e) => {
+              const next = e.target.value;
+              setFollowUpDate(isPastYmdDate(next) ? localTodayYmd() : next);
+            }}
+          />
         </div>
         <div className="space-y-1 md:col-span-2">
           <label className="text-sm font-medium">Note</label>
@@ -115,8 +128,8 @@ export function OrderPaymentFollowUpPanel({ orderId }: { orderId: number }) {
       <Button
         type="button"
         variant="secondary"
-        disabled={!note.trim() || !followUpDate || createMutation.isPending}
-        onClick={() => createMutation.mutate()}
+        disabled={!note.trim() || !followUpDate || createMutation.isPending || isPastYmdDate(followUpDate)}
+        onClick={handleAddFollowUp}
       >
         Add follow-up
       </Button>

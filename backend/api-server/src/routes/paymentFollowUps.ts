@@ -210,6 +210,12 @@ router.post("/orders/:orderId/payment-follow-ups", requireAuth, requirePermissio
     return;
   }
 
+  const today = startOfUtcDay(new Date());
+  if (followUpDate < today) {
+    res.status(400).json({ error: "Follow-up date cannot be in the past" });
+    return;
+  }
+
   const check = await assertOrderAllowsFollowUp(orderId);
   if (!check.ok) {
     res.status(check.status).json({ error: check.error });

@@ -19,6 +19,7 @@ import {
   type ComplaintKind,
   type ComplaintStatus,
 } from "@/lib/complaint-api";
+import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { canUpdateComplaintStatus } from "@/lib/complaint-status-access";
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
@@ -290,8 +291,9 @@ export default function ComplaintsPage() {
 
   const handleDialogImageUpload = async (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Choose an image file", variant: "destructive" });
+    const validationError = validateImageFile(file, 5);
+    if (validationError) {
+      toast({ title: validationError, variant: "destructive" });
       return;
     }
     try {
@@ -302,7 +304,7 @@ export default function ComplaintsPage() {
     } catch (err: unknown) {
       toast({
         title: "Upload failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatUploadErrorMessage(err),
         variant: "destructive",
       });
     } finally {

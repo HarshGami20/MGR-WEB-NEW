@@ -1,5 +1,4 @@
 import { customFetch } from "@/api-client/custom-fetch";
-import { getAuthToken } from "@/lib/auth-storage";
 
 export type ComplaintStatus = "open" | "in_progress" | "resolved";
 export type ComplaintKind = "sales_order" | "purchase_order";
@@ -101,39 +100,8 @@ export type ComplaintsListResponse = {
   limit: number;
 };
 
-/** Multipart upload — mirrors `uploadOrderImage` in order-form-page.tsx */
-export async function uploadComplaintImage(
-  file: File,
-  branchId?: number | null,
-): Promise<{ imageUrl: string }> {
-  const token = getAuthToken();
-  const fd = new FormData();
-  fd.append("image", file);
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (branchId != null && Number.isFinite(branchId)) headers["X-Branch-Id"] = String(branchId);
-  const resp = await fetch("/api/complaints/upload-image", {
-    method: "POST",
-    headers,
-    body: fd,
-  });
-  const raw = await resp.text();
-  if (!resp.ok) {
-    let detail = "Failed to upload image";
-    try {
-      const j = JSON.parse(raw) as { error?: string; message?: string };
-      detail = j.error || j.message || detail;
-    } catch {
-      if (raw.trim()) detail = raw.slice(0, 200);
-    }
-    if (resp.status === 404) {
-      detail =
-        "Upload endpoint not found. Restart the API server (backend/api-server: bun run dev) so complaint routes are rebuilt.";
-    }
-    throw new Error(detail);
-  }
-  return JSON.parse(raw) as { imageUrl: string };
-}
+/** @deprecated Import from `@/lib/upload-image-api` instead. */
+export { uploadComplaintImage } from "@/lib/upload-image-api";
 
 export async function listComplaints(params: {
   search?: string;

@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Building, Eye, EyeOff, FileText, LockKeyhole, Settings2, UserCircle2, Upload, ChevronDown } from "lucide-react";
+import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { usePermissions } from "@/lib/permissions";
 import { useAuth } from "@/lib/auth";
 import { FIELD_LIMITS, profileFormSchema, settingsFormSchema, type ProfileFormValues, type SettingsFormValues } from "@/lib/form-validation";
@@ -178,12 +179,9 @@ export default function Settings() {
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Please upload an image file", variant: "destructive" });
-      return;
-    }
-    if (file.size > 1024 * 1024 * 2) {
-      toast({ title: "Image too large (max 2MB)", variant: "destructive" });
+    const validationError = validateImageFile(file, 2);
+    if (validationError) {
+      toast({ title: validationError, variant: "destructive" });
       return;
     }
     const formData = new FormData();
@@ -196,10 +194,10 @@ export default function Settings() {
       });
       profileForm.setValue("avatarUrl", response.avatarUrl, { shouldValidate: true, shouldDirty: true });
       toast({ title: "Avatar uploaded" });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Failed to upload avatar",
-        description: error?.message ?? "Please try again.",
+        description: formatUploadErrorMessage(error),
         variant: "destructive",
       });
     } finally {

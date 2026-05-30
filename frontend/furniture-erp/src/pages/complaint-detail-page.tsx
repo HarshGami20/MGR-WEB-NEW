@@ -10,6 +10,7 @@ import {
   listComplaintAssignableUsers,
   type ComplaintStatus,
 } from "@/lib/complaint-api";
+import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { canUpdateComplaintStatus } from "@/lib/complaint-status-access";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { useBranch, assignedUserBranchIds, isSuperAdminUser } from "@/lib/branch-context";
@@ -187,8 +188,9 @@ export default function ComplaintDetailPage() {
 
   const handleImageUpload = async (file: File | undefined) => {
     if (!file || !complaint) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Choose an image file", variant: "destructive" });
+    const validationError = validateImageFile(file, 5);
+    if (validationError) {
+      toast({ title: validationError, variant: "destructive" });
       return;
     }
     try {
@@ -198,7 +200,7 @@ export default function ComplaintDetailPage() {
     } catch (err: unknown) {
       toast({
         title: "Upload failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: formatUploadErrorMessage(err),
         variant: "destructive",
       });
     } finally {

@@ -49,7 +49,8 @@ import { formatInr } from "@/lib/format-currency";
 import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
 import { zodFields } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
-import { getAuthToken } from "@/lib/auth-storage";
+import { uploadOrderImage } from "@/lib/upload-image-api";
+import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import {
   buildOrderFormValues,
   DELIVERY_CHARGE_INPUT_RE,
@@ -238,33 +239,6 @@ function formatDeliveryDateLabel(value: string | null | undefined): string {
   } catch {
     return String(value);
   }
-}
-
-async function uploadOrderImage(file: File, branchId: number | null | undefined): Promise<string> {
-  const token = getAuthToken();
-  const fd = new FormData();
-  fd.append("image", file);
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (branchId != null && Number.isFinite(branchId)) headers["X-Branch-Id"] = String(branchId);
-  const resp = await fetch("/api/orders/upload-image", {
-    method: "POST",
-    headers,
-    body: fd,
-  });
-  const raw = await resp.text();
-  if (!resp.ok) {
-    let detail = "Failed to upload image";
-    try {
-      const j = JSON.parse(raw) as { error?: string; message?: string };
-      detail = j.error || j.message || detail;
-    } catch {
-      if (raw.trim()) detail = raw.slice(0, 200);
-    }
-    throw new Error(detail);
-  }
-  const data = JSON.parse(raw) as { imageUrl: string };
-  return data.imageUrl;
 }
 
 function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
@@ -511,13 +485,22 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     apply: (imageUrl: string) => void,
   ) => {
     if (!file) return;
+    const validationError = validateImageFile(file, 5);
+    if (validationError) {
+      toast({ title: validationError, variant: "destructive" });
+      return;
+    }
     try {
       setUploading(true);
       const imageUrl = await uploadOrderImage(file, writeBranchId);
       apply(imageUrl);
       toast({ title: "Image uploaded" });
-    } catch (error: any) {
-      toast({ title: "Upload failed", description: error?.message ?? "Please try again", variant: "destructive" });
+    } catch (error: unknown) {
+      toast({
+        title: "Upload failed",
+        description: formatUploadErrorMessage(error),
+        variant: "destructive",
+      });
     } finally {
       setUploading(false);
     }

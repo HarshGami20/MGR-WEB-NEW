@@ -3,6 +3,7 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import { useUploadProductImage } from "@/api-client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { cn } from "@/lib/utils";
 
@@ -31,12 +32,9 @@ export function ProductImageField({
   const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Choose an image file", variant: "destructive" });
-      return;
-    }
-    if (file.size > MAX_MB * 1024 * 1024) {
-      toast({ title: `Image too large (max ${MAX_MB} MB)`, variant: "destructive" });
+    const validationError = validateImageFile(file, MAX_MB);
+    if (validationError) {
+      toast({ title: validationError, variant: "destructive" });
       return;
     }
     try {
@@ -46,7 +44,7 @@ export function ProductImageField({
     } catch (err: unknown) {
       toast({
         title: "Upload failed",
-        description: String((err as { message?: string })?.message ?? err),
+        description: formatUploadErrorMessage(err),
         variant: "destructive",
       });
     } finally {
