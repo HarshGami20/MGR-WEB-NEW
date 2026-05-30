@@ -88,7 +88,7 @@ function aggregateBranchStocksFromVariants(variants: ProductVariantRow[]): Branc
   const byKey = new Map<string, BranchStock>();
   for (const variant of variants) {
     for (const branch of variant.branchStocks ?? []) {
-      const key = branch.branchId ?? "unassigned";
+      const key = branch.branchId != null ? String(branch.branchId) : "unassigned";
       const existing = byKey.get(key);
       if (existing) {
         existing.stockQty += branch.stockQty;
@@ -98,6 +98,22 @@ function aggregateBranchStocksFromVariants(variants: ProductVariantRow[]): Branc
     }
   }
   return [...byKey.values()].sort((a, b) => a.branchName.localeCompare(b.branchName));
+}
+
+function branchStockTotal(stocks: BranchStock[]): number {
+  return stocks.reduce((sum, branch) => sum + branch.stockQty, 0);
+}
+
+function variantDisplayStock(
+  variant: ProductVariantRow,
+  selectedBranchId: number | null | undefined,
+): number {
+  const branchStocks = Array.isArray(variant.branchStocks) ? variant.branchStocks : [];
+  if (selectedBranchId != null) {
+    return branchStocks.find((branch) => branch.branchId === selectedBranchId)?.stockQty ?? 0;
+  }
+  if (branchStocks.length > 0) return branchStockTotal(branchStocks);
+  return variant.stockQty ?? 0;
 }
 
 function DetailCard({
@@ -343,15 +359,27 @@ export default function ProductDetail() {
   const variantAggregatedBranchStocks =
     !isSingleSku && variantList.length > 0 ? aggregateBranchStocksFromVariants(variantList) : [];
   const totalUnitsBranchStocks =
-    productBranchStocks.length > 0 ? productBranchStocks : variantAggregatedBranchStocks;
+    !isSingleSku && variantList.length > 0
+      ? variantAggregatedBranchStocks.length > 0
+        ? variantAggregatedBranchStocks
+        : productBranchStocks
+      : productBranchStocks;
+  const totalUnitsGrandTotal =
+    totalUnitsBranchStocks.length > 0
+      ? branchStockTotal(totalUnitsBranchStocks)
+      : !isSingleSku && variantList.length > 0
+        ? variantList.reduce((sum, variant) => sum + variantDisplayStock(variant, null), 0)
+        : product.stockQty;
   const selectedProductBranchStock =
     selectedBranchId != null
       ? totalUnitsBranchStocks.find((branch) => branch.branchId === selectedBranchId)
       : null;
   const productDisplayStock =
-    selectedBranchId != null ? selectedProductBranchStock?.stockQty ?? 0 : product.stockQty;
-  const totalUnitsDisplay =
-    selectedBranchId != null ? selectedProductBranchStock?.stockQty ?? 0 : product.stockQty;
+    selectedBranchId != null
+      ? selectedProductBranchStock?.stockQty ?? 0
+      : totalUnitsBranchStocks.length > 0
+        ? totalUnitsGrandTotal
+        : product.stockQty;
   const productStockLow =
     productDisplayStock <= (product.lowStockThreshold ?? 10) && productDisplayStock > 0;
   const productActive = isSingleSku
@@ -430,27 +458,30 @@ export default function ProductDetail() {
             <DetailCard className="px-4 py-1">
               <div className="grid grid-cols-2 divide-x divide-border/60 border-b border-border/60">
                 <div className="py-4 text-center">
-                  <p className="text-2xl font-bold tabular-nums leading-none">{totalUnitsDisplay}</p>
+                  <p className="text-2xl font-bold tabular-nums leading-none">{totalUnitsGrandTotal}</p>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Total units
                   </p>
-                  {selectedBranchId != null ? (
-                    <div className="mt-2 px-2 text-xs text-muted-foreground">
-                      {selectedProductBranchStock?.branchName ?? "Selected branch"}
-                    </div>
-                  ) : totalUnitsBranchStocks.length > 0 ? (
+                  {totalUnitsBranchStocks.length > 0 ? (
                     <div className="mt-2 space-y-0.5 px-2 text-xs text-muted-foreground">
-                      {totalUnitsBranchStocks.map((branch) => (
-                        <div
-                          key={branch.branchId ?? "unassigned"}
-                          className="flex items-center justify-center gap-2"
-                        >
-                          <span className="max-w-[100px] truncate" title={branch.branchName}>
-                            {branch.branchName}
-                          </span>
-                          <span className="font-mono text-foreground">{branch.stockQty}</span>
-                        </div>
-                      ))}
+                      {totalUnitsBranchStocks.map((branch) => {
+                        const isSelectedBranch =
+                          selectedBranchId != null && branch.branchId === selectedBranchId;
+                        return (
+                          <div
+                            key={branch.branchId ?? "unassigned"}
+                            className={cn(
+                              "flex items-center justify-center gap-2",
+                              isSelectedBranch && "font-medium text-foreground",
+                            )}
+                          >
+                            <span className="max-w-[100px] truncate" title={branch.branchName}>
+                              {branch.branchName}
+                            </span>
+                            <span className="font-mono text-foreground">{branch.stockQty}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>
@@ -663,8 +694,7 @@ export default function ProductDetail() {
                           selectedBranchId != null
                             ? branchStocks.find((branch) => branch.branchId === selectedBranchId)
                             : null;
-                        const displayStock =
-                          selectedBranchId != null ? selectedBranchStock?.stockQty ?? 0 : v.stockQty;
+                        const displayStock = variantDisplayStock(v, selectedBranchId);
                         const isLowStock = displayStock <= low;
                         const vPhotos = variantImageList(
                           v as { imageUrls?: string | string[] | null; imageUrl?: string | null },
