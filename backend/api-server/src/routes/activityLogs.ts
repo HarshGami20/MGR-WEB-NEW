@@ -4,6 +4,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
+import { ACTIVITY_LOG_SETUP_MESSAGE, getActivityLogDelegate } from "../lib/activity-log-client";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,12 @@ router.get(
     { module: "users", action: "read" },
   ]),
   async (req, res): Promise<void> => {
+  const activityLog = getActivityLogDelegate();
+  if (!activityLog) {
+    res.status(503).json({ error: ACTIVITY_LOG_SETUP_MESSAGE });
+    return;
+  }
+
   const q = req.query as Record<string, string>;
   const pageNum = Math.max(1, parseInt(q.page || "1", 10) || 1);
   const limitNum = Math.min(200, Math.max(1, parseInt(q.limit || "50", 10) || 50));
@@ -60,8 +67,8 @@ router.get(
   else if (and.length > 1) where.AND = and;
 
   const [total, rows] = await Promise.all([
-    prisma.activityLog.count({ where }),
-    prisma.activityLog.findMany({
+    activityLog.count({ where }),
+    activityLog.findMany({
       where,
       skip: offset,
       take: limitNum,

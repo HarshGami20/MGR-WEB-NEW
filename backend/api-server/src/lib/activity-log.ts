@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
+import { getActivityLogDelegate } from "./activity-log-client";
 
 export type ActivityLogInput = {
   userId?: number | null;
@@ -75,8 +76,11 @@ const SKIP_EXACT_PATHS = new Set([
 ]);
 
 export async function logActivity(input: ActivityLogInput): Promise<void> {
+  const activityLog = getActivityLogDelegate();
+  if (!activityLog) return;
+
   try {
-    await prisma.activityLog.create({
+    await activityLog.create({
       data: {
         userId: input.userId ?? null,
         action: input.action,

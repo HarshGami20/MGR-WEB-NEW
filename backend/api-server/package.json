@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build && node --env-file=.env --enable-source-maps ./dist/index.mjs",
-    "build": "node ./build.mjs",
-    "start": "node --env-file=.env --enable-source-maps ./dist/index.mjs",
+    "dev": "prisma generate && npm run build && node --env-file=.env --enable-source-maps ./dist/index.mjs",
+    "build": "prisma generate && node ./build.mjs",
+    "start": "prisma generate && node --env-file=.env --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",

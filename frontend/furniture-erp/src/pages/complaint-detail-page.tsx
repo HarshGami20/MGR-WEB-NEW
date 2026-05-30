@@ -271,12 +271,21 @@ export default function ComplaintDetailPage() {
               <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5 shrink-0" />
                 {formatCommentDateTime(complaint.createdAt)}
-                {complaint.subject ? (
+                {complaint.createdBy?.name ? (
+                  <>
+                    <span className="text-border">·</span>
+                    <span>
+                      Created by:{" "}
+                      <span className="font-medium text-foreground">{complaint.createdBy.name}</span>
+                    </span>
+                  </>
+                ) : null}
+                {/* {complaint.subject ? (
                   <>
                     <span className="text-border">·</span>
                     <span className="font-medium text-foreground">{complaint.subject}</span>
                   </>
-                ) : null}
+                ) : null} */}
               </p>
             </div>
           </div>
@@ -365,11 +374,6 @@ export default function ComplaintDetailPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">Order not found</p>
               )}
-              {complaint.createdBy?.name ? (
-                <p className="text-xs text-muted-foreground">
-                  Registered by <span className="font-medium text-foreground">{complaint.createdBy.name}</span>
-                </p>
-              ) : null}
             </DetailSection>
 
             {/* {complaint.product ? (
