@@ -699,16 +699,36 @@ export default function DeliveriesPage() {
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                 <div className="flex flex-wrap flex-1 items-end gap-3">
-                  <ListDateRangeFilter
-                    context="deliveries"
-                    className="max-w-md bg-white"
-                    value={bookedDateRange}
-                    onChange={setBookedDateRange}
-                    // variant="default"
-                    numberOfMonths={2}
-                  />
-                  <ListCategoryFilter value={categoryId} onChange={setCategoryId} />
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Delivery date</label>
+                    <ListDateRangeFilter
+                      context="deliveries"
+                      className="max-w-md bg-white"
+                      value={bookedDateRange}
+                      onChange={setBookedDateRange}
+                      numberOfMonths={2}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Main category</label>
+                    <ListCategoryFilter
+                      value={categoryId}
+                      onChange={setCategoryId}
+                      mainCategoriesOnly
+                    />
+                  </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-muted-foreground"
+                    onClick={() => setCategoryId(undefined)}
+                    disabled={categoryId == null}
+                  >
+                    All categories
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -719,6 +739,7 @@ export default function DeliveriesPage() {
                   >
                     Show all dates
                   </Button>
+                </div>
                 </div>
                 
               </div>
@@ -735,6 +756,7 @@ export default function DeliveriesPage() {
                   fromYmd={bookedRange.fromYmd}
                   toYmd={bookedRange.toYmd}
                   loading={ordersLoading}
+                  groupByCategory
                   canUpdateStatus={canEditDeliveryStatuses}
                   drivers={activeDrivers}
                   canAssignDriver={can("deliveries", "edit")}

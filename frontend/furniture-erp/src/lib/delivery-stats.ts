@@ -7,6 +7,8 @@ export type DeliveryOrderRow = {
   deliveryStatus?: string | null;
   deliveryDate?: string | null;
   deliveryCharge?: number;
+  categoryId?: number | null;
+  category?: { id: number; name: string } | null;
   driver?: { id: number; name: string; mobile?: string | null } | null;
   driverId?: number | null;
   deliveryAssignees?: Array<{ id: number; name?: string; mobile?: string }>;
@@ -117,6 +119,80 @@ export type DateScheduleGroup = {
   slots: SlotGroup[];
 };
 
+export type CategoryScheduleGroup = {
+  categoryId: number | null;
+  categoryName: string;
+  orderCount: number;
+  slots: SlotGroup[];
+};
+
+export function orderCategoryLabel(order: DeliveryOrderRow): string {
+  return order.category?.name?.trim() || "Uncategorized";
+}
+
+export function groupOrdersByCategory(orders: DeliveryOrderRow[]): CategoryScheduleGroup[] {
+  const map = new Map<string, { categoryId: number | null; categoryName: string; orders: DeliveryOrderRow[] }>();
+  for (const order of orders) {
+    const categoryId = order.categoryId ?? order.category?.id ?? null;
+    const key = categoryId != null ? String(categoryId) : "uncategorized";
+    const existing = map.get(key);
+    if (existing) {
+      existing.orders.push(order);
+    } else {
+      map.set(key, {
+        categoryId,
+        categoryName: orderCategoryLabel(order),
+        orders: [order],
+      });
+    }
+  }
+
+  return Array.from(map.values())
+    .map((group) => ({
+      categoryId: group.categoryId,
+      categoryName: group.categoryName,
+      orderCount: group.orders.length,
+      slots: buildSlotGroups(group.orders),
+    }))
+    .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+}
+
+export function buildSlotGroups(orders: DeliveryOrderRow[]): SlotGroup[] {
+  const slotMap = new Map<string, SlotGroup>();
+
+  for (const o of orders) {
+    const slot = o.deliverySlot;
+    const key = slot?.id != null ? `slot-${slot.id}` : "no-slot";
+    const existing = slotMap.get(key);
+    if (existing) {
+      existing.orders.push(o);
+      existing.booked = existing.orders.length;
+    } else {
+      slotMap.set(key, {
+        slotId: slot?.id ?? null,
+        label: slot?.label ?? "Deliveries",
+        timeRange: slot ? `${slot.startTime}–${slot.endTime}` : "",
+        booked: 1,
+        maxOrders: null,
+        orders: [o],
+      });
+    }
+  }
+
+  const slots = Array.from(slotMap.values()).sort((a, b) => {
+    if (a.slotId == null) return 1;
+    if (b.slotId == null) return -1;
+    return a.timeRange.localeCompare(b.timeRange);
+  });
+
+  for (const s of slots) {
+    s.booked = s.orders.length;
+    s.orders.sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
+  }
+
+  return slots;
+}
+
 export function buildDateSlotSchedule(
   orders: DeliveryOrderRow[],
   options?: { fromYmd?: string; toYmd?: string },
@@ -142,44 +218,10 @@ export function buildDateSlotSchedule(
   }
 
   const dates = Array.from(byDate.keys()).sort();
-  return dates.map((dateYmd) => {
-    const dayOrders = byDate.get(dateYmd)!;
-    const slotMap = new Map<string, SlotGroup>();
-
-    for (const o of dayOrders) {
-      const slot = o.deliverySlot;
-      const key = slot?.id != null ? `slot-${slot.id}` : "no-slot";
-      const existing = slotMap.get(key);
-      if (existing) {
-        existing.orders.push(o);
-        existing.booked = existing.orders.length;
-      } else {
-        slotMap.set(key, {
-          slotId: slot?.id ?? null,
-          label: slot?.label ?? "Deliveries",
-          timeRange: slot ? `${slot.startTime}–${slot.endTime}` : "",
-          booked: 1,
-          maxOrders: null,
-          orders: [o],
-        });
-      }
-    }
-
-    const slots = Array.from(slotMap.values()).sort((a, b) => {
-      if (a.slotId == null) return 1;
-      if (b.slotId == null) return -1;
-      const ta = a.timeRange;
-      const tb = b.timeRange;
-      return ta.localeCompare(tb);
-    });
-
-    for (const s of slots) {
-      s.booked = s.orders.length;
-      s.orders.sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
-    }
-
-    return { dateYmd, slots };
-  });
+  return dates.map((dateYmd) => ({
+    dateYmd,
+    slots: buildSlotGroups(byDate.get(dateYmd)!),
+  }));
 }
 
 export { addDaysYmd, normalizeYmdRange } from "@/lib/date-range";

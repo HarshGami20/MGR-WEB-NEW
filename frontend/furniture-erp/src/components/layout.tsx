@@ -524,6 +524,7 @@ export default function Layout({ children }: LayoutProps) {
                   Settings
                 </span>
               </Link>
+
             ) : null}
             {/* <button
               type="button"

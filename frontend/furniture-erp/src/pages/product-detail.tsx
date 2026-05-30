@@ -84,6 +84,22 @@ type ProductBranchStockPayload = {
   branchStocks?: BranchStock[];
 };
 
+function aggregateBranchStocksFromVariants(variants: ProductVariantRow[]): BranchStock[] {
+  const byKey = new Map<string, BranchStock>();
+  for (const variant of variants) {
+    for (const branch of variant.branchStocks ?? []) {
+      const key = branch.branchId ?? "unassigned";
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.stockQty += branch.stockQty;
+      } else {
+        byKey.set(key, { ...branch });
+      }
+    }
+  }
+  return [...byKey.values()].sort((a, b) => a.branchName.localeCompare(b.branchName));
+}
+
 function DetailCard({
   children,
   className,
@@ -324,11 +340,17 @@ export default function ProductDetail() {
   const productBranchStocks = (Array.isArray(productWithBranchStocks.branchStocks)
     ? productWithBranchStocks.branchStocks
     : []) as BranchStock[];
+  const variantAggregatedBranchStocks =
+    !isSingleSku && variantList.length > 0 ? aggregateBranchStocksFromVariants(variantList) : [];
+  const totalUnitsBranchStocks =
+    productBranchStocks.length > 0 ? productBranchStocks : variantAggregatedBranchStocks;
   const selectedProductBranchStock =
     selectedBranchId != null
-      ? productBranchStocks.find((branch) => branch.branchId === selectedBranchId)
+      ? totalUnitsBranchStocks.find((branch) => branch.branchId === selectedBranchId)
       : null;
   const productDisplayStock =
+    selectedBranchId != null ? selectedProductBranchStock?.stockQty ?? 0 : product.stockQty;
+  const totalUnitsDisplay =
     selectedBranchId != null ? selectedProductBranchStock?.stockQty ?? 0 : product.stockQty;
   const productStockLow =
     productDisplayStock <= (product.lowStockThreshold ?? 10) && productDisplayStock > 0;
@@ -408,10 +430,29 @@ export default function ProductDetail() {
             <DetailCard className="px-4 py-1">
               <div className="grid grid-cols-2 divide-x divide-border/60 border-b border-border/60">
                 <div className="py-4 text-center">
-                  <p className="text-2xl font-bold tabular-nums leading-none">{product.stockQty}</p>
+                  <p className="text-2xl font-bold tabular-nums leading-none">{totalUnitsDisplay}</p>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Total units
                   </p>
+                  {selectedBranchId != null ? (
+                    <div className="mt-2 px-2 text-xs text-muted-foreground">
+                      {selectedProductBranchStock?.branchName ?? "Selected branch"}
+                    </div>
+                  ) : totalUnitsBranchStocks.length > 0 ? (
+                    <div className="mt-2 space-y-0.5 px-2 text-xs text-muted-foreground">
+                      {totalUnitsBranchStocks.map((branch) => (
+                        <div
+                          key={branch.branchId ?? "unassigned"}
+                          className="flex items-center justify-center gap-2"
+                        >
+                          <span className="max-w-[100px] truncate" title={branch.branchName}>
+                            {branch.branchName}
+                          </span>
+                          <span className="font-mono text-foreground">{branch.stockQty}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="py-4 text-center">
                   <p className="text-2xl font-bold tabular-nums leading-none">

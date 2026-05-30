@@ -19,6 +19,8 @@ import { Check, ChevronDown } from "lucide-react";
 export type ListCategoryFilterProps = {
   value: number | undefined;
   onChange: (categoryId: number | undefined) => void;
+  /** When true, only top-level (main) categories are listed — no subcategory submenu. */
+  mainCategoriesOnly?: boolean;
   className?: string;
   triggerClassName?: string;
   disabled?: boolean;
@@ -30,6 +32,7 @@ const DEFAULT_TRIGGER_CLASS =
 export function ListCategoryFilter({
   value,
   onChange,
+  mainCategoriesOnly = false,
   className,
   triggerClassName = DEFAULT_TRIGGER_CLASS,
   disabled,
@@ -78,7 +81,7 @@ export function ListCategoryFilter({
             const parentSelected = value === root.id;
             const childSelected = children.some((c) => c.id === value);
 
-            if (children.length === 0) {
+            if (mainCategoriesOnly || children.length === 0) {
               return (
                 <DropdownMenuItem
                   key={root.id}

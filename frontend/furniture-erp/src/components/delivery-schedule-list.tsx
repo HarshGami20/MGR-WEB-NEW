@@ -6,9 +6,11 @@ import { patchOrderDelivery } from "@/lib/delivery-api";
 import {
   buildDateSlotSchedule,
   formatYmdLabel,
+  groupOrdersByCategory,
   normalizeDeliveryStatus,
   type DeliveryOrderRow,
   type DeliveryStatusValue,
+  type SlotGroup,
 } from "@/lib/delivery-stats";
 import type { DeliverySlotRow } from "@/lib/delivery-api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +40,7 @@ export function DeliveryScheduleList({
   fromYmd,
   toYmd,
   loading,
+  groupByCategory = false,
   canUpdateStatus = true,
   drivers = [],
   canAssignDriver = true,
@@ -49,6 +52,8 @@ export function DeliveryScheduleList({
   fromYmd?: string;
   toYmd?: string;
   loading?: boolean;
+  /** Group orders under their main category within each delivery date. */
+  groupByCategory?: boolean;
   /** When false or a function returns false, delivery status is read-only for that row. */
   canUpdateStatus?: boolean | ((order: DeliveryOrderRow) => boolean);
   drivers?: Array<{ id: number; name: string }>;
@@ -65,21 +70,40 @@ export function DeliveryScheduleList({
     return map;
   }, [slots]);
 
-  const schedule = useMemo(
-    () =>
-      buildDateSlotSchedule(orders, { fromYmd, toYmd }).map((day) => ({
-        ...day,
-        slots: day.slots.map((slot) => {
-          const cap = slot.slotId != null ? slotCapacity.get(slot.slotId) : null;
-          return {
-            ...slot,
-            maxOrders: cap?.maxOrders ?? slot.maxOrders,
-            booked: cap?.bookedCount ?? slot.booked,
-          };
-        }),
-      })),
-    [orders, fromYmd, toYmd, slotCapacity],
+  const enrichSlots = useMemo(
+    () => (daySlots: SlotGroup[]) =>
+      daySlots.map((slot) => {
+        const cap = slot.slotId != null ? slotCapacity.get(slot.slotId) : null;
+        return {
+          ...slot,
+          maxOrders: cap?.maxOrders ?? slot.maxOrders,
+          booked: cap?.bookedCount ?? slot.booked,
+        };
+      }),
+    [slotCapacity],
   );
+
+  const schedule = useMemo(() => {
+    const days = buildDateSlotSchedule(orders, { fromYmd, toYmd });
+    if (!groupByCategory) {
+      return days.map((day) => ({
+        dateYmd: day.dateYmd,
+        categories: null as null,
+        slots: enrichSlots(day.slots),
+      }));
+    }
+    return days.map((day) => {
+      const dayOrders = day.slots.flatMap((slot) => slot.orders);
+      return {
+        dateYmd: day.dateYmd,
+        categories: groupOrdersByCategory(dayOrders).map((category) => ({
+          ...category,
+          slots: enrichSlots(category.slots),
+        })),
+        slots: null as null,
+      };
+    });
+  }, [orders, fromYmd, toYmd, groupByCategory, enrichSlots]);
 
   const patchDelivery = useMutation({
     mutationFn: (vars: {
@@ -116,6 +140,39 @@ export function DeliveryScheduleList({
   }
 
   const dateOnlyLayout = !DELIVERY_SLOTS_ENABLED;
+
+  const renderSlotBlock = (dayYmd: string, slot: SlotGroup) => (
+    <div
+      key={`${dayYmd}-${slot.slotId ?? "none"}`}
+      className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden"
+    >
+      {!dateOnlyLayout ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/30 border-b border-border/60">
+          <div>
+            <p className="font-medium text-sm">{slot.label}</p>
+            {slot.timeRange ? <p className="text-xs text-muted-foreground">{slot.timeRange}</p> : null}
+          </div>
+          <span className="text-xs font-medium tabular-nums text-muted-foreground">
+            {slot.booked}
+            {slot.maxOrders != null ? ` / ${slot.maxOrders}` : ""} booked
+          </span>
+        </div>
+      ) : null}
+      <ul className="divide-y divide-border/60">{slot.orders.map(renderOrderRow)}</ul>
+    </div>
+  );
+
+  const renderSlots = (dayYmd: string, daySlots: SlotGroup[]) => {
+    if (dateOnlyLayout) {
+      const dayOrders = daySlots.flatMap((slot) => slot.orders);
+      return (
+        <div className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden">
+          <ul className="divide-y divide-border/60">{dayOrders.map(renderOrderRow)}</ul>
+        </div>
+      );
+    }
+    return daySlots.map((slot) => renderSlotBlock(dayYmd, slot));
+  };
 
   const renderOrderRow = (order: DeliveryOrderRow) => {
     const del = normalizeDeliveryStatus(order.deliveryStatus);
@@ -221,46 +278,35 @@ export function DeliveryScheduleList({
   return (
     <div className="space-y-6">
       {schedule.map((day) => {
-        const dayOrderCount = day.slots.reduce((n, s) => n + s.orders.length, 0);
-        const dayOrders = day.slots.flatMap((s) => s.orders);
+        const dayOrderCount = day.categories
+          ? day.categories.reduce((n, category) => n + category.orderCount, 0)
+          : (day.slots ?? []).reduce((n, slot) => n + slot.orders.length, 0);
 
         return (
-        <section key={day.dateYmd} className="space-y-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/80 pb-2">
-            <h3 className="text-base font-semibold text-foreground">{formatYmdLabel(day.dateYmd)}</h3>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {dayOrderCount} order{dayOrderCount === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {dateOnlyLayout ? (
-            <div className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden">
-              <ul className="divide-y divide-border/60">{dayOrders.map(renderOrderRow)}</ul>
+          <section key={day.dateYmd} className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/80 pb-2">
+              <h3 className="text-base font-semibold text-foreground">{formatYmdLabel(day.dateYmd)}</h3>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {dayOrderCount} order{dayOrderCount === 1 ? "" : "s"}
+              </span>
             </div>
-          ) : (
-          day.slots.map((slot) => (
-            <div
-              key={`${day.dateYmd}-${slot.slotId ?? "none"}`}
-              className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/30 border-b border-border/60">
-                <div>
-                  <p className="font-medium text-sm">{slot.label}</p>
-                  {slot.timeRange ? (
-                    <p className="text-xs text-muted-foreground">{slot.timeRange}</p>
-                  ) : null}
+
+            {day.categories ? (
+              day.categories.map((category) => (
+                <div key={category.categoryId ?? "uncategorized"} className="space-y-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+                    <h4 className="text-sm font-semibold text-foreground">{category.categoryName}</h4>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {category.orderCount} order{category.orderCount === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-3">{renderSlots(day.dateYmd, category.slots)}</div>
                 </div>
-                <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                  {slot.booked}
-                  {slot.maxOrders != null ? ` / ${slot.maxOrders}` : ""} booked
-                </span>
-              </div>
-
-              <ul className="divide-y divide-border/60">{slot.orders.map(renderOrderRow)}</ul>
-            </div>
-          ))
-          )}
-        </section>
+              ))
+            ) : (
+              renderSlots(day.dateYmd, day.slots ?? [])
+            )}
+          </section>
         );
       })}
     </div>
