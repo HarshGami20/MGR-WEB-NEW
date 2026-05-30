@@ -5,6 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
 import { normalizePermissionsForUi } from "../lib/permissions";
+import { logActivity } from "../lib/activity-log";
 
 async function loadRoleForClient(roleId: number | null | undefined) {
   if (roleId == null) return null;
@@ -66,11 +67,32 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const { mobile, password } = parsed.data;
   const user = await prisma.user.findUnique({ where: { mobile } });
   if (!user || !user.isActive) {
+    await logActivity({
+      action: "login_failed",
+      module: "auth",
+      entityType: "User",
+      summary: `Failed login attempt for ${mobile}`,
+      method: "POST",
+      path: "/auth/login",
+      metadata: { mobile },
+    });
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
   const ok = await comparePassword(password, user.passwordHash);
   if (!ok) {
+    await logActivity({
+      userId: user.id,
+      action: "login_failed",
+      module: "auth",
+      entityType: "User",
+      entityId: String(user.id),
+      branchId: user.branchId,
+      summary: `${user.name} failed login`,
+      method: "POST",
+      path: "/auth/login",
+      metadata: { mobile },
+    });
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
@@ -81,6 +103,20 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
+  res.locals.auditMeta = {
+    skip: true,
+  };
+  await logActivity({
+    userId: user.id,
+    action: "login",
+    module: "auth",
+    entityType: "User",
+    entityId: String(user.id),
+    branchId: user.branchId,
+    summary: `${user.name} logged in`,
+    method: "POST",
+    path: "/auth/login",
+  });
   res.json({ token, user: { ...publicUser, role } });
 });
 

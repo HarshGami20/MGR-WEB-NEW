@@ -28,6 +28,7 @@ model Branch {
   complaints     Complaint[]
   drivers        Driver[]
   driverPayments DriverPayment[]
+  activityLogs   ActivityLog[]
 
   @@map("branches")
 }
@@ -122,6 +123,7 @@ model User {
   notificationRecipients  NotificationRecipient[]
   fcmTokens                 UserFcmToken[]
   notificationPreference    NotificationPreference?
+  activityLogs              ActivityLog[]
 
   @@map("users")
 }
@@ -691,4 +693,28 @@ model Setting {
   updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   @@map("settings")
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String
+  module     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  branchId   Int?     @map("branch_id")
+  summary    String
+  method     String?
+  path       String?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([module])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("activity_logs")
 }

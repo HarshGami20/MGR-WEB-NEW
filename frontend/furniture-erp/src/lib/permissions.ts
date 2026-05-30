@@ -24,6 +24,7 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: "purchaseOrders", label: "Purchase orders" },
   { key: "complaints", label: "Complaints & support" },
   { key: "settings", label: "Settings" },
+  { key: "activityLogs", label: "Activity logs" },
 ];
 
 export function emptyPermissionsMatrix(): Record<string, PermissionSet> {
@@ -118,6 +119,7 @@ export const ROUTE_VIEW_MODULE: Record<string, string | undefined> = {
   "/branches": "branches",
   "/users": "users",
   "/roles": "roles",
+  "/activity-logs": "activityLogs",
   "/settings": "settings",
   /** Client-side utility; any active user may open (see `can("tools", "view")`). */
   "/curtain-calculator": "tools",
@@ -140,6 +142,7 @@ const STAFF_NAV_FALLBACK_ORDER = [
   "/branches",
   "/users",
   "/roles",
+  "/activity-logs",
   "/settings",
   "/curtain-calculator",
 ];
@@ -163,6 +166,11 @@ export function usePermissions() {
         if (user && isPartnerPortalUser(user)) return true;
         if (!user?.roleId || !user.isActive) return false;
         return true;
+      }
+      if (module === "activityLogs" && action === "view") {
+        if (!user?.roleId || !user.isActive) return false;
+        if (superAdmin) return true;
+        return !!(matrix.activityLogs?.view || matrix.users?.view);
       }
       if (user && isPartnerPortalUser(user)) {
         const row = partnerPortalMatrix[module];

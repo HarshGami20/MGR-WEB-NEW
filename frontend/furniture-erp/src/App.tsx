@@ -33,6 +33,7 @@ import Suppliers from "@/pages/suppliers";
 import Manufacturers from "@/pages/manufacturers";
 import Users from "@/pages/users";
 import Roles from "@/pages/roles";
+import ActivityLogsPage from "@/pages/activity-logs";
 import Settings from "@/pages/settings";
 import Branches from "@/pages/branches";
 import ReportsPage from "@/pages/reports";
@@ -214,6 +215,9 @@ function Router() {
       </Route>
       <Route path="/roles">
         <ProtectedRoute viewModule="roles" component={Roles} />
+      </Route>
+      <Route path="/activity-logs">
+        <ProtectedRoute viewModule="activityLogs" component={ActivityLogsPage} />
       </Route>
       <Route path="/settings">
         <ProtectedRoute viewModule="settings" component={Settings} />

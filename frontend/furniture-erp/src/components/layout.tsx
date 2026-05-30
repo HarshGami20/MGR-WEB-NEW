@@ -30,6 +30,7 @@ import {
   ClipboardList,
   Headphones,
   Bell,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -126,6 +127,7 @@ const staffNavSections: StaffSection[] = [
       { label: "Branches", href: "/branches", icon: GitBranch },
       { label: "Users", href: "/users", icon: Users },
       { label: "Roles", href: "/roles", icon: ShieldCheck },
+      { label: "Activity logs", href: "/activity-logs", icon: ScrollText },
     ],
   },
 ];

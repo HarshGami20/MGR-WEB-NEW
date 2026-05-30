@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 export async function clearDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.notificationRecipient.deleteMany();
   await prisma.notificationLog.deleteMany();
+  await prisma.activityLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.notificationPreference.deleteMany();
   await prisma.userFcmToken.deleteMany();

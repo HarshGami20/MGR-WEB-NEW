@@ -18,7 +18,8 @@ export type ListDateFilterContext =
   | "products"
   | "inventory"
   | "payments"
-  | "paymentsDue";
+  | "paymentsDue"
+  | "activity-logs";
 
 export const LIST_DATE_FILTER_LABELS: Record<
   ListDateFilterContext,
@@ -32,6 +33,7 @@ export const LIST_DATE_FILTER_LABELS: Record<
   inventory: { label: "Date", placeholder: "Movement date" },
   payments: { label: "Date", placeholder: "Payment date" },
   paymentsDue: { label: "Date", placeholder: "Order date" },
+  "activity-logs": { label: "Date", placeholder: "Activity date" },
 };
 
 /** API query fields used by list endpoints (`createdFrom` / `createdTo`, YYYY-MM-DD). */

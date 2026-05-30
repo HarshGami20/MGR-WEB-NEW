@@ -29,6 +29,7 @@ export const PERMISSION_MODULE_KEYS = [
   "purchaseOrders",
   "complaints",
   "settings",
+  "activityLogs",
 ] as const;
 
 export type PermissionModuleKey = (typeof PERMISSION_MODULE_KEYS)[number];

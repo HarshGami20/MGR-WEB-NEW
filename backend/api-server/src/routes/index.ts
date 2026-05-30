@@ -24,8 +24,12 @@ import deliverySlotsRouter from "./deliverySlots";
 import driversRouter from "./drivers";
 import driverPaymentsRouter from "./driverPayments";
 import complaintsRouter from "./complaints";
+import activityLogsRouter from "./activityLogs";
+import { auditLogMiddleware } from "../middlewares/audit-log";
 
 const router: IRouter = Router();
+
+router.use(auditLogMiddleware);
 
 router.use(healthRouter);
 router.use(authRouter);
@@ -52,5 +56,6 @@ router.use(attributeCatalogRouter);
 router.use(reportsRouter);
 router.use(notificationsRouter);
 router.use(complaintsRouter);
+router.use(activityLogsRouter);
 
 export default router;
