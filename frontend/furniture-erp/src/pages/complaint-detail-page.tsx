@@ -293,8 +293,25 @@ export default function ComplaintDetailPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="space-y-6 lg:col-span-8">
-            <DetailSection title="Issue description" >
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{complaint.description}</p>
+           
+
+            <DetailSection title="Issue details">
+              <div className="space-y-4 text-sm">
+                {complaint.subject ? (
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Subject</p>
+                    <p className="font-medium text-foreground whitespace-pre-wrap leading-relaxed mt-0.5">
+                      {complaint.subject}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Description</p>
+                  <p className="text-foreground whitespace-pre-wrap leading-relaxed mt-0.5">
+                    {complaint.description || "—"}
+                  </p>
+                </div>
+              </div>
             </DetailSection>
 
             <DetailSection

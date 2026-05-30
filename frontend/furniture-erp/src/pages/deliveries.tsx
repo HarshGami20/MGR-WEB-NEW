@@ -692,15 +692,9 @@ export default function DeliveriesPage() {
 
         <TabsContent value="booked">
           <Card>
-            <CardHeader>
-              <CardTitle>Booked deliveries</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                <div className="flex flex-wrap flex-1 items-end gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Delivery date</label>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <CardTitle>Delevery Schedule</CardTitle>
+            <div className="space-y-1">
                     <ListDateRangeFilter
                       context="deliveries"
                       className="max-w-md bg-white"
@@ -709,40 +703,9 @@ export default function DeliveriesPage() {
                       numberOfMonths={2}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Main category</label>
-                    <ListCategoryFilter
-                      value={categoryId}
-                      onChange={setCategoryId}
-                      mainCategoriesOnly
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-muted-foreground"
-                    onClick={() => setCategoryId(undefined)}
-                    disabled={categoryId == null}
-                  >
-                    All categories
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-muted-foreground"
-                    onClick={resetBookedDateRange}
-                    disabled={!bookedRangeFilterActive}
-                  >
-                    Show all dates
-                  </Button>
-                </div>
-                </div>
-                
-              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+             
 
               {!canViewOrders ? (
                 <p className="text-sm text-muted-foreground py-6 text-center">
@@ -756,7 +719,6 @@ export default function DeliveriesPage() {
                   fromYmd={bookedRange.fromYmd}
                   toYmd={bookedRange.toYmd}
                   loading={ordersLoading}
-                  groupByCategory
                   canUpdateStatus={canEditDeliveryStatuses}
                   drivers={activeDrivers}
                   canAssignDriver={can("deliveries", "edit")}

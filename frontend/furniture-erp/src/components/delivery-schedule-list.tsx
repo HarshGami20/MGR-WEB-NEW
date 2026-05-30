@@ -6,7 +6,6 @@ import { patchOrderDelivery } from "@/lib/delivery-api";
 import {
   buildDateSlotSchedule,
   formatYmdLabel,
-  groupOrdersByCategory,
   normalizeDeliveryStatus,
   type DeliveryOrderRow,
   type DeliveryStatusValue,
@@ -40,7 +39,6 @@ export function DeliveryScheduleList({
   fromYmd,
   toYmd,
   loading,
-  groupByCategory = false,
   canUpdateStatus = true,
   drivers = [],
   canAssignDriver = true,
@@ -52,8 +50,6 @@ export function DeliveryScheduleList({
   fromYmd?: string;
   toYmd?: string;
   loading?: boolean;
-  /** Group orders under their main category within each delivery date. */
-  groupByCategory?: boolean;
   /** When false or a function returns false, delivery status is read-only for that row. */
   canUpdateStatus?: boolean | ((order: DeliveryOrderRow) => boolean);
   drivers?: Array<{ id: number; name: string }>;
@@ -83,27 +79,14 @@ export function DeliveryScheduleList({
     [slotCapacity],
   );
 
-  const schedule = useMemo(() => {
-    const days = buildDateSlotSchedule(orders, { fromYmd, toYmd });
-    if (!groupByCategory) {
-      return days.map((day) => ({
+  const schedule = useMemo(
+    () =>
+      buildDateSlotSchedule(orders, { fromYmd, toYmd }).map((day) => ({
         dateYmd: day.dateYmd,
-        categories: null as null,
         slots: enrichSlots(day.slots),
-      }));
-    }
-    return days.map((day) => {
-      const dayOrders = day.slots.flatMap((slot) => slot.orders);
-      return {
-        dateYmd: day.dateYmd,
-        categories: groupOrdersByCategory(dayOrders).map((category) => ({
-          ...category,
-          slots: enrichSlots(category.slots),
-        })),
-        slots: null as null,
-      };
-    });
-  }, [orders, fromYmd, toYmd, groupByCategory, enrichSlots]);
+      })),
+    [orders, fromYmd, toYmd, enrichSlots],
+  );
 
   const patchDelivery = useMutation({
     mutationFn: (vars: {
@@ -266,7 +249,7 @@ export function DeliveryScheduleList({
           <Link
             href={`/orders/${order.id}`}
             aria-label={`View order ${order.orderNumber}`}
-            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 aspect-square w-8")}
           >
             <Eye className="h-4 w-4" />
           </Link>
@@ -278,9 +261,7 @@ export function DeliveryScheduleList({
   return (
     <div className="space-y-6">
       {schedule.map((day) => {
-        const dayOrderCount = day.categories
-          ? day.categories.reduce((n, category) => n + category.orderCount, 0)
-          : (day.slots ?? []).reduce((n, slot) => n + slot.orders.length, 0);
+        const dayOrderCount = day.slots.reduce((n, slot) => n + slot.orders.length, 0);
 
         return (
           <section key={day.dateYmd} className="space-y-3">
@@ -290,22 +271,7 @@ export function DeliveryScheduleList({
                 {dayOrderCount} order{dayOrderCount === 1 ? "" : "s"}
               </span>
             </div>
-
-            {day.categories ? (
-              day.categories.map((category) => (
-                <div key={category.categoryId ?? "uncategorized"} className="space-y-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
-                    <h4 className="text-sm font-semibold text-foreground">{category.categoryName}</h4>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {category.orderCount} order{category.orderCount === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <div className="space-y-3">{renderSlots(day.dateYmd, category.slots)}</div>
-                </div>
-              ))
-            ) : (
-              renderSlots(day.dateYmd, day.slots ?? [])
-            )}
+            <div className="space-y-3">{renderSlots(day.dateYmd, day.slots)}</div>
           </section>
         );
       })}
