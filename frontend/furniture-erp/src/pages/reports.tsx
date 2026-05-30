@@ -327,31 +327,6 @@ export default function ReportsPage() {
         <Card className="border-border/70 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center flex-wrap">
-              <div className="w-full sm:w-[200px]">
-                <ListCategoryFilter
-                  value={categoryId}
-                  onChange={setCategoryId}
-                  triggerClassName="h-10 w-full rounded-lg"
-                />
-              </div>
-              <div className="w-full space-y-1 sm:w-[200px]">
-                <Select
-                  value={selectedBranchId?.toString() ?? "all"}
-                  onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v, 10))}
-                >
-                  <SelectTrigger className="h-10 rounded-lg">
-                    <SelectValue placeholder="All branches" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All branches</SelectItem>
-                    {(branchesData?.data ?? []).map((b: { id: number; name: string }) => (
-                      <SelectItem key={b.id} value={String(b.id)}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="w-full sm:w-[180px]">
                 <Select
                   value={viewMode}
@@ -368,29 +343,8 @@ export default function ReportsPage() {
                     <SelectValue placeholder="View by" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="year">Year</SelectItem>
-                    <SelectItem value="month">Month</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-full sm:w-[180px]">
-                <Select
-                  value={selectedYear}
-                  onValueChange={(v) => {
-                    setSelectedYear(v);
-                    if (v === "all") setSelectedMonth("all");
-                  }}
-                >
-                  <SelectTrigger className="h-10 rounded-lg">
-                    <SelectValue placeholder="Year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All years</SelectItem>
-                    {yearOptions.map((y) => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="month">Monthly</SelectItem>
+                    <SelectItem value="year">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -418,6 +372,52 @@ export default function ReportsPage() {
                   </Select>
                 </div>
               ) : null}
+              <div className="w-full sm:w-[180px]">
+                <Select
+                  value={selectedYear}
+                  onValueChange={(v) => {
+                    setSelectedYear(v);
+                    if (v === "all") setSelectedMonth("all");
+                  }}
+                >
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All years</SelectItem>
+                    {yearOptions.map((y) => (
+                      <SelectItem key={y} value={String(y)}>
+                        {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-[200px]">
+                <ListCategoryFilter
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  triggerClassName="h-10 w-full rounded-lg"
+                />
+              </div>
+              <div className="w-full sm:w-[200px]">
+                <Select
+                  value={selectedBranchId?.toString() ?? "all"}
+                  onValueChange={(v) => setSelectedBranchId(v === "all" ? null : parseInt(v, 10))}
+                >
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="All branches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All branches</SelectItem>
+                    {(branchesData?.data ?? []).map((b: { id: number; name: string }) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex flex-wrap gap-2 sm:ml-auto">
                 <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
                   {dailyMode ? "Daily view active" : "Monthly view active"}

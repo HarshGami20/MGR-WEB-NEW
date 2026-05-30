@@ -5,6 +5,10 @@ declare global {
   namespace Express {
     interface Locals {
       auditMeta?: AuditMeta;
+      /** Prevents duplicate activity log rows for a single HTTP response. */
+      auditPersisted?: boolean;
+      /** Set when audit middleware has already patched this response. */
+      auditHooked?: boolean;
     }
   }
 }
@@ -17,6 +21,12 @@ export function auditLogMiddleware(req: Request, res: Response, next: NextFuncti
     return;
   }
 
+  if (res.locals.auditHooked) {
+    next();
+    return;
+  }
+  res.locals.auditHooked = true;
+
   let responseBody: unknown;
   const originalJson = res.json.bind(res);
   res.json = function jsonWithAudit(body: unknown) {
@@ -24,8 +34,9 @@ export function auditLogMiddleware(req: Request, res: Response, next: NextFuncti
     return originalJson(body);
   };
 
-  res.on("finish", () => {
+  res.once("finish", () => {
     if (res.statusCode < 200 || res.statusCode >= 300) return;
+    if (res.locals.auditPersisted) return;
     void persistAuditFromRequest(req, res, responseBody);
   });
 

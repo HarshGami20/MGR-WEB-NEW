@@ -233,12 +233,16 @@ function shouldSkipPath(path: string, method: string): boolean {
 
 export async function persistAuditFromRequest(
   req: Request,
-  res: { statusCode: number; locals: { auditMeta?: AuditMeta } },
+  res: {
+    statusCode: number;
+    locals: { auditMeta?: AuditMeta; auditPersisted?: boolean };
+  },
   responseBody: unknown,
 ): Promise<void> {
   const method = req.method.toUpperCase();
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return;
   if (res.statusCode < 200 || res.statusCode >= 300) return;
+  if (res.locals.auditPersisted) return;
 
   const path = normalizeApiPath(req.originalUrl || req.url);
   if (shouldSkipPath(path, method)) return;
@@ -269,6 +273,17 @@ export async function persistAuditFromRequest(
     override: meta?.summary ?? null,
   });
 
+  // Skip generic fallback rows when the response body was not captured (duplicate finish / json hook).
+  if (
+    !meta?.summary &&
+    !normalizedEntityId &&
+    !entityLabel &&
+    action === "create" &&
+    method === "POST"
+  ) {
+    return;
+  }
+
   await logActivity({
     userId: meta?.userId ?? actor?.id ?? null,
     action,
@@ -285,6 +300,7 @@ export async function persistAuditFromRequest(
       ...(meta?.metadata && typeof meta.metadata === "object" ? meta.metadata : {}),
     },
   });
+  res.locals.auditPersisted = true;
 }
 
 export const ACTIVITY_LOG_MODULES = [

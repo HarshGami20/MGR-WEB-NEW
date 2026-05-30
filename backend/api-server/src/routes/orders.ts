@@ -990,7 +990,19 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     createdById: actorId ?? undefined,
   });
 
-  res.status(201).json(await enrichOrder(createdOrder));
+  const enriched = await enrichOrder(createdOrder);
+  const actorName =
+    (req as { user?: { name?: string } }).user?.name?.trim() ||
+    (actorId != null ? `User #${actorId}` : "System");
+  res.locals.auditMeta = {
+    entityId: String(createdOrder.id),
+    entityType: "Order",
+    module: "orders",
+    action: "create",
+    branchId: createdOrder.branchId ?? branchId,
+    summary: `${actorName} created ${createdOrder.orderNumber}`,
+  };
+  res.status(201).json(enriched);
 });
 
 router.get("/orders/:id", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
