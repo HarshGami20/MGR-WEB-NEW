@@ -25,6 +25,7 @@ import { getPartnerScope, purchaseOrderMatchesScope } from "../lib/partner-scope
 import { assignedBranchIds } from "../lib/user-branches";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { complaintInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
+import { generateComplaintNumber } from "../lib/complaint-number";
 
 const router: IRouter = Router();
 
@@ -48,10 +49,6 @@ const complaintImageUpload = multer({
     else cb(new Error("Only image uploads are allowed"));
   },
 });
-
-function generateComplaintNumber() {
-  return `CMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-}
 
 const CreateComplaintBody = z
   .object({
@@ -350,7 +347,7 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.complaint.create({
         data: {
-          complaintNumber: generateComplaintNumber(),
+          complaintNumber: await generateComplaintNumber(tx),
           kind: "sales_order",
           orderId: order.id,
           productId: parsed.data.productId ?? null,
@@ -422,7 +419,7 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.complaint.create({
       data: {
-        complaintNumber: generateComplaintNumber(),
+        complaintNumber: await generateComplaintNumber(tx),
         kind: "purchase_order",
         purchaseOrderId: po.id,
         productId: parsed.data.productId ?? null,
