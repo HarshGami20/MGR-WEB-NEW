@@ -127,7 +127,7 @@ export function DeliveryScheduleList({
   const renderSlotBlock = (dayYmd: string, slot: SlotGroup) => (
     <div
       key={`${dayYmd}-${slot.slotId ?? "none"}`}
-      className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden"
+      className="rounded-xl border border-border/80 bg-muted/15 overflow-hidden"
     >
       {!dateOnlyLayout ? (
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/30 border-b border-border/60">
@@ -149,7 +149,7 @@ export function DeliveryScheduleList({
     if (dateOnlyLayout) {
       const dayOrders = daySlots.flatMap((slot) => slot.orders);
       return (
-        <div className="rounded-2xl border border-border/80 bg-muted/15 overflow-hidden">
+        <div className="rounded-xl border border-border/80 bg-muted/15 overflow-hidden">
           <ul className="divide-y divide-border/60">{dayOrders.map(renderOrderRow)}</ul>
         </div>
       );
