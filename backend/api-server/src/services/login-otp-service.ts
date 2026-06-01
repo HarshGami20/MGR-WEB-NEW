@@ -1,9 +1,20 @@
 import { logger } from "../lib/logger";
+import { maskMobile } from "../lib/login-otp";
 import { normalizeWhatsAppPhone } from "../lib/whatsapp-phone";
 import { templateLoginOtp } from "../lib/whatsapp-templates";
 import { sendWhatsAppTemplate } from "./whatsapp-service";
 
 const otpLog = logger.child({ ns: "auth", layer: "login-otp" });
+
+/** Log OTP to terminal (dev). Set `AUTH_OTP_LOG_CONSOLE=false` to disable in production. */
+function logOtpToConsole(mobile: string, otp: string): void {
+  const flag = process.env["AUTH_OTP_LOG_CONSOLE"]?.trim().toLowerCase();
+  if (flag === "0" || flag === "false" || flag === "no") return;
+  if (flag !== "1" && flag !== "true" && flag !== "yes" && process.env.NODE_ENV === "production") {
+    return;
+  }
+  console.log(`[login-otp] code=${otp} mobile=${maskMobile(mobile)}`);
+}
 
 function devModeTestPhone(): string | null {
   const raw = process.env["WHATSAPP_DEV_PHONE"]?.trim();
@@ -32,6 +43,9 @@ export async function sendLoginOtpWhatsApp(input: {
   recipientName: string;
   otpCode: string;
 }): Promise<{ ok: boolean; error?: string }> {
+  logOtpToConsole(input.mobile, input.otpCode);
+  otpLog.info({ mobile: maskMobile(input.mobile), otp: input.otpCode }, "Login OTP generated");
+
   const phone = resolveDestinationPhone(input.mobile);
   if (!phone) {
     return { ok: false, error: "invalid_phone" };
