@@ -219,8 +219,32 @@ router.post(
   },
 );
 
+function serializeVariantRow(v: {
+  id: number;
+  productId: number;
+  sku: string;
+  name: string;
+  price: unknown;
+  stockQty: number;
+  lowStockThreshold: number;
+  imageUrls: string | null;
+  imageUrl: string | null;
+  attributes: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  const imageUrls = parseImageUrlsJson(v.imageUrls, v.imageUrl);
+  return {
+    ...v,
+    imageUrls,
+    imageUrl: imageUrls[0] ?? null,
+    price: v.price != null ? toNumber(v.price) : null,
+  };
+}
+
 router.get("/products", requireAuth, requirePermission("products", "read"), async (req, res): Promise<void> => {
-  const { search, categoryId, lowStock, page = "1", limit = "20", createdFrom, createdTo } =
+  const { search, categoryId, lowStock, page = "1", limit = "20", createdFrom, createdTo, includeVariants } =
     req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -277,6 +301,21 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
   const total = products.length;
   const pageRows = products.slice(offset, offset + limitNum);
   const branchStocks = await branchStockByProduct(pageRows.map((row) => row.id));
+
+  const variantsByProductId = new Map<number, ReturnType<typeof serializeVariantRow>[]>();
+  if (includeVariants === "true" && pageRows.length > 0) {
+    const pageIds = pageRows.map((row) => row.id);
+    const variantRows = await prisma.productVariant.findMany({
+      where: { productId: { in: pageIds } },
+      orderBy: { id: "asc" },
+    });
+    for (const v of variantRows) {
+      const list = variantsByProductId.get(v.productId) ?? [];
+      list.push(serializeVariantRow(v));
+      variantsByProductId.set(v.productId, list);
+    }
+  }
+
   const data = await Promise.all(
     pageRows.map(async (row) => ({
       ...(await enrichProduct(row, {
@@ -284,6 +323,9 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
         variantPrices: variantPricesByProduct.get(row.id),
       })),
       branchStocks: branchStocks.get(row.id) ?? [],
+      ...(includeVariants === "true"
+        ? { variants: variantsByProductId.get(row.id) ?? [] }
+        : {}),
     })),
   );
   res.json({ data, total, page: pageNum, limit: limitNum });

@@ -53,13 +53,63 @@ paths:
               $ref: "#/components/schemas/LoginBody"
       responses:
         "200":
+          description: Login successful or OTP required (web client)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login/verify-otp:
+    post:
+      operationId: verifyLoginOtp
+      tags: [auth]
+      summary: Verify WhatsApp OTP after web login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyLoginOtpBody"
+      responses:
+        "200":
           description: Login successful
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
         "401":
-          description: Unauthorized
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login/resend-otp:
+    post:
+      operationId: resendLoginOtp
+      tags: [auth]
+      summary: Resend WhatsApp login OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendLoginOtpBody"
+      responses:
+        "200":
+          description: OTP resent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResendLoginOtpResponse"
+        "429":
+          description: Resend cooldown active
           content:
             application/json:
               schema:
@@ -1849,7 +1899,57 @@ components:
           type: string
         password:
           type: string
+        client:
+          type: string
+          enum: [web, mobile]
+          description: When `web`, password is verified first and WhatsApp OTP is required before a token is issued.
       required: [mobile, password]
+
+    VerifyLoginOtpBody:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        otp:
+          type: string
+      required: [sessionId, otp]
+
+    ResendLoginOtpBody:
+      type: object
+      properties:
+        sessionId:
+          type: string
+      required: [sessionId]
+
+    LoginOtpRequiredResponse:
+      type: object
+      properties:
+        otpRequired:
+          type: boolean
+          enum: [true]
+        sessionId:
+          type: string
+        expiresInSeconds:
+          type: integer
+        maskedMobile:
+          type: string
+      required: [otpRequired, sessionId, expiresInSeconds, maskedMobile]
+
+    ResendLoginOtpResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        expiresInSeconds:
+          type: integer
+        maskedMobile:
+          type: string
+      required: [success, expiresInSeconds, maskedMobile]
+
+    LoginResponse:
+      oneOf:
+        - $ref: "#/components/schemas/AuthResponse"
+        - $ref: "#/components/schemas/LoginOtpRequiredResponse"
 
     AuthResponse:
       type: object

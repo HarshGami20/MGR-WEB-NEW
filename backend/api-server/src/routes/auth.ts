@@ -1,11 +1,24 @@
 import { Router, IRouter } from "express";
-import { LoginBody } from "../zod";
+import { z } from "zod";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
+import { LoginBody, ResendLoginOtpBody, VerifyLoginOtpBody } from "../zod";
 import { comparePassword, hashPassword, signToken } from "../lib/auth";
 import { requireAuth } from "../middlewares/auth";
 import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
 import { normalizePermissionsForUi } from "../lib/permissions";
 import { logActivity } from "../lib/activity-log";
+import {
+  createLoginOtpSession,
+  getLoginOtpSessionUser,
+  isWebLoginOtpEnabled,
+  maskMobile,
+  refreshLoginOtpSession,
+  verifyLoginOtp,
+} from "../lib/login-otp";
+import { sendLoginOtpWhatsApp } from "../services/login-otp-service";
 
 async function loadRoleForClient(roleId: number | null | undefined) {
   if (roleId == null) return null;
@@ -13,10 +26,41 @@ async function loadRoleForClient(roleId: number | null | undefined) {
   if (!r) return null;
   return { ...r, permissions: normalizePermissionsForUi(JSON.parse(r.permissions)) };
 }
-import { z } from "zod";
-import multer from "multer";
-import fs from "node:fs";
-import path from "node:path";
+
+async function buildAuthResponse(userId: number) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || !user.isActive) return null;
+  const token = signToken({ userId: user.id, roleId: user.roleId });
+  const role = await loadRoleForClient(user.roleId);
+  const publicUser = await loadUserPublicById(user.id);
+  if (!publicUser) return null;
+  return { token, user: { ...publicUser, role } };
+}
+
+async function issueLoginOtp(user: { id: number; name: string; mobile: string; branchId: number | null }) {
+  const { sessionId, code, expiresInSeconds } = await createLoginOtpSession(user.id, user.mobile);
+  const sendResult = await sendLoginOtpWhatsApp({
+    mobile: user.mobile,
+    recipientName: user.name?.trim() || "User",
+    otpCode: code,
+  });
+  if (!sendResult.ok) {
+    return {
+      ok: false as const,
+      status: 503,
+      error: "Could not send verification code to WhatsApp. Please try again.",
+    };
+  }
+  return {
+    ok: true as const,
+    body: {
+      otpRequired: true as const,
+      sessionId,
+      expiresInSeconds,
+      maskedMobile: maskMobile(user.mobile),
+    },
+  };
+}
 
 const router: IRouter = Router();
 const avatarUploadDir = path.resolve(process.cwd(), "uploads", "avatars");
@@ -64,7 +108,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { mobile, password } = parsed.data;
+  const { mobile, password, client } = parsed.data;
   const user = await prisma.user.findUnique({ where: { mobile } });
   if (!user || !user.isActive) {
     await logActivity({
@@ -96,10 +140,34 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
-  const token = signToken({ userId: user.id, roleId: user.roleId });
-  const role = await loadRoleForClient(user.roleId);
-  const publicUser = await loadUserPublicById(user.id);
-  if (!publicUser) {
+
+  const otpFlow =
+    (client === "web" || client === "mobile") && isWebLoginOtpEnabled();
+  if (otpFlow) {
+    const otpResult = await issueLoginOtp(user);
+    if (!otpResult.ok) {
+      res.status(otpResult.status).json({ error: otpResult.error });
+      return;
+    }
+    res.locals.auditMeta = { skip: true };
+    await logActivity({
+      userId: user.id,
+      action: "login_otp_sent",
+      module: "auth",
+      entityType: "User",
+      entityId: String(user.id),
+      branchId: user.branchId,
+      summary: `${user.name} requested login OTP`,
+      method: "POST",
+      path: "/auth/login",
+      metadata: { mobile },
+    });
+    res.json(otpResult.body);
+    return;
+  }
+
+  const auth = await buildAuthResponse(user.id);
+  if (!auth) {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
@@ -117,7 +185,112 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     method: "POST",
     path: "/auth/login",
   });
-  res.json({ token, user: { ...publicUser, role } });
+  res.json(auth);
+});
+
+router.post("/auth/login/verify-otp", async (req, res): Promise<void> => {
+  const parsed = VerifyLoginOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const otpDigits = parsed.data.otp.replace(/\D/g, "");
+  const verified = await verifyLoginOtp(parsed.data.sessionId, otpDigits);
+  if (!verified.ok) {
+    res.status(401).json({ error: verified.error });
+    return;
+  }
+
+  const auth = await buildAuthResponse(verified.userId);
+  if (!auth) {
+    res.status(401).json({ error: "Invalid credentials" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: verified.userId },
+    select: { id: true, name: true, branchId: true },
+  });
+
+  res.locals.auditMeta = { skip: true };
+  if (user) {
+    await logActivity({
+      userId: user.id,
+      action: "login",
+      module: "auth",
+      entityType: "User",
+      entityId: String(user.id),
+      branchId: user.branchId,
+      summary: `${user.name} logged in with WhatsApp OTP`,
+      method: "POST",
+      path: "/auth/login/verify-otp",
+    });
+  }
+
+  res.json(auth);
+});
+
+router.post("/auth/login/resend-otp", async (req, res): Promise<void> => {
+  const parsed = ResendLoginOtpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const sessionMeta = getLoginOtpSessionUser(parsed.data.sessionId);
+  if (!sessionMeta) {
+    res.status(400).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+
+  const refreshed = await refreshLoginOtpSession(parsed.data.sessionId);
+  if (!refreshed.ok) {
+    const status = refreshed.retryAfterSeconds ? 429 : 400;
+    res.status(status).json({
+      error: refreshed.error,
+      retryAfterSeconds: refreshed.retryAfterSeconds,
+    });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: sessionMeta.userId },
+    select: { id: true, name: true, mobile: true, branchId: true, isActive: true },
+  });
+  if (!user || !user.isActive) {
+    res.status(400).json({ error: "Session expired. Please sign in again." });
+    return;
+  }
+
+  const sendResult = await sendLoginOtpWhatsApp({
+    mobile: user.mobile,
+    recipientName: user.name?.trim() || "User",
+    otpCode: refreshed.code,
+  });
+  if (!sendResult.ok) {
+    res.status(503).json({ error: "Could not send verification code to WhatsApp. Please try again." });
+    return;
+  }
+
+  res.locals.auditMeta = { skip: true };
+  await logActivity({
+    userId: user.id,
+    action: "login_otp_resent",
+    module: "auth",
+    entityType: "User",
+    entityId: String(user.id),
+    branchId: user.branchId,
+    summary: `${user.name} resent login OTP`,
+    method: "POST",
+    path: "/auth/login/resend-otp",
+  });
+
+  res.json({
+    success: true,
+    expiresInSeconds: refreshed.expiresInSeconds,
+    maskedMobile: maskMobile(user.mobile),
+  });
 });
 
 router.post("/auth/logout", (_req, res): void => {

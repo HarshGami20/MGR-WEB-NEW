@@ -6,6 +6,17 @@ export const HealthCheckResponse = z.object({ status: z.literal("ok") });
 export const LoginBody = z.object({
   mobile: z.string().min(1),
   password: z.string().min(1),
+  /** When `web` or `mobile`, password is verified first and a WhatsApp OTP is required before issuing a token. */
+  client: z.enum(["web", "mobile"]).optional(),
+});
+
+export const VerifyLoginOtpBody = z.object({
+  sessionId: z.string().min(1),
+  otp: z.string().min(4).max(8),
+});
+
+export const ResendLoginOtpBody = z.object({
+  sessionId: z.string().min(1),
 });
 
 export const CreateUserBody = permissiveObject;

@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { apiErrorHandler } from "./middlewares/api-error";
+import { logApiErrorResponses } from "./middlewares/log-api-error-responses";
 import { logger } from "./lib/logger";
 import path from "node:path";
 
@@ -32,6 +33,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
+app.use(logApiErrorResponses);
 app.use("/api", router);
 app.use(apiErrorHandler);
 

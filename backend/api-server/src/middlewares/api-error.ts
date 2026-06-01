@@ -36,6 +36,29 @@ export const apiErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
     return;
   }
 
-  logger.error({ err, path: req.path, method: req.method }, "Unhandled API error");
+  const user = (req as { user?: { id?: number } }).user;
+  logger.error(
+    {
+      err,
+      path: req.originalUrl?.split("?")[0] ?? req.path,
+      method: req.method,
+      userId: user?.id,
+      body:
+        req.method !== "GET" && req.method !== "HEAD" && req.body && typeof req.body === "object"
+          ? redactSensitive(req.body as Record<string, unknown>)
+          : undefined,
+    },
+    "Unhandled API error",
+  );
   res.status(500).json({ error: "Something went wrong. Please try again." });
 };
+
+function redactSensitive(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  for (const key of Object.keys(out)) {
+    if (key.toLowerCase().includes("password") || key === "token" || key === "secret") {
+      out[key] = "[redacted]";
+    }
+  }
+  return out;
+}

@@ -6,15 +6,23 @@ function formatAmountText(amount: string): string {
   return Number.isFinite(n) ? formatInr(n) : `₹${amount}`;
 }
 
+export type WhatsAppTemplateParameter =
+  | {
+      type: "text";
+      text: string;
+      parameter_name?: string;
+    }
+  | {
+      type: "otp";
+      otp_type: "COPY_CODE";
+      text: string;
+    };
+
 export type WhatsAppTemplateComponent = {
   type: "body" | "button";
-  sub_type?: "url";
+  sub_type?: "url" | "copy_code";
   index?: string | number;
-  parameters: Array<{
-    type: "text";
-    text: string;
-    parameter_name?: string;
-  }>;
+  parameters: WhatsAppTemplateParameter[];
 };
 
 export type WhatsAppTemplateMessage = {
@@ -385,6 +393,32 @@ function humanizeAdjustmentType(type: string): string {
   if (type === "in") return "Stock In";
   if (type === "out") return "Stock Out";
   return "Stock Adjustment";
+}
+
+/**
+ * Web login OTP — Meta **Authentication** template (Copy code button).
+ * When sending, Meta expects body + button with the same OTP as `type: "text"`;
+ * button uses `sub_type: "url"` (not `copy_code`) even though the template shows Copy code.
+ * @see https://developers.facebook.com/docs/whatsapp/business-management-api/authentication-templates/
+ */
+export function templateLoginOtp(input: { otpCode: string }): WhatsAppTemplateMessage {
+  const otp = input.otpCode.replace(/\D/g, "").slice(0, 15);
+  return {
+    name: process.env["WHATSAPP_TEMPLATE_LOGIN_OTP"]?.trim() || "mgr_casa_login_otp",
+    language: { code: process.env["WHATSAPP_TEMPLATE_LOGIN_OTP_LANG"]?.trim() || "en" },
+    components: [
+      {
+        type: "body",
+        parameters: [{ type: "text", text: otp }],
+      },
+      {
+        type: "button",
+        sub_type: "url",
+        index: "0",
+        parameters: [{ type: "text", text: otp }],
+      },
+    ],
+  };
 }
 
 /** Inventory / stock updated (body only — Meta template URL button is static, no dynamic suffix). */
