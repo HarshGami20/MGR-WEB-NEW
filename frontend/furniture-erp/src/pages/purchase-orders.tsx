@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Eye, Trash2 } from "lucide-react";
+import { Plus, Eye, Trash2, Search } from "lucide-react";
 import { LineItemRow } from "@/components/line-item-row";
 import { lineItemFormSchema, lineItemToApiPayload } from "@/lib/line-item-form-schema";
 import { defaultCatalogLineItem } from "@/lib/custom-line-item";
@@ -65,6 +65,7 @@ type POFormValues = z.infer<typeof poSchema>;
 export default function PurchaseOrders() {
   const [, setLocation] = useLocation();
   const { can } = usePermissions();
+  const [search, setSearch] = useState("");
   const [type, setType] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRangeValue>({});
@@ -91,6 +92,7 @@ export default function PurchaseOrders() {
     branchId: selectedBranchId ?? undefined,
     ...dateRangeToCreatedParams(dateRange),
     ...categoryIdToParam(categoryId),
+    ...(search.trim() ? { search: search.trim() } : {}),
     page,
     limit: 10,
   });
@@ -359,7 +361,21 @@ export default function PurchaseOrders() {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-center bg-card p-4 rounded-lg border">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-end bg-card p-4 rounded-lg border">
+        <div className="space-y-1 w-full max-w-sm">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by PO number…"
+              className="pl-8"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+        </div>
         <ListDateRangeFilter
           context="purchaseOrders"
           value={dateRange}

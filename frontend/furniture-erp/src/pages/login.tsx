@@ -299,9 +299,9 @@ export default function Login() {
                   <span className="font-medium text-foreground">{maskedMobile || "your mobile"}</span>. Code expires in{" "}
                   {expiryMinutes} minute{expiryMinutes === 1 ? "" : "s"}.
                 </p>
-                <div className="flex gap-2 justify-center py-2">
+                <div className="flex justify-center py-2">
                   <InputOTP maxLength={6} value={otp} onChange={setOtp} disabled={loading}>
-                    <InputOTPGroup>
+                    <InputOTPGroup className="gap-2">
                       <InputOTPSlot index={0} className="h-11 w-11 rounded-xl" />
                       <InputOTPSlot index={1} className="h-11 w-11 rounded-xl" />
                       <InputOTPSlot index={2} className="h-11 w-11 rounded-xl" />

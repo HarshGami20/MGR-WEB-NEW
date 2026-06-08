@@ -184,30 +184,24 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", 
   const createdAt = createdAtRangeFromQuery(createdFrom, createdTo);
   if (createdAt) where.createdAt = createdAt;
 
+  const extraClauses: Prisma.PurchaseOrderWhereInput[] = [];
+
   const categoryIds = await resolveCategoryFilterIds(categoryId);
   if (categoryIds) {
-    const catClause = purchaseOrderHasProductInCategories(categoryIds);
-    if (where.AND) {
-      where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), catClause];
-    } else if (Object.keys(where).length > 0) {
-      where.AND = [where, catClause];
-    } else {
-      Object.assign(where, catClause);
-    }
+    extraClauses.push(purchaseOrderHasProductInCategories(categoryIds));
   }
 
   const q = typeof search === "string" ? search.trim() : "";
   if (q) {
-    const searchClause: Prisma.PurchaseOrderWhereInput = {
+    extraClauses.push({
       poNumber: { contains: q, mode: "insensitive" },
-    };
-    if (where.AND) {
-      where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), searchClause];
-    } else if (Object.keys(where).length > 0) {
-      where.AND = [where, searchClause];
-    } else {
-      Object.assign(where, searchClause);
-    }
+    });
+  }
+
+  if (extraClauses.length === 1) {
+    Object.assign(where, extraClauses[0]);
+  } else if (extraClauses.length > 1) {
+    where.AND = extraClauses;
   }
 
   const [totalCount, pos] = await prisma.$transaction([
@@ -331,14 +325,43 @@ router.get("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
 
 router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrders", "update"), async (req, res): Promise<void> => {
   const scope = await getPartnerScope(req);
-  if (scope) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const parsed = UpdatePurchaseOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const existing = await prisma.purchaseOrder.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (!purchaseOrderMatchesScope(existing, scope)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  if (scope) {
+    if (parsed.data.staffComments === undefined || parsed.data.notes !== undefined || parsed.data.expectedDelivery !== undefined) {
+      res.status(403).json({ error: "Partners may only add notes on this order" });
+      return;
+    }
+    const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
+    const po = await prisma.purchaseOrder.update({
+      where: { id },
+      data: { staffComments: JSON.stringify(normalized) },
+    }).catch(() => null);
+    if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+    const actorId = (req as { user?: { id: number } }).user?.id;
+    emitSafe("PURCHASE_ORDER_UPDATED", {
+      purchaseOrderId: po.id,
+      poNumber: po.poNumber,
+      branchId: po.branchId,
+      supplierId: po.supplierId,
+      manufacturerId: po.manufacturerId,
+      type: po.type,
+      updatedById: actorId,
+    });
+    res.json(await enrichPO(po));
+    return;
+  }
+
   const updateData: any = {};
   if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
   if (parsed.data.expectedDelivery !== undefined) updateData.expectedDelivery = parsed.data.expectedDelivery ? new Date(parsed.data.expectedDelivery) : null;
@@ -346,8 +369,6 @@ router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
     const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
     updateData.staffComments = JSON.stringify(normalized);
   }
-  const existing = await prisma.purchaseOrder.findUnique({ where: { id } });
-  if (!existing) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
   const po = await prisma.purchaseOrder.update({ where: { id }, data: updateData }).catch(() => null);
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
@@ -431,7 +452,12 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  if (scope && !PARTNER_ALLOWED_PO_STATUSES.has(parsed.data.status)) {
+  const nextStatus = String(parsed.data.status ?? "");
+  const supplierReject =
+    scope?.kind === "supplier" &&
+    nextStatus === "cancelled" &&
+    ["pending", "confirmed"].includes(existing.status);
+  if (scope && !supplierReject && !PARTNER_ALLOWED_PO_STATUSES.has(nextStatus)) {
     res.status(403).json({ error: "That status cannot be set from the supplier/manufacturer portal" });
     return;
   }

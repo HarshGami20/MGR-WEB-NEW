@@ -125,6 +125,14 @@ const orderSchema = z.object({
       message: `exceed order total (${formatInr(totals.total)})`,
     });
   }
+  const hasChallan = data.challanImages.some((entry) => entry.imageUrl?.trim());
+  if (!hasChallan) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["challanImages", 0, "imageUrl"],
+      message: "Upload a challan photo before saving",
+    });
+  }
 });
 
 type OrderFormValues = z.infer<typeof orderSchema>;
@@ -933,7 +941,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none">Not specified</SelectItem>
+                        <SelectItem value="none">Not Specified</SelectItem>
                         {mainCategories.map((cat) => (
                           <SelectItem key={cat.id} value={String(cat.id)}>
                             {cat.name}
@@ -1245,7 +1253,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
               <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight">Challan &amp; photos</h2>
-                  {/* <p className="text-xs text-muted-foreground">Signed challan is required. Site photos are optional.</p> */}
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Signed challan is required. Site photos are optional.
+                  </p>
                 </div>
 
                 <FormField
@@ -1253,6 +1263,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                   name="challanImages.0.imageUrl"
                   render={({ field, fieldState }) => (
                     <FormItem className="space-y-3">
+                      <FormLabel>Challan *</FormLabel>
                       <input
                         id="challan-upload-input"
                         type="file"

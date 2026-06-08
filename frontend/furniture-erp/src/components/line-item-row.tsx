@@ -224,7 +224,27 @@ export function LineItemRow({
             <FormItem>
               <FormLabel className="text-xs">Quantity</FormLabel>
               <FormControl>
-                <Input type="number" min="1" {...field} />
+                <Input
+                  type="number"
+                  min="1"
+                  name={field.name}
+                  ref={field.ref}
+                  value={field.value === "" || field.value == null ? "" : String(field.value)}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      field.onChange("");
+                      return;
+                    }
+                    const n = Number(raw);
+                    if (Number.isFinite(n)) field.onChange(n);
+                  }}
+                  onBlur={(e) => {
+                    const n = Number(e.target.value);
+                    field.onChange(Number.isFinite(n) && n > 0 ? n : 1);
+                    field.onBlur();
+                  }}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
