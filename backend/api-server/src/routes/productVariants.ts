@@ -11,6 +11,7 @@ import { emitInventoryUpdated } from "../lib/inventory-events";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 import { collectVariantUploadUrls } from "../lib/collect-product-upload-urls";
 import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
+import { branchStockByVariant } from "../lib/branch-stock";
 
 const router: IRouter = Router();
 
@@ -34,62 +35,6 @@ function serializeVariant(v: any) {
     imageUrl: imageUrls[0] ?? null,
     price: v.price != null ? toNumber(v.price) : null,
   };
-}
-
-type BranchStockRow = {
-  branchId: number | null;
-  branchName: string;
-  stockQty: number;
-};
-
-async function branchStockByVariant(variantIds: number[]): Promise<Map<number, BranchStockRow[]>> {
-  const result = new Map<number, BranchStockRow[]>();
-  if (variantIds.length === 0) return result;
-
-  const logs = await prisma.inventoryLog.findMany({
-    where: { variantId: { in: variantIds } },
-    include: { branch: { select: { id: true, name: true } } },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
-
-  const stockByVariantBranch = new Map<string, number>();
-  const branchLabels = new Map<string, { branchId: number | null; branchName: string }>();
-
-  for (const log of logs) {
-    if (log.variantId == null) continue;
-    const branchKey = log.branchId == null ? "unassigned" : String(log.branchId);
-    const key = `${log.variantId}:${branchKey}`;
-    const current = stockByVariantBranch.get(key) ?? 0;
-
-    if (log.type === "in") {
-      stockByVariantBranch.set(key, current + log.quantity);
-    } else if (log.type === "out") {
-      stockByVariantBranch.set(key, current - log.quantity);
-    } else if (log.type === "adjustment") {
-      stockByVariantBranch.set(key, log.quantity);
-    }
-
-    branchLabels.set(branchKey, {
-      branchId: log.branchId ?? null,
-      branchName: log.branch?.name ?? "Unassigned",
-    });
-  }
-
-  for (const [key, qty] of stockByVariantBranch.entries()) {
-    const [variantIdRaw, branchKey] = key.split(":");
-    const variantId = Number(variantIdRaw);
-    const branch = branchLabels.get(branchKey);
-    if (!branch) continue;
-    const rows = result.get(variantId) ?? [];
-    rows.push({ ...branch, stockQty: Math.max(0, qty) });
-    result.set(variantId, rows);
-  }
-
-  for (const rows of result.values()) {
-    rows.sort((a, b) => a.branchName.localeCompare(b.branchName));
-  }
-
-  return result;
 }
 
 router.get("/products/:productId/variants", requireAuth, requireProductReadAccess(), async (req, res): Promise<void> => {

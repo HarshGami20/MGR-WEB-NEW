@@ -139,7 +139,11 @@ export default function Branches() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Delete this branch? Users/orders assigned to it will lose their branch.")) {
+    if (
+      confirm(
+        "Delete this branch? It can only be removed after all product stock at this location is cleared or transferred. Users assigned to this branch will lose their assignment.",
+      )
+    ) {
       deleteBranch.mutate({ id });
     }
   };

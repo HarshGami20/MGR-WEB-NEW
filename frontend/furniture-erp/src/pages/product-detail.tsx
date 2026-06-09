@@ -45,6 +45,12 @@ import { productImageList, variantImageList } from "@/lib/image-urls";
 import { formatInr } from "@/lib/format-currency";
 import { tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
 import { useBranch } from "@/lib/branch-context";
+import {
+  computeProductDetailStock,
+  variantDisplayStock,
+  type BranchStock,
+} from "@/lib/product-branch-stock";
+import { BranchStockBreakdown } from "@/components/branch-stock-breakdown";
 
 function formatVariantPrice(v: { price?: number | null }, basePrice: number): string {
   const amount = v.price != null ? Number(v.price) : Number(basePrice);
@@ -70,12 +76,6 @@ function formatPriceRange(basePrice: number, variants: ProductVariant[]): string
   return `${formatPriceCompact(min)} - ${formatPriceCompact(max)}`;
 }
 
-type BranchStock = {
-  branchId: number | null;
-  branchName: string;
-  stockQty: number;
-};
-
 type ProductVariantRow = ProductVariant & {
   branchStocks?: BranchStock[];
 };
@@ -83,38 +83,6 @@ type ProductVariantRow = ProductVariant & {
 type ProductBranchStockPayload = {
   branchStocks?: BranchStock[];
 };
-
-function aggregateBranchStocksFromVariants(variants: ProductVariantRow[]): BranchStock[] {
-  const byKey = new Map<string, BranchStock>();
-  for (const variant of variants) {
-    for (const branch of variant.branchStocks ?? []) {
-      const key = branch.branchId != null ? String(branch.branchId) : "unassigned";
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.stockQty += branch.stockQty;
-      } else {
-        byKey.set(key, { ...branch });
-      }
-    }
-  }
-  return [...byKey.values()].sort((a, b) => a.branchName.localeCompare(b.branchName));
-}
-
-function branchStockTotal(stocks: BranchStock[]): number {
-  return stocks.reduce((sum, branch) => sum + branch.stockQty, 0);
-}
-
-function variantDisplayStock(
-  variant: ProductVariantRow,
-  selectedBranchId: number | null | undefined,
-): number {
-  const branchStocks = Array.isArray(variant.branchStocks) ? variant.branchStocks : [];
-  if (selectedBranchId != null) {
-    return branchStocks.find((branch) => branch.branchId === selectedBranchId)?.stockQty ?? 0;
-  }
-  if (branchStocks.length > 0) return branchStockTotal(branchStocks);
-  return variant.stockQty ?? 0;
-}
 
 function DetailCard({
   children,
@@ -264,7 +232,6 @@ export default function ProductDetail() {
   });
 
   const variantList: ProductVariantRow[] = Array.isArray(variants) ? variants : [];
-  const variationCount = product?.variantCount ?? variantList.length;
   const isSingleSku = !hasVariantsProduct;
 
   const deleteProduct = useDeleteProduct({
@@ -353,35 +320,24 @@ export default function ProductDetail() {
   const basePrice = Number(product.price);
   const priceRangeLabel = formatPriceRange(basePrice, variantList);
   const productWithBranchStocks = product as typeof product & ProductBranchStockPayload;
-  const productBranchStocks = (Array.isArray(productWithBranchStocks.branchStocks)
-    ? productWithBranchStocks.branchStocks
-    : []) as BranchStock[];
-  const variantAggregatedBranchStocks =
-    !isSingleSku && variantList.length > 0 ? aggregateBranchStocksFromVariants(variantList) : [];
-  const totalUnitsBranchStocks =
-    !isSingleSku && variantList.length > 0
-      ? variantAggregatedBranchStocks.length > 0
-        ? variantAggregatedBranchStocks
-        : productBranchStocks
-      : productBranchStocks;
-  const totalUnitsGrandTotal =
-    totalUnitsBranchStocks.length > 0
-      ? branchStockTotal(totalUnitsBranchStocks)
-      : !isSingleSku && variantList.length > 0
-        ? variantList.reduce((sum, variant) => sum + variantDisplayStock(variant, null), 0)
-        : product.stockQty;
-  const selectedProductBranchStock =
+  const detailStock = computeProductDetailStock(
+    productWithBranchStocks,
+    variantList,
+    isSingleSku,
+    selectedBranchId,
+  );
+  const { displayStock: productDisplayStock, grandTotal: totalUnitsGrandTotal, totalUnitsBranchStocks } =
+    detailStock;
+  const statsTotalUnits =
+    selectedBranchId != null ? productDisplayStock : totalUnitsGrandTotal;
+  const selectedBranchName =
     selectedBranchId != null
-      ? totalUnitsBranchStocks.find((branch) => branch.branchId === selectedBranchId)
-      : null;
-  const productDisplayStock =
-    selectedBranchId != null
-      ? selectedProductBranchStock?.stockQty ?? 0
-      : totalUnitsBranchStocks.length > 0
-        ? totalUnitsGrandTotal
-        : product.stockQty;
-  const productStockLow =
-    productDisplayStock <= (product.lowStockThreshold ?? 10) && productDisplayStock > 0;
+      ? totalUnitsBranchStocks.find(
+          (branch) => branch.branchId != null && Number(branch.branchId) === selectedBranchId,
+        )?.branchName
+      : undefined;
+  const productStockLow = detailStock.isLow;
+  const variationCountResolved = Math.max(product.variantCount ?? 0, variantList.length);
   const productActive = isSingleSku
     ? true
     : variantList.length === 0
@@ -458,36 +414,22 @@ export default function ProductDetail() {
             <DetailCard className="px-4 py-1">
               <div className="grid grid-cols-2 divide-x divide-border/60 border-b border-border/60">
                 <div className="py-4 text-center">
-                  <p className="text-2xl font-bold tabular-nums leading-none">{totalUnitsGrandTotal}</p>
+                  <p className="text-2xl font-bold tabular-nums leading-none">{statsTotalUnits}</p>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Total units
                   </p>
                   {totalUnitsBranchStocks.length > 0 ? (
-                    <div className="mt-2 space-y-0.5 px-2 text-xs text-muted-foreground">
-                      {totalUnitsBranchStocks.map((branch) => {
-                        const isSelectedBranch =
-                          selectedBranchId != null && branch.branchId === selectedBranchId;
-                        return (
-                          <div
-                            key={branch.branchId ?? "unassigned"}
-                            className={cn(
-                              "flex items-center justify-center gap-2",
-                              isSelectedBranch && "font-medium text-foreground",
-                            )}
-                          >
-                            <span className="max-w-[100px] truncate" title={branch.branchName}>
-                              {branch.branchName}
-                            </span>
-                            <span className="font-mono text-foreground">{branch.stockQty}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <BranchStockBreakdown
+                      className="mt-2 px-2"
+                      branchStocks={totalUnitsBranchStocks}
+                      selectedBranchId={selectedBranchId}
+                      align="center"
+                    />
                   ) : null}
                 </div>
                 <div className="py-4 text-center">
                   <p className="text-2xl font-bold tabular-nums leading-none">
-                    {isSingleSku ? "—" : variationCount}
+                    {isSingleSku ? "—" : variationCountResolved}
                   </p>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Variations
@@ -586,19 +528,16 @@ export default function ProductDetail() {
                     </p>
                     {selectedBranchId != null ? (
                       <div className="mt-2 text-xs text-muted-foreground">
-                        {selectedProductBranchStock?.branchName ?? "Selected branch"}
+                        {selectedBranchName ?? "Selected branch"}
                       </div>
-                    ) : productBranchStocks.length > 0 ? (
-                      <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                        {productBranchStocks.map((branch) => (
-                          <div key={branch.branchId ?? "unassigned"} className="flex items-center gap-2">
-                            <span className="max-w-[100px] truncate" title={branch.branchName}>
-                              {branch.branchName}
-                            </span>
-                            <span className="font-mono text-foreground">{branch.stockQty}</span>
-                          </div>
-                        ))}
-                      </div>
+                    ) : null}
+                    {totalUnitsBranchStocks.length > 0 ? (
+                      <BranchStockBreakdown
+                        className="mt-2"
+                        branchStocks={totalUnitsBranchStocks}
+                        selectedBranchId={selectedBranchId}
+                        align="left"
+                      />
                     ) : null}
                   </div>
                   <div>
@@ -626,7 +565,7 @@ export default function ProductDetail() {
                     <Hexagon className="h-4 w-4 text-muted-foreground" aria-hidden />
                     <h2 className="font-inter text-lg font-semibold text-foreground">Variations</h2>
                     <Badge variant="secondary" className="rounded-md font-normal tabular-nums">
-                      {variationCount}
+                      {variationCountResolved}
                     </Badge>
                   </div>
                   {canEdit && (
@@ -692,7 +631,11 @@ export default function ProductDetail() {
                         const branchStocks = Array.isArray(v.branchStocks) ? v.branchStocks : [];
                         const selectedBranchStock =
                           selectedBranchId != null
-                            ? branchStocks.find((branch) => branch.branchId === selectedBranchId)
+                            ? branchStocks.find(
+                                (branch) =>
+                                  branch.branchId != null &&
+                                  Number(branch.branchId) === selectedBranchId,
+                              )
                             : null;
                         const displayStock = variantDisplayStock(v, selectedBranchId);
                         const isLowStock = displayStock <= low;
@@ -732,20 +675,13 @@ export default function ProductDetail() {
                                 <div className="mt-1 text-xs text-muted-foreground">
                                   {selectedBranchStock?.branchName ?? "Selected branch"}
                                 </div>
-                              ) : branchStocks.length > 0 ? (
-                                <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                                  {branchStocks.map((branch) => (
-                                    <div
-                                      key={branch.branchId ?? "unassigned"}
-                                      className="flex items-center justify-end gap-2 whitespace-nowrap"
-                                    >
-                                      <span className="max-w-[90px] truncate" title={branch.branchName}>
-                                        {branch.branchName}
-                                      </span>
-                                      <span className="font-mono text-foreground">{branch.stockQty}</span>
-                                    </div>
-                                  ))}
-                                </div>
+                              ) : null}
+                              {branchStocks.length > 0 ? (
+                                <BranchStockBreakdown
+                                  className="mt-1"
+                                  branchStocks={branchStocks}
+                                  selectedBranchId={selectedBranchId}
+                                />
                               ) : null}
                             </TableCell>
                             <TableCell className="hidden sm:table-cell px-4 py-3 text-right align-top tabular-nums text-muted-foreground text-sm">

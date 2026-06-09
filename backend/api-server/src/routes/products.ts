@@ -8,6 +8,7 @@ import { getDefaultGstPercent } from "../lib/default-gst";
 import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
+import { branchStockByVariant } from "../lib/branch-stock";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
 import { collectProductUploadUrls } from "../lib/collect-product-upload-urls";
 import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
@@ -323,9 +324,13 @@ router.get("/products", requireAuth, requirePermission("products", "read"), asyn
       where: { productId: { in: pageIds } },
       orderBy: { id: "asc" },
     });
+    const variantBranchStocks = await branchStockByVariant(variantRows.map((v) => v.id));
     for (const v of variantRows) {
       const list = variantsByProductId.get(v.productId) ?? [];
-      list.push(serializeVariantRow(v));
+      list.push({
+        ...serializeVariantRow(v),
+        branchStocks: variantBranchStocks.get(v.id) ?? [],
+      });
       variantsByProductId.set(v.productId, list);
     }
   }

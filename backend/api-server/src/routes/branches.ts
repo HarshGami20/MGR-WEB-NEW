@@ -4,6 +4,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission, isSuperAdminRole } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
 import { assignedBranchIds } from "../lib/user-branches";
+import { branchInventorySummary } from "../lib/branch-stock";
 
 const router: IRouter = Router();
 
@@ -132,8 +133,30 @@ router.put("/branches/:id", requireAuth, requirePermission("branches", "update")
 
 router.delete("/branches/:id", requireAuth, requirePermission("branches", "delete"), async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
-  const branch = await prisma.branch.delete({ where: { id } }).catch(() => null);
-  if (!branch) { res.status(404).json({ error: "Branch not found" }); return; }
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid branch id" });
+    return;
+  }
+
+  const existing = await prisma.branch.findUnique({ where: { id } });
+  if (!existing) {
+    res.status(404).json({ error: "Branch not found" });
+    return;
+  }
+
+  const inventory = await branchInventorySummary(id);
+  if (inventory.totalStockQty > 0) {
+    const productLabel = inventory.skuCount === 1 ? "product" : "products";
+    res.status(409).json({
+      error: `Cannot delete this branch while it still has inventory (${inventory.totalStockQty} units across ${inventory.skuCount} ${productLabel}). Clear or transfer stock to zero first.`,
+      code: "BRANCH_HAS_STOCK",
+      totalStockQty: inventory.totalStockQty,
+      skuCount: inventory.skuCount,
+    });
+    return;
+  }
+
+  await prisma.branch.delete({ where: { id } });
   res.json({ success: true });
 });
 

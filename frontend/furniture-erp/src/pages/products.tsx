@@ -20,14 +20,10 @@ import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { ProductsExportDialog } from "@/components/products-export-dialog";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 import { useBranch } from "@/lib/branch-context";
+import { productStockDisplay } from "@/lib/product-branch-stock";
+import { BranchStockBreakdown } from "@/components/branch-stock-breakdown";
 
 type ProductRow = Record<string, any>;
-
-type BranchStock = {
-  branchId: number | null;
-  branchName: string;
-  stockQty: number;
-};
 
 function ProductNameCell({ product }: { product: ProductRow }) {
   const gallery = productImageList(product);
@@ -214,42 +210,29 @@ export default function Products() {
         header: "Stock",
         meta: { headerClassName: "text-right", cellClassName: "text-right" },
         cell: ({ row }) => {
-          const branches = (Array.isArray(row.original.branchStocks)
-            ? row.original.branchStocks
-            : []) as BranchStock[];
-          const selectedBranchStock =
-            selectedBranchId != null ? branches.find((branch) => branch.branchId === selectedBranchId) : null;
-          const displayStock =
-            selectedBranchId != null
-              ? selectedBranchStock?.stockQty ?? 0
-              : Number(row.original.stockQty ?? 0);
-          const low =
-            selectedBranchId != null
-              ? displayStock <= Number(row.original.lowStockThreshold ?? 10)
-              : row.original.isLowStock === true;
+          const hasVariants = Number(row.original.variantCount ?? 0) > 0;
+          const { qty: displayStock, isLow: low, branchStocks } = productStockDisplay(
+            row.original,
+            selectedBranchId,
+          );
           return (
             <div className="space-y-1">
-              <div className={cn("font-medium tabular-nums", low && "text-destructive")}>
+              <div
+                className={cn(
+                  "flex items-center justify-end gap-1.5 font-medium tabular-nums",
+                  low && "text-destructive",
+                )}
+              >
+                {hasVariants ? (
+                  <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                ) : null}
                 {displayStock}
               </div>
-              {selectedBranchId != null ? (
-                <div className="text-xs text-muted-foreground">
-                  {/* {selectedBranchStock?.branchName ?? "Selected branch"} */}
-                </div>
-              ) : branches.length > 0 ? (
-                <div className="space-y-0.5 text-xs text-muted-foreground">
-                  {branches.map((branch) => (
-                    <div
-                      key={branch.branchId ?? "unassigned"}
-                      className="flex items-center justify-end gap-2 whitespace-nowrap"
-                    >
-                      <span className="max-w-[90px] truncate" title={branch.branchName}>
-                        {branch.branchName}
-                      </span>
-                      <span className="font-mono text-foreground">{branch.stockQty}</span>
-                    </div>
-                  ))}
-                </div>
+              {branchStocks && branchStocks.length > 0 ? (
+                <BranchStockBreakdown
+                  branchStocks={branchStocks}
+                  selectedBranchId={selectedBranchId}
+                />
               ) : null}
             </div>
           );
