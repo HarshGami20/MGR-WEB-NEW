@@ -89,6 +89,29 @@ function generatePONumber() {
   return `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+function todayYmdLocal(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function expectedDeliveryYmd(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(raw);
+  if (match) return match[1]!;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function expectedDeliveryInPast(value: unknown): boolean {
+  const ymd = expectedDeliveryYmd(value);
+  return Boolean(ymd && ymd < todayYmdLocal());
+}
+
 async function enrichPO(po: any) {
   const items = await prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } });
   const enrichedItems = await Promise.all(items.map(async (item) => {
@@ -235,6 +258,10 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
   if (branchId == null) return;
 
   const { items, branchId: _omitClientBranch, ...poData } = parsed.data as any;
+  if (expectedDeliveryInPast(poData.expectedDelivery)) {
+    res.status(400).json({ error: "Expected delivery date cannot be in the past" });
+    return;
+  }
   let totalAmount = 0;
   for (const item of items) totalAmount += item.unitPrice * item.quantity;
   const poNumber = generatePONumber();
@@ -364,7 +391,13 @@ router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
 
   const updateData: any = {};
   if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
-  if (parsed.data.expectedDelivery !== undefined) updateData.expectedDelivery = parsed.data.expectedDelivery ? new Date(parsed.data.expectedDelivery) : null;
+  if (parsed.data.expectedDelivery !== undefined) {
+    if (expectedDeliveryInPast(parsed.data.expectedDelivery)) {
+      res.status(400).json({ error: "Expected delivery date cannot be in the past" });
+      return;
+    }
+    updateData.expectedDelivery = parsed.data.expectedDelivery ? new Date(parsed.data.expectedDelivery) : null;
+  }
   if (parsed.data.staffComments !== undefined) {
     const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
     updateData.staffComments = JSON.stringify(normalized);

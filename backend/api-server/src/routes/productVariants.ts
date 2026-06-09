@@ -9,6 +9,8 @@ import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { emitInventoryUpdated } from "../lib/inventory-events";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
+import { collectVariantUploadUrls } from "../lib/collect-product-upload-urls";
+import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
 
 const router: IRouter = Router();
 
@@ -286,16 +288,22 @@ router.delete("/products/:productId/variants/:variantId", requireAuth, requirePe
   }
   const variant = await prisma.productVariant.findFirst({
     where: { id: variantId, productId },
+    select: { id: true, imageUrl: true, imageUrls: true },
   });
   if (!variant) {
     res.status(404).json({ error: "Variant not found" });
     return;
   }
   try {
+    const uploadUrls = collectVariantUploadUrls(variant);
+
     await prisma.$transaction(async (tx) => {
       await tx.inventoryLog.deleteMany({ where: { variantId } });
       await tx.productVariant.delete({ where: { id: variantId } });
     });
+
+    deleteUploadFilesByUrl(uploadUrls);
+
     await syncProductStockFromVariants(productId);
     res.json({ success: true });
   } catch (e: unknown) {

@@ -9,6 +9,8 @@ import { syncProductStockFromVariants } from "../lib/product-stock";
 import { syncAttributeCatalogFromJson } from "../lib/attribute-catalog";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { parseImageUrlsJson, serializeImageUrls } from "../lib/image-urls";
+import { collectProductUploadUrls } from "../lib/collect-product-upload-urls";
+import { deleteUploadFilesByUrl } from "../lib/delete-upload-files";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { loadCategoryNodes, productMatchesCategoryFilter } from "../lib/category-filter";
 import { emitInventoryUpdated } from "../lib/inventory-events";
@@ -27,7 +29,15 @@ class ProductDeleteBlockedError extends Error {
 
 /** Inventory logs block product delete; order/PO line items must be removed manually. */
 async function deleteProductWithDependents(productId: number): Promise<void> {
-  const existing = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+  const existing = await prisma.product.findUnique({
+    where: { id: productId },
+    select: {
+      id: true,
+      imageUrl: true,
+      imageUrls: true,
+      variants: { select: { imageUrl: true, imageUrls: true } },
+    },
+  });
   if (!existing) {
     throw Object.assign(new Error("Product not found"), { code: "NOT_FOUND" });
   }
@@ -46,10 +56,14 @@ async function deleteProductWithDependents(productId: number): Promise<void> {
     );
   }
 
+  const uploadUrls = collectProductUploadUrls(existing);
+
   await prisma.$transaction(async (tx) => {
     await tx.inventoryLog.deleteMany({ where: { productId } });
     await tx.product.delete({ where: { id: productId } });
   });
+
+  deleteUploadFilesByUrl(uploadUrls);
 }
 
 const productImageUploadDir = path.resolve(process.cwd(), "uploads", "products");

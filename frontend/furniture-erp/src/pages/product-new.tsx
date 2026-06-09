@@ -77,7 +77,7 @@ export default function ProductNew() {
       subCategoryId: "",
       sku: "",
       description: "",
-      price: 0,
+      price: undefined,
       lowStockThreshold: 10,
       inventoryMode: "simple",
       imageUrls: [],
@@ -270,7 +270,7 @@ export default function ProductNew() {
                             form.setValue("variants", []);
                           } else {
                             form.setValue("attributes", []);
-                            form.setValue("price", 0);
+                            form.setValue("price", undefined);
                           }
                         }}
                         className="grid gap-3 sm:grid-cols-2"
