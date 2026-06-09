@@ -31,7 +31,12 @@ export const CreateSupplierBody = permissiveObject;
 export const GetSupplierParams = permissiveObject;
 export const UpdateSettingsBody = permissiveObject;
 export const CreateRoleBody = permissiveObject;
-export const GetRoleParams = permissiveObject;
+export const GetRoleParams = z.object({
+  id: z.preprocess(
+    (v) => (Array.isArray(v) ? v[0] : v),
+    z.coerce.number().int().positive(),
+  ),
+});
 export const CreatePurchaseOrderBody = permissiveObject;
 export const UpdatePurchaseOrderBody = permissiveObject;
 export const UpdatePurchaseOrderStatusBody = permissiveObject;
