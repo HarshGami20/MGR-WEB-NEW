@@ -29,6 +29,7 @@ import Invoices from "@/pages/invoices";
 import Payments from "@/pages/payments";
 import PurchaseOrders from "@/pages/purchase-orders";
 import PurchaseOrderDetailPage from "@/pages/purchase-order-detail-page";
+import PurchaseOrderEditPage from "@/pages/purchase-order-edit-page";
 import Suppliers from "@/pages/suppliers";
 import Manufacturers from "@/pages/manufacturers";
 import Users from "@/pages/users";
@@ -194,6 +195,9 @@ function Router() {
       </Route>
       <Route path="/notifications">
         <ProtectedRoute viewModule="dashboard" component={NotificationsPage} />
+      </Route>
+      <Route path="/purchase-orders/:id/edit">
+        <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrderEditPage} />
       </Route>
       <Route path="/purchase-orders/:id">
         <ProtectedRoute viewModule="purchaseOrders" component={PurchaseOrderDetailPage} />

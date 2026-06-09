@@ -415,6 +415,21 @@
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {can("purchaseOrders", "edit") &&
+              !partnerUser &&
+              po.status !== "delivered" &&
+              po.status !== "cancelled" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setLocation(`/purchase-orders/${po.id}/edit`)}
+                >
+                  <PencilLine className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              ) : null}
               {can("complaints", "add") && !partnerUser ? (
                 <Button
                   type="button"

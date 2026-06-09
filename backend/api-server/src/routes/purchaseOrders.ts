@@ -89,6 +89,80 @@ function generatePONumber() {
   return `PO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+const NON_EDITABLE_PO_STATUSES = new Set(["delivered", "cancelled"]);
+
+type PoItemWriter = {
+  purchaseOrderItem: {
+    create: (args: {
+      data: {
+        purchaseOrderId: number;
+        isCustom: boolean;
+        productId: number | null;
+        variantId: number | null;
+        customName?: string | null;
+        customImageUrl?: string | null;
+        customImageUrls?: string | null;
+        customAttributes?: string | null;
+        description?: string | null;
+        quantity: number;
+        unitPrice: string;
+      };
+    }) => Promise<unknown>;
+  };
+};
+
+async function writePurchaseOrderItems(
+  writer: PoItemWriter,
+  poId: number,
+  items: IncomingLineItem[],
+): Promise<number> {
+  let totalAmount = 0;
+  for (const raw of items) {
+    const custom = isCustomLineItem(raw);
+    if (custom) {
+      const name = raw.customName?.trim();
+      if (!name) throw new Error("Custom line item name is required");
+      const imgs = resolveCustomLineImages(raw);
+      await writer.purchaseOrderItem.create({
+        data: {
+          purchaseOrderId: poId,
+          isCustom: true,
+          productId: null,
+          variantId: null,
+          customName: name,
+          customImageUrl: imgs.customImageUrl,
+          customImageUrls: imgs.customImageUrls,
+          customAttributes: buildCustomAttributesJson(raw),
+          description: normalizeLineDescription(raw.description),
+          quantity: raw.quantity,
+          unitPrice: String(raw.unitPrice),
+        },
+      });
+      totalAmount += raw.unitPrice * raw.quantity;
+      continue;
+    }
+    const productId = Number(raw.productId);
+    if (!productId) throw new Error("Product is required for catalog line items");
+    const variantId =
+      raw.variantId != null && Number.isFinite(Number(raw.variantId)) && Number(raw.variantId) > 0
+        ? Number(raw.variantId)
+        : null;
+    await writer.purchaseOrderItem.create({
+      data: {
+        purchaseOrderId: poId,
+        isCustom: false,
+        productId,
+        variantId,
+        description: normalizeLineDescription(raw.description),
+        quantity: raw.quantity,
+        unitPrice: String(raw.unitPrice),
+      },
+    });
+    totalAmount += raw.unitPrice * raw.quantity;
+  }
+  return totalAmount;
+}
+
 function todayYmdLocal(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -262,64 +336,30 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchaseOrders",
     res.status(400).json({ error: "Expected delivery date cannot be in the past" });
     return;
   }
-  let totalAmount = 0;
-  for (const item of items) totalAmount += item.unitPrice * item.quantity;
   const poNumber = generatePONumber();
   const actorId = (req as { user?: { id: number } }).user?.id;
-  const po = await prisma.purchaseOrder.create({ data: {
-    ...poData,
-    branchId,
-    poNumber,
-    totalAmount: String(totalAmount),
-    createdById: actorId ?? null,
-    expectedDelivery: poData.expectedDelivery ? new Date(poData.expectedDelivery) : undefined,
-  }});
-  for (const raw of items as IncomingLineItem[]) {
-    const custom = isCustomLineItem(raw);
-    if (custom) {
-      const name = raw.customName?.trim();
-      if (!name) {
-        res.status(400).json({ error: "Custom line item name is required" });
-        return;
-      }
-      const imgs = resolveCustomLineImages(raw);
-      await prisma.purchaseOrderItem.create({
+  let po: Awaited<ReturnType<typeof prisma.purchaseOrder.create>>;
+  try {
+    po = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseOrder.create({
         data: {
-          purchaseOrderId: po.id,
-          isCustom: true,
-          productId: null,
-          variantId: null,
-          customName: name,
-          customImageUrl: imgs.customImageUrl,
-          customImageUrls: imgs.customImageUrls,
-          customAttributes: buildCustomAttributesJson(raw),
-          description: normalizeLineDescription(raw.description),
-          quantity: raw.quantity,
-          unitPrice: String(raw.unitPrice),
+          ...poData,
+          branchId,
+          poNumber,
+          totalAmount: "0",
+          createdById: actorId ?? null,
+          expectedDelivery: poData.expectedDelivery ? new Date(poData.expectedDelivery) : undefined,
         },
       });
-      continue;
-    }
-    const productId = Number(raw.productId);
-    if (!productId) {
-      res.status(400).json({ error: "Product is required for catalog line items" });
-      return;
-    }
-    const variantId =
-      raw.variantId != null && Number.isFinite(Number(raw.variantId)) && Number(raw.variantId) > 0
-        ? Number(raw.variantId)
-        : null;
-    await prisma.purchaseOrderItem.create({
-      data: {
-        purchaseOrderId: po.id,
-        isCustom: false,
-        productId,
-        variantId,
-        description: normalizeLineDescription(raw.description),
-        quantity: raw.quantity,
-        unitPrice: String(raw.unitPrice),
-      },
+      const totalAmount = await writePurchaseOrderItems(tx, created.id, items as IncomingLineItem[]);
+      return tx.purchaseOrder.update({
+        where: { id: created.id },
+        data: { totalAmount: String(totalAmount) },
+      });
     });
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    return;
   }
   emitSafe("PURCHASE_ORDER_CREATED", {
     purchaseOrderId: po.id,
@@ -389,30 +429,102 @@ router.put("/purchase-orders/:id", requireAuth, requirePermission("purchaseOrder
     return;
   }
 
-  const updateData: any = {};
-  if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
-  if (parsed.data.expectedDelivery !== undefined) {
-    if (expectedDeliveryInPast(parsed.data.expectedDelivery)) {
+  const payload = parsed.data as {
+    notes?: string | null;
+    expectedDelivery?: string | null;
+    staffComments?: unknown;
+    type?: string;
+    supplierId?: number | null;
+    manufacturerId?: number | null;
+    items?: IncomingLineItem[];
+  };
+
+  const structuralChange =
+    payload.items !== undefined ||
+    payload.type !== undefined ||
+    payload.supplierId !== undefined ||
+    payload.manufacturerId !== undefined;
+  if (structuralChange && NON_EDITABLE_PO_STATUSES.has(existing.status)) {
+    res.status(409).json({
+      error: "Cannot edit line items, vendor, or type on delivered or cancelled purchase orders",
+    });
+    return;
+  }
+
+  const nextType = payload.type ?? existing.type;
+  if (payload.type !== undefined && !["supplier", "manufacturer"].includes(String(payload.type))) {
+    res.status(400).json({ error: "Invalid purchase order type" });
+    return;
+  }
+  const nextSupplierId =
+    payload.supplierId !== undefined ? payload.supplierId : existing.supplierId;
+  const nextManufacturerId =
+    payload.manufacturerId !== undefined ? payload.manufacturerId : existing.manufacturerId;
+  if (nextType === "supplier" && !nextSupplierId) {
+    res.status(400).json({ error: "Supplier is required for supplier purchase orders" });
+    return;
+  }
+  if (nextType === "manufacturer" && !nextManufacturerId) {
+    res.status(400).json({ error: "Manufacturer is required for manufacturer purchase orders" });
+    return;
+  }
+
+  const updateData: Prisma.PurchaseOrderUpdateInput = {};
+  if (payload.notes !== undefined) updateData.notes = payload.notes;
+  if (payload.expectedDelivery !== undefined) {
+    if (expectedDeliveryInPast(payload.expectedDelivery)) {
       res.status(400).json({ error: "Expected delivery date cannot be in the past" });
       return;
     }
-    updateData.expectedDelivery = parsed.data.expectedDelivery ? new Date(parsed.data.expectedDelivery) : null;
+    updateData.expectedDelivery = payload.expectedDelivery ? new Date(payload.expectedDelivery) : null;
   }
-  if (parsed.data.staffComments !== undefined) {
-    const normalized = Array.isArray(parsed.data.staffComments) ? parsed.data.staffComments : [];
+  if (payload.staffComments !== undefined) {
+    const normalized = Array.isArray(payload.staffComments) ? payload.staffComments : [];
     updateData.staffComments = JSON.stringify(normalized);
   }
+  if (payload.type !== undefined) updateData.type = payload.type;
+  if (payload.supplierId !== undefined || payload.type !== undefined) {
+    updateData.supplier = nextType === "supplier" && nextSupplierId
+      ? { connect: { id: nextSupplierId } }
+      : { disconnect: true };
+  }
+  if (payload.manufacturerId !== undefined || payload.type !== undefined) {
+    updateData.manufacturer = nextType === "manufacturer" && nextManufacturerId
+      ? { connect: { id: nextManufacturerId } }
+      : { disconnect: true };
+  }
 
-  const po = await prisma.purchaseOrder.update({ where: { id }, data: updateData }).catch(() => null);
+  let po: Awaited<ReturnType<typeof prisma.purchaseOrder.update>> | null = null;
+  try {
+    po = await prisma.$transaction(async (tx) => {
+      if (payload.items !== undefined) {
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (items.length === 0) throw new Error("At least one line item is required");
+        await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
+        const totalAmount = await writePurchaseOrderItems(tx, id, items);
+        updateData.totalAmount = String(totalAmount);
+      }
+      return tx.purchaseOrder.update({ where: { id }, data: updateData });
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("not found")) {
+      res.status(404).json({ error: "Purchase order not found" });
+      return;
+    }
+    res.status(400).json({ error: msg });
+    return;
+  }
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
   const hasChanges =
-    (parsed.data.notes !== undefined && parsed.data.notes !== existing.notes) ||
-    (parsed.data.expectedDelivery !== undefined &&
-      String(parsed.data.expectedDelivery ?? "") !==
+    structuralChange ||
+    (payload.notes !== undefined && payload.notes !== existing.notes) ||
+    (payload.expectedDelivery !== undefined &&
+      String(payload.expectedDelivery ?? "") !==
         (existing.expectedDelivery ? existing.expectedDelivery.toISOString() : "")) ||
-    (parsed.data.staffComments !== undefined &&
-      JSON.stringify(parsed.data.staffComments ?? []) !== (existing.staffComments ?? "[]"));
+    (payload.staffComments !== undefined &&
+      JSON.stringify(payload.staffComments ?? []) !== (existing.staffComments ?? "[]"));
 
   if (hasChanges) {
     const actorId = (req as { user?: { id: number } }).user?.id;

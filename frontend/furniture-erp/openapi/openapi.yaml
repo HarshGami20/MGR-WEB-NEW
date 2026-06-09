@@ -3103,6 +3103,19 @@ components:
     UpdatePurchaseOrderBody:
       type: object
       properties:
+        type:
+          type: string
+          enum: [supplier, manufacturer]
+        supplierId:
+          type: integer
+          nullable: true
+        manufacturerId:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePurchaseOrderItemBody"
         expectedDelivery:
           type: string
           format: date-time

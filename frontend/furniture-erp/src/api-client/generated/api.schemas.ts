@@ -676,6 +676,10 @@ export type UpdatePurchaseOrderBodyStaffCommentsItem = {
 };
 
 export interface UpdatePurchaseOrderBody {
+  type?: CreatePurchaseOrderBodyType;
+  supplierId?: number | null;
+  manufacturerId?: number | null;
+  items?: CreatePurchaseOrderItemBody[];
   expectedDelivery?: string | null;
   notes?: string | null;
   staffComments?: UpdatePurchaseOrderBodyStaffCommentsItem[];
