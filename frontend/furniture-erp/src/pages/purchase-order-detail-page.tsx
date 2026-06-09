@@ -23,7 +23,6 @@
   import { Textarea } from "@/components/ui/textarea";
   import { Input } from "@/components/ui/input";
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-  import { Separator } from "@/components/ui/separator";
   import {
     OrderImageGalleryDialog,
     type GallerySlide,
@@ -333,10 +332,6 @@
     const vendor = poAny.type === "supplier" ? poAny.supplier : poAny.manufacturer;
     const vendorLabel = poAny.type === "supplier" ? "Supplier" : "Manufacturer";
     const items = poAny.items ?? [];
-
-  const expectedDeliveryLabel = po.expectedDelivery
-    ? formatDisplayDate(po.expectedDelivery, { includeWeekday: true })
-    : "Not scheduled";
 
     const minDeliveryDate = todayDateInputValue();
     const expectedDeliveryInPast = Boolean(
@@ -685,28 +680,29 @@
                       className="rounded-xl resize-none"
                       autoFocus
                     />
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button
                         type="button"
-                        variant="secondary"
+                        variant="outline"
                         size="sm"
-                        className="rounded-xl"
-                        onClick={addStaffComment}
-                        disabled={!newStaffComment.trim() || updatePo.isPending}
-                      >
-                        <PencilLine className="h-4 w-4 mr-2" />
-                        Save comment
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
+                        className="rounded-xl h-8 px-3"
+                        disabled={updatePo.isPending}
                         onClick={() => {
                           setNewStaffComment("");
                           setShowStaffCommentForm(false);
                         }}
                       >
                         Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-xl h-8 px-3"
+                        onClick={addStaffComment}
+                        disabled={!newStaffComment.trim() || updatePo.isPending}
+                      >
+                        Save comment
                       </Button>
                     </div>
                   </div>
@@ -715,37 +711,8 @@
               ) : null}
             </div>
 
-            {/* Sidebar — summary, status, vendor, schedule */}
+            {/* Sidebar — status, schedule */}
             <aside className="space-y-6 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
-              <DetailSection title="Summary" >
-                <div className="rounded-xl border bg-muted/15 p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                      Total amount
-                    </span>
-                    <span className="text-xl font-bold tabular-nums">
-                      {formatInr(Number(po.totalAmount))}
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="flex items-start justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground flex items-center gap-1.5">
-                      Expected delivery
-                    </span>
-                    <span className="font-medium text-right">{expectedDeliveryLabel}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">Line items</span>
-                    <span className="font-medium">{items.length}</span>
-                  </div>
-                </div>
-                {/* {!partnerUser && po.status === "delivered" ? (
-                  <p className="text-xs text-muted-foreground rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-green-800">
-                    Stock was added to inventory when this PO was marked delivered.
-                  </p>
-                ) : null} */}
-              </DetailSection>
-
               {can("purchaseOrders", "edit") ? (
                 <DetailSection
                   title={partnerUser ? "Delivery status" : "Status"}

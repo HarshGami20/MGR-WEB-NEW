@@ -17,6 +17,7 @@ import {
 import { CalendarClock, Bell } from "lucide-react";
 import { localTodayYmd, isPastYmdDate } from "@/lib/date-range";
 import { formatErrorMessage } from "@/lib/error-message";
+import { formatInr } from "@/lib/format-currency";
 
 function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrderLink?: boolean }) {
   const order = row.order;
