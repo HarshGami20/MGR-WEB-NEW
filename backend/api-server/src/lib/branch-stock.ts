@@ -1,10 +1,47 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
+
+type Db = Prisma.TransactionClient | typeof prisma;
 
 export type BranchStockRow = {
   branchId: number | null;
   branchName: string;
   stockQty: number;
 };
+
+type InventoryLogLike = {
+  type: string;
+  quantity: number;
+};
+
+function netQtyFromLogs(logs: InventoryLogLike[]): number {
+  let qty = 0;
+  for (const log of logs) {
+    if (log.type === "in") qty += log.quantity;
+    else if (log.type === "out") qty -= log.quantity;
+    else if (log.type === "adjustment") qty = log.quantity;
+  }
+  return Math.max(0, qty);
+}
+
+/** On-hand quantity for one product/variant SKU at a branch (inventory logs are source of truth). */
+export async function getBranchStockQty(
+  productId: number,
+  variantId: number | null,
+  branchId: number,
+  db: Db = prisma,
+): Promise<number> {
+  const logs = await db.inventoryLog.findMany({
+    where: {
+      productId,
+      branchId,
+      variantId: variantId ?? null,
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { type: true, quantity: true },
+  });
+  return netQtyFromLogs(logs);
+}
 
 /** Per-variant stock from inventory logs (all branches). */
 export async function branchStockByVariant(variantIds: number[]): Promise<Map<number, BranchStockRow[]>> {

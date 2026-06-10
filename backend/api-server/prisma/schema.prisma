@@ -124,6 +124,7 @@ model User {
   fcmTokens                 UserFcmToken[]
   notificationPreference    NotificationPreference?
   activityLogs              ActivityLog[]
+  inventoryLogs             InventoryLog[]
 
   @@map("users")
 }
@@ -315,6 +316,7 @@ model InventoryLog {
   productId Int      @map("product_id")
   variantId Int?     @map("variant_id")
   branchId  Int?     @map("branch_id")
+  userId    Int?     @map("user_id")
   type      String
   quantity  Int
   notes     String?
@@ -323,6 +325,7 @@ model InventoryLog {
   product Product @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
   branch  Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user    User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@map("inventory_logs")
 }

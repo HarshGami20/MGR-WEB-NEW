@@ -41,6 +41,7 @@ export async function buildInventoryLogExportRows(options: {
       product: { include: { category: true } },
       variant: true,
       branch: { select: { name: true } },
+      user: { select: { name: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
@@ -56,6 +57,7 @@ export async function buildInventoryLogExportRows(options: {
     Quantity: log.type === "out" ? -log.quantity : log.quantity,
     Branch: log.branch?.name ?? "",
     Source: logSource(log.notes),
+    "Updated By": log.user?.name ?? "",
     Notes: log.notes ?? "",
   }));
 }

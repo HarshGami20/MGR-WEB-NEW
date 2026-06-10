@@ -45,6 +45,7 @@ class PurchaseOrderDeleteBlockedError extends Error {
 async function deletePurchaseOrderById(
   id: number,
   logBranchId: number | null,
+  actorId: number | null,
 ): Promise<boolean> {
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
@@ -68,6 +69,7 @@ async function deletePurchaseOrderById(
                   quantity: movement.quantity,
                   notes: `PO ${existing.poNumber} deleted (stock reversed)`,
                   branchId: logBranchId,
+                  userId: actorId,
                 },
               });
             }
@@ -561,7 +563,7 @@ router.delete("/purchase-orders/:id", requireAuth, requirePermission("purchaseOr
     return;
   }
 
-  const user = (req as { user?: { branchId: number | null } }).user;
+  const user = (req as { user?: { id: number; branchId: number | null } }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -569,7 +571,7 @@ router.delete("/purchase-orders/:id", requireAuth, requirePermission("purchaseOr
   const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
 
   try {
-    const deleted = await deletePurchaseOrderById(id, logBranchId);
+    const deleted = await deletePurchaseOrderById(id, logBranchId, user.id);
     if (!deleted) {
       res.status(404).json({ error: "Purchase order not found" });
       return;
@@ -606,12 +608,13 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
     res.status(403).json({ error: "That status cannot be set from the supplier/manufacturer portal" });
     return;
   }
-  const user = (req as { user?: { branchId: number | null } }).user;
+  const user = (req as { user?: { id: number; branchId: number | null } }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
+  const actorId = user.id;
   try {
     const po = await prisma.$transaction(async (tx) => {
       const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } });
@@ -630,6 +633,7 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
                 quantity: movement.quantity,
                 notes: `PO ${updated.poNumber} delivered`,
                 branchId: logBranchId,
+                userId: actorId,
               },
             });
           }
@@ -637,7 +641,6 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
       }
       return updated;
     });
-    const actorId = (req as { user?: { id: number } }).user?.id;
     if (existing.status !== po.status) {
       emitSafe("PURCHASE_ORDER_STATUS_CHANGED", {
         purchaseOrderId: po.id,

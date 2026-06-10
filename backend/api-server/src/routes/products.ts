@@ -360,13 +360,14 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
   const mode = d.inventoryMode ?? "simple";
   const stockQty = mode === "simple" ? (d.stockQty ?? 0) : 0;
 
-  const user = (req as { user?: { branchId: number | null } }).user;
+  const user = (req as { user?: { id: number; branchId: number | null } }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const writeBranchId = await requireWriteBranchId(req, res, user);
   if (writeBranchId == null) return;
+  const actorId = user.id;
 
   try {
     const images = resolveProductImagesInput({
@@ -402,6 +403,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
             quantity: stockQty,
             notes: "Initial stock on product creation",
             branchId: writeBranchId,
+            userId: actorId,
           },
         });
       }
@@ -434,6 +436,7 @@ router.post("/products", requireAuth, requirePermission("products", "create"), a
                 quantity: v.stockQty ?? 0,
                 notes: `Initial stock for variant ${createdVariant.name}`,
                 branchId: writeBranchId,
+                userId: actorId,
               },
             });
           }
@@ -570,6 +573,7 @@ router.put("/products/:id", requireAuth, requirePermission("products", "update")
             quantity: Math.abs(delta),
             notes: "Stock changed via product update",
             branchId: writeBranchId as number,
+            userId: user.id,
           },
         });
       }

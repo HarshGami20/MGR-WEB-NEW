@@ -553,7 +553,7 @@ export default function ComplaintDetailPage() {
 
           {(isPoComplaint && purchaseOrder?.items && purchaseOrder.items.length > 0) ||
             (!isPoComplaint && order?.items && order.items.length > 0) ? (
-              <DetailSection title="Line items" >
+              <DetailSection title="Order items" >
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
                     <TableHeader>

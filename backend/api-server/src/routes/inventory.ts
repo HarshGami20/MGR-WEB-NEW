@@ -48,6 +48,9 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
       skip: offset,
       take: limitNum,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      include: {
+        user: { select: { id: true, name: true, mobile: true } },
+      },
     }),
   ]);
 
@@ -65,7 +68,12 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
     if (v) variants[v.id] = { ...v, price: v.price != null ? toNumber(v.price) : null, attributes: v.attributes ?? null };
   }
 
-  const data = logs.map(l => ({ ...l, product: products[l.productId] || null, variant: (l as any).variantId ? variants[(l as any).variantId] ?? null : null }));
+  const data = logs.map((l) => ({
+    ...l,
+    product: products[l.productId] || null,
+    variant: (l as any).variantId ? variants[(l as any).variantId] ?? null : null,
+    user: (l as { user?: { id: number; name: string; mobile: string | null } | null }).user ?? null,
+  }));
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
 
@@ -128,6 +136,7 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
           quantity: movement.quantity,
           notes,
           branchId: writeBranchId,
+          userId: actorId ?? null,
         },
       }),
     ),

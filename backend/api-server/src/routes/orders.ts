@@ -37,7 +37,10 @@ import {
   assignmentScopeWhere,
   resolveOrdersAssignmentScope,
 } from "../lib/sales-order-scope";
-import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
+import {
+  decrementProductStockForBranch,
+  incrementProductStock,
+} from "../lib/product-stock";
 import {
   isCustomLineItem,
   buildCustomAttributesJson,
@@ -379,10 +382,21 @@ async function resolveOrderLineItems(
     const productId = Number(item.productId);
     const product = await db.product.findUnique({ where: { id: productId } });
     if (!product) throw new Error(`Product ${productId} not found`);
-    const variantId =
+    let variantId =
       item.variantId != null && Number.isFinite(Number(item.variantId)) && Number(item.variantId) > 0
         ? Number(item.variantId)
         : null;
+    const variantCount = await db.productVariant.count({ where: { productId } });
+    if (variantId == null && variantCount === 1) {
+      const onlyVariant = await db.productVariant.findFirst({
+        where: { productId },
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
+      variantId = onlyVariant?.id ?? null;
+    } else if (variantId == null && variantCount > 1) {
+      throw new Error(`Select a variant for product ${product.name}`);
+    }
     if (variantId != null) {
       const variant = await db.productVariant.findUnique({ where: { id: variantId } });
       if (!variant || variant.productId !== productId) {
@@ -919,7 +933,13 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           },
         });
         if (!item.isCustom && item.productId != null) {
-          const movements = await decrementProductStock(item.productId, item.quantity, tx, item.variantId);
+          const movements = await decrementProductStockForBranch(
+            item.productId,
+            item.quantity,
+            branchId,
+            tx,
+            item.variantId,
+          );
           for (const movement of movements) {
             await tx.inventoryLog.create({
               data: {
@@ -929,6 +949,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
                 quantity: movement.quantity,
                 notes: `Order ${orderNumber}`,
                 branchId,
+                userId: actorId,
               },
             });
           }
@@ -974,8 +995,17 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Insufficient stock across variants") {
-      res.status(400).json({ error: "Insufficient stock for one or more products" });
+    if (
+      msg === "Insufficient stock" ||
+      msg === "Insufficient stock across variants" ||
+      msg.startsWith("Select a variant for product ")
+    ) {
+      res.status(400).json({
+        error:
+          msg === "Insufficient stock" || msg === "Insufficient stock across variants"
+            ? "Insufficient stock for one or more products at this branch"
+            : msg,
+      });
       return;
     }
     res.status(500).json({ error: msg });
@@ -1173,6 +1203,11 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
   let order;
   try {
     order = await prisma.$transaction(async (tx) => {
+      const stockBranchId = nextOrderBranchId ?? existingOrder.branchId;
+      if (stockBranchId == null && stockKeys.size > 0) {
+        throw new Error("Branch is required to adjust stock for this order");
+      }
+
       for (const key of stockKeys) {
         const previousStock = previousQtyByStockKey.get(key);
         const nextStock = nextQtyByStockKey.get(key);
@@ -1187,7 +1222,13 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         if (!product) throw new Error(`Product ${productId} not found while updating stock`);
 
         if (delta > 0) {
-          const movements = await decrementProductStock(productId, delta, tx, variantId);
+          const movements = await decrementProductStockForBranch(
+            productId,
+            delta,
+            stockBranchId!,
+            tx,
+            variantId,
+          );
           for (const movement of movements) {
             await tx.inventoryLog.create({
               data: {
@@ -1196,7 +1237,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
                 type: "out",
                 quantity: movement.quantity,
                 notes: `Order ${existingOrder.orderNumber} updated`,
-                branchId: logBranchId,
+                branchId: stockBranchId,
+                userId: user.id,
               },
             });
           }
@@ -1211,7 +1253,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
                 type: "in",
                 quantity: movement.quantity,
                 notes: `Order ${existingOrder.orderNumber} updated (restock)`,
-                branchId: logBranchId,
+                branchId: stockBranchId,
+                userId: user.id,
               },
             });
           }
@@ -1495,9 +1538,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Insufficient stock across variants") {
-      res.status(400).json({ error: "Insufficient stock for one or more products" });
-      return; 
+    if (msg === "Insufficient stock" || msg === "Insufficient stock across variants") {
+      res.status(400).json({ error: "Insufficient stock for one or more products at this branch" });
+      return;
     }
     res.status(400).json({ error: msg || "Failed to update order" });
     return;

@@ -354,6 +354,8 @@ export interface InventoryLog {
   productId: number;
   variantId?: number | null;
   branchId?: number | null;
+  userId?: number | null;
+  user?: { id: number; name: string; mobile?: string | null } | null;
   variant?: ProductVariant | null;
   product?: Product | null;
   type: InventoryLogType;

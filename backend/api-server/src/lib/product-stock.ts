@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { getBranchStockQty } from "./branch-stock";
 import { prisma } from "./prisma";
 
 type Db = Prisma.TransactionClient | typeof prisma;
@@ -87,9 +88,92 @@ export async function decrementProductStock(
   return movements;
 }
 
-/**
- * Increase stock: when variants exist, add to the first variant (by id); otherwise product only.
- */
+/** Decrease stock for a sales order at a specific branch (inventory logs = source of truth). */
+async function hasInventoryLogs(
+  productId: number,
+  variantId: number | null,
+  db: Db,
+): Promise<boolean> {
+  const count = await db.inventoryLog.count({
+    where: { productId, variantId: variantId ?? null },
+  });
+  return count > 0;
+}
+
+export async function decrementProductStockForBranch(
+  productId: number,
+  quantity: number,
+  branchId: number,
+  db: Db = prisma,
+  variantId?: number | null,
+): Promise<StockMovement[]> {
+  const count = await db.productVariant.count({ where: { productId } });
+  if (count === 0) {
+    const available = await getBranchStockQty(productId, null, branchId, db);
+    if (available < quantity) {
+      const logged = await hasInventoryLogs(productId, null, db);
+      if (!logged) {
+        return decrementProductStock(productId, quantity, db, null);
+      }
+      throw new Error("Insufficient stock");
+    }
+    const product = await db.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error(`Product ${productId} not found`);
+    await db.product.update({
+      where: { id: productId },
+      data: { stockQty: Math.max(0, product.stockQty - quantity) },
+    });
+    return [{ productId, variantId: null, quantity }];
+  }
+
+  if (variantId != null) {
+    const variant = await db.productVariant.findFirst({ where: { id: variantId, productId } });
+    if (!variant) throw new Error(`Variant ${variantId} is not valid for product ${productId}`);
+    const available = await getBranchStockQty(productId, variantId, branchId, db);
+    if (available < quantity) {
+      const logged = await hasInventoryLogs(productId, variantId, db);
+      if (!logged) {
+        return decrementProductStock(productId, quantity, db, variantId);
+      }
+      throw new Error("Insufficient stock");
+    }
+    await db.productVariant.update({
+      where: { id: variantId },
+      data: { stockQty: Math.max(0, variant.stockQty - quantity) },
+    });
+    await syncProductStockFromVariants(productId, db);
+    return [{ productId, variantId, quantity }];
+  }
+
+  let remaining = quantity;
+  const movements: StockMovement[] = [];
+  const ids = await db.productVariant.findMany({
+    where: { productId },
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+
+  for (const { id } of ids) {
+    if (remaining <= 0) break;
+    const available = await getBranchStockQty(productId, id, branchId, db);
+    if (available <= 0) continue;
+    const take = Math.min(available, remaining);
+    const variant = await db.productVariant.findUnique({ where: { id } });
+    if (!variant) continue;
+    await db.productVariant.update({
+      where: { id },
+      data: { stockQty: Math.max(0, variant.stockQty - take) },
+    });
+    movements.push({ productId, variantId: id, quantity: take });
+    remaining -= take;
+  }
+
+  if (remaining > 0) throw new Error("Insufficient stock");
+
+  await syncProductStockFromVariants(productId, db);
+  return movements;
+}
+
 export async function incrementProductStock(
   productId: number,
   quantity: number,

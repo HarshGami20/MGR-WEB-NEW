@@ -486,7 +486,7 @@ export async function buildOrderQuotationDocument(
     { text: "Order Quotation", style: "docTitle" },
     { text: "Order details", style: "sectionTitle" },
     buildCompactOrderDetails(order),
-    { text: "Line items", style: "sectionTitle" },
+    { text: "Order items", style: "sectionTitle" },
     buildLineItemsTable(order),
     buildPriceSummary(order),
     ...(await buildProductImagesSection(order)),

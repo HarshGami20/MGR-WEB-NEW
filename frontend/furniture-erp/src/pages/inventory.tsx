@@ -228,6 +228,19 @@ export default function Inventory() {
         cell: ({ row }) => getSourceBadge(getLogSource(row.original.notes)),
       },
       {
+        id: "user",
+        header: "Updated by",
+        cell: ({ row }) => {
+          const user = (row.original as { user?: { name?: string } | null }).user;
+          const name = user?.name?.trim();
+          return (
+            <span className="text-sm text-muted-foreground truncate block max-w-[140px]" title={name || undefined}>
+              {name || "—"}
+            </span>
+          );
+        },
+      },
+      {
         accessorKey: "quantity",
         header: () => <span className="text-right block w-full">Quantity</span>,
         meta: { headerClassName: "text-right", cellClassName: "text-right font-medium" },

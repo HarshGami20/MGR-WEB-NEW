@@ -77,13 +77,14 @@ router.post("/products/:productId/variants", requireAuth, requirePermission("pro
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const user = (req as { user?: { branchId: number | null } }).user;
+  const user = (req as { user?: { id: number; branchId: number | null } }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const writeBranchId = await requireWriteBranchId(req, res, user);
   if (writeBranchId == null) return;
+  const actorId = user.id;
   try {
     const images = resolveVariantImagesInput({
       imageUrls: parsed.data.imageUrls,
@@ -112,6 +113,7 @@ router.post("/products/:productId/variants", requireAuth, requirePermission("pro
           quantity: parsed.data.stockQty ?? 0,
           notes: `Initial stock for variant ${variant.name}`,
           branchId: writeBranchId,
+          userId: actorId,
         },
       });
     }
@@ -173,13 +175,14 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
     return;
   }
 
-  const user = (req as { user?: { branchId: number | null } }).user;
+  const user = (req as { user?: { id: number; branchId: number | null } }).user;
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const writeBranchId = await requireWriteBranchId(req, res, user);
   if (writeBranchId == null) return;
+  const actorId = user.id;
 
   try {
     const previousStock = existing.stockQty;
@@ -197,6 +200,7 @@ router.patch("/products/:productId/variants/:variantId", requireAuth, requirePer
           quantity: Math.abs(delta),
           notes: `Stock changed via variant update (${variant.name})`,
           branchId: writeBranchId,
+          userId: actorId,
         },
       });
       await emitInventoryUpdated({

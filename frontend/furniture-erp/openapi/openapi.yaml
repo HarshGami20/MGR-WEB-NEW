@@ -2538,6 +2538,20 @@ components:
         branchId:
           type: integer
           nullable: true
+        userId:
+          type: integer
+          nullable: true
+        user:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            mobile:
+              type: string
+              nullable: true
         variant:
           $ref: "#/components/schemas/ProductVariant"
           nullable: true
