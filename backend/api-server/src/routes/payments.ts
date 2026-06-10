@@ -2,12 +2,13 @@ import { Router, IRouter } from "express";
 import type { Prisma } from "@prisma/client";
 import { CreatePaymentBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission } from "../lib/permissions";
+import { requirePermission, hasStdPermission, type NormalizedModulePerms } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
 import { emitSafe } from "../lib/app-events";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { orderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 import { remainingInrPaymentAmount, roundInrPaymentAmount } from "../lib/payment-amount";
+import { assertCanReadOrderPayments } from "../lib/payment-access";
 
 const router: IRouter = Router();
 function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "partially_paid" | "paid" {
@@ -16,17 +17,30 @@ function derivePaymentStatus(totalAmount: number, paidAmount: number): "due" | "
   return "partially_paid";
 }
 
-router.get("/payments", requireAuth, requirePermission("payments", "read"), async (req, res): Promise<void> => {
+router.get("/payments", requireAuth, async (req, res): Promise<void> => {
   const { orderId, branchId, page = "1", limit = "20", createdFrom, createdTo, categoryId } =
     req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
+  const parsedOrderId = orderId ? parseInt(orderId, 10) : NaN;
+  const hasOrderFilter = Number.isFinite(parsedOrderId) && parsedOrderId > 0;
+
+  if (hasOrderFilter) {
+    if (!(await assertCanReadOrderPayments(req, res, parsedOrderId))) return;
+  } else {
+    const matrix = (req as { permissionMatrix?: Record<string, NormalizedModulePerms> }).permissionMatrix ?? {};
+    const user = (req as { user?: unknown }).user;
+    if (!hasStdPermission(matrix, user, "payments", "read")) {
+      res.status(403).json({ error: "Forbidden", message: "Insufficient permission" });
+      return;
+    }
+  }
+
   const where: Prisma.PaymentWhereInput = {};
-  if (orderId) {
-    const oid = parseInt(orderId, 10);
-    if (Number.isFinite(oid) && oid > 0) where.orderId = oid;
+  if (hasOrderFilter) {
+    where.orderId = parsedOrderId;
   }
   if (branchId) {
     const bid = parseInt(branchId, 10);

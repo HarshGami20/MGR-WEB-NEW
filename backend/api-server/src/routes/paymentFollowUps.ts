@@ -4,6 +4,7 @@ import { emitSafe } from "../lib/app-events";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
+import { assertCanReadOrderPayments } from "../lib/payment-access";
 import { toNumber } from "../lib/prisma";
 
 const router: IRouter = Router();
@@ -161,12 +162,13 @@ router.get("/payment-follow-ups/reminders", requireAuth, requirePermission("paym
   });
 });
 
-router.get("/orders/:orderId/payment-follow-ups", requireAuth, requirePermission("payments", "read"), async (req, res): Promise<void> => {
+router.get("/orders/:orderId/payment-follow-ups", requireAuth, async (req, res): Promise<void> => {
   const orderId = parseInt(String(req.params.orderId), 10);
   if (!Number.isFinite(orderId)) {
     res.status(400).json({ error: "Invalid order id" });
     return;
   }
+  if (!(await assertCanReadOrderPayments(req, res, orderId))) return;
 
   const rows = await prisma.paymentFollowUp.findMany({
     where: { orderId },
