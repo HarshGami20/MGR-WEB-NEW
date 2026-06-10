@@ -892,7 +892,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
             <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm md:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold tracking-tight">Line items</h2>
+                  <h2 className="text-base font-semibold tracking-tight">Order items</h2>
                   {/* <p className="text-xs text-muted-foreground">Products, variants, quantity and pricing.</p> */}
                 </div>
                 <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => append({ ...defaultCatalogLineItem })}>
