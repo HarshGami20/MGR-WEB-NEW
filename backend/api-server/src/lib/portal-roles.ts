@@ -4,6 +4,37 @@ import { ensureFullUiPermissionsMatrix, type UiPermissionSet } from "./permissio
 export const SUPPLIER_PORTAL_ROLE_NAME = "Supplier Portal";
 export const MANUFACTURER_PORTAL_ROLE_NAME = "Manufacturer Portal";
 
+export function isPortalSystemRoleName(name: string | null | undefined): boolean {
+  const n = name?.trim().toLowerCase() ?? "";
+  return (
+    n === SUPPLIER_PORTAL_ROLE_NAME.toLowerCase() ||
+    n === MANUFACTURER_PORTAL_ROLE_NAME.toLowerCase()
+  );
+}
+
+export function isPortalLinkedUser(user: {
+  supplierId?: number | null;
+  manufacturerId?: number | null;
+}): boolean {
+  return user.supplierId != null || user.manufacturerId != null;
+}
+
+export async function assertStaffAssignableRoleId(roleId: unknown): Promise<string | null> {
+  const id =
+    typeof roleId === "number"
+      ? roleId
+      : roleId != null && roleId !== ""
+        ? parseInt(String(roleId), 10)
+        : NaN;
+  if (!Number.isFinite(id) || id <= 0) return "Invalid role selected";
+  const role = await prisma.role.findUnique({ where: { id }, select: { name: true } });
+  if (!role) return "Invalid role selected. Refresh the page and try again.";
+  if (isPortalSystemRoleName(role.name)) {
+    return "Supplier and manufacturer portal roles cannot be assigned here. Manage portal access from the Suppliers or Manufacturers page.";
+  }
+  return null;
+}
+
 function portalPermissionsJson(): string {
   const partial: Record<string, UiPermissionSet> = {
     dashboard: { view: true, add: false, edit: false, delete: false },

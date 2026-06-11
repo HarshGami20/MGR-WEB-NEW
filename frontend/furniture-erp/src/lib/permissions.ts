@@ -170,7 +170,7 @@ export function usePermissions() {
       if (module === "activityLogs" && action === "view") {
         if (!user?.roleId || !user.isActive) return false;
         if (superAdmin) return true;
-        return !!(matrix.activityLogs?.view || matrix.users?.view);
+        return !!matrix.activityLogs?.view;
       }
       if (user && isPartnerPortalUser(user)) {
         const row = partnerPortalMatrix[module];

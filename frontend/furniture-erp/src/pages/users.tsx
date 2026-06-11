@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit, Trash2, Shield, Power, GitBranch, Building2, Factory } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Shield, Power, GitBranch } from "lucide-react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,7 +45,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/lib/auth";
 import { coerceRoleList, usePermissions } from "@/lib/permissions";
+import { filterStaffAssignableRoles, filterStaffErpUsers } from "@/lib/role-policy";
 import { userFormSchema, type UserFormValues } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 
@@ -78,6 +80,7 @@ export default function Users() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { can } = usePermissions();
+  const { user: actor } = useAuth();
   const { selectedBranchId, setSelectedBranchId } = useBranch();
 
   const { data: usersData, isLoading } = useListUsers({
@@ -175,7 +178,10 @@ export default function Users() {
     });
   }
 
-  const roleRows = coerceRoleList(rolesData) as { id: number; name: string }[];
+  const roleRows = useMemo(
+    () => filterStaffAssignableRoles(coerceRoleList(rolesData) as { id: number; name: string }[], actor),
+    [rolesData, actor],
+  );
   const roleIdWatch = form.watch("roleId");
   const selectedRoleIsSuperAdmin = useMemo(() => {
     const r = roleRows.find((x) => x.id === roleIdWatch);
@@ -254,7 +260,10 @@ export default function Users() {
     }
   };
 
-  const users = usersData?.data ?? [];
+  const users = useMemo(
+    () => filterStaffErpUsers((usersData?.data ?? []) as Parameters<typeof filterStaffErpUsers>[0]),
+    [usersData?.data],
+  );
 
   const columns = useMemo<ColumnDef<(typeof users)[number]>[]>(
     () => [
@@ -325,26 +334,6 @@ export default function Users() {
         },
       },
       {
-        id: "portal",
-        header: "Portal",
-        cell: ({ row }) => {
-          const user = row.original;
-          return user.supplier?.name ? (
-            <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
-              <Building2 className="h-3 w-3 shrink-0" />
-              <span className="truncate">{user.supplier.name}</span>
-            </Badge>
-          ) : user.manufacturer?.name ? (
-            <Badge variant="outline" className="flex w-fit max-w-[200px] items-center gap-1">
-              <Factory className="h-3 w-3 shrink-0" />
-              <span className="truncate">{user.manufacturer.name}</span>
-            </Badge>
-          ) : (
-            <span className="text-muted-foreground text-sm">—</span>
-          );
-        },
-      },
-      {
         accessorKey: "isActive",
         header: "Status",
         cell: ({ row }) =>
@@ -397,7 +386,9 @@ export default function Users() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Users</h2>
-          <p className="text-muted-foreground">Manage system users, roles, and branch assignments</p>
+          <p className="text-muted-foreground">
+            Manage ERP staff users, roles, and branch assignments. Supplier and manufacturer portal logins are managed from Procurement.
+          </p>
         </div>
         {can("users", "add") && (
         <Button onClick={openCreateDialog}>

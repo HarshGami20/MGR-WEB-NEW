@@ -28,6 +28,7 @@ import {
   permissionsToFormMatrix,
   usePermissions,
 } from "@/lib/permissions";
+import { filterStaffManageableRoles } from "@/lib/role-policy";
 
 const permissionSetSchema = z.object({
   view: z.boolean(),
@@ -125,7 +126,10 @@ export default function Roles() {
     }
   };
 
-  const rolesList = coerceRoleList(rolesData) as any[];
+  const rolesList = useMemo(
+    () => filterStaffManageableRoles(coerceRoleList(rolesData) as { id: number; name: string }[]),
+    [rolesData],
+  );
 
   const columns = useMemo<ColumnDef<(typeof rolesList)[number]>[]>(
     () => [
@@ -174,7 +178,9 @@ export default function Roles() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Roles & Permissions</h2>
-          <p className="text-muted-foreground">Define what users can see and do</p>
+          <p className="text-muted-foreground">
+            Define what ERP staff users can see and do. Supplier and manufacturer portal roles are system-managed.
+          </p>
         </div>
         {can("roles", "add") && (
         <Button onClick={openCreateDialog}>

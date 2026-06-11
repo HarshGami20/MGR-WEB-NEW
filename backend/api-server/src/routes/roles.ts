@@ -7,6 +7,7 @@ import {
   requirePermission,
 } from "../lib/permissions";
 import { prisma } from "../lib/prisma";
+import { isPortalSystemRoleName } from "../lib/portal-roles";
 
 const router: IRouter = Router();
 
@@ -41,7 +42,7 @@ function serializePermissions(body: { permissions?: Record<string, unknown> }): 
 
 router.get("/roles", requireAuth, requirePermission("roles", "read"), async (_req, res): Promise<void> => {
   const roles = await prisma.role.findMany();
-  res.json(roles.map(parseRole));
+  res.json(roles.filter((r) => !isPortalSystemRoleName(r.name)).map(parseRole));
 });
 
 router.post("/roles", requireAuth, requirePermission("roles", "create"), async (req, res): Promise<void> => {
@@ -61,7 +62,7 @@ router.get("/roles/:id", requireAuth, requirePermission("roles", "read"), async 
     return;
   }
   const role = await prisma.role.findUnique({ where: { id: params.data.id } });
-  if (!role) {
+  if (!role || isPortalSystemRoleName(role.name)) {
     res.status(404).json({ error: "Role not found" });
     return;
   }
@@ -77,6 +78,13 @@ router.put("/roles/:id", requireAuth, requirePermission("roles", "update"), asyn
   const parsed = CreateRoleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const existing = await prisma.role.findUnique({ where: { id }, select: { name: true } });
+  if (!existing || isPortalSystemRoleName(existing.name)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal roles are system roles and cannot be edited here.",
+    });
     return;
   }
   const role = await prisma.role
@@ -99,6 +107,17 @@ router.delete("/roles/:id", requireAuth, requirePermission("roles", "delete"), a
   const id = parseRoleIdParam(req.params.id);
   if (id == null) {
     res.status(400).json({ error: "Invalid role id" });
+    return;
+  }
+  const existing = await prisma.role.findUnique({ where: { id }, select: { name: true } });
+  if (!existing) {
+    res.status(404).json({ error: "Role not found" });
+    return;
+  }
+  if (isPortalSystemRoleName(existing.name)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal roles are system roles and cannot be deleted.",
+    });
     return;
   }
   const role = await prisma.role.delete({ where: { id } }).catch(() => null);

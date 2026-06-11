@@ -7,6 +7,10 @@ import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
 import { salesUserFieldsFromBody } from "../lib/sales-order-scope";
 import { assignedBranchIds } from "../lib/user-branches";
+import {
+  assertStaffAssignableRoleId,
+  isPortalLinkedUser,
+} from "../lib/portal-roles";
 
 const router: IRouter = Router();
 
@@ -130,6 +134,8 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
 
+  allUsers = allUsers.filter((u) => !isPortalLinkedUser(u));
+
   if (search) {
     const q = search.toLowerCase();
     allUsers = allUsers.filter(
@@ -157,15 +163,6 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   const branches = await prisma.branch.findMany();
   for (const b of branches) branchesMap[b.id] = b;
 
-  const supplierIds = [...new Set(allUsers.map(u => u.supplierId).filter((x): x is number => x != null))];
-  const manufacturerIds = [...new Set(allUsers.map(u => u.manufacturerId).filter((x): x is number => x != null))];
-  const [suppliersList, manufacturersList] = await Promise.all([
-    supplierIds.length ? prisma.supplier.findMany({ where: { id: { in: supplierIds } }, select: { id: true, name: true } }) : [],
-    manufacturerIds.length ? prisma.manufacturer.findMany({ where: { id: { in: manufacturerIds } }, select: { id: true, name: true } }) : [],
-  ]);
-  const supplierMap = Object.fromEntries(suppliersList.map(s => [s.id, s]));
-  const manufacturerMap = Object.fromEntries(manufacturersList.map(m => [m.id, m]));
-
   const data = allUsers.map(u => {
     const role = u.roleId ? rolesMap[u.roleId] : null;
     const uWithRole = { ...u, role };
@@ -178,8 +175,6 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
       branchIds,
       branches: branchList,
       branch: branchList[0] ?? null,
-      supplier: u.supplierId ? supplierMap[u.supplierId] ?? null : null,
-      manufacturer: u.manufacturerId ? manufacturerMap[u.manufacturerId] ?? null : null,
     };
   });
 
@@ -193,9 +188,20 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
     return;
   }
   const b = parsed.data as Record<string, unknown> & { password?: string };
+  if (b.supplierId != null || b.manufacturerId != null) {
+    res.status(400).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
   const password = b.password;
   let branchIds = normalizeBranchIds(b.branchIds, b.branchId);
   const roleId = b.roleId as number | undefined;
+  const portalRoleErr = await assertStaffAssignableRoleId(roleId);
+  if (portalRoleErr) {
+    res.status(400).json({ error: portalRoleErr });
+    return;
+  }
   if (await isSuperAdminRoleId(roleId)) {
     branchIds = []; 
   } else {
@@ -215,6 +221,8 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
   delete userFields.branchIds;
   delete userFields.branchId;
   delete userFields.userBranches;
+  delete userFields.supplierId;
+  delete userFields.manufacturerId;
   const salesFields = salesUserFieldsFromBody(userFields);
   delete userFields.isSales;
   delete userFields.ordersListScope;
@@ -250,6 +258,10 @@ router.get("/users/:id", requireAuth, requirePermission("users", "read"), async 
   if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
   const publicUser = await loadUserPublicById(id);
   if (!publicUser) { res.status(404).json({ error: "User not found" }); return; }
+  if (isPortalLinkedUser(publicUser)) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
   let role: (NonNullable<Awaited<ReturnType<typeof prisma.role.findUnique>>> & { permissions: unknown }) | null = null;
   if (publicUser.roleId) {
     const r = await prisma.role.findUnique({ where: { id: publicUser.roleId } });
@@ -267,13 +279,28 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
   const parsed = UpdateUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const existing = await prisma.user.findUnique({ where: { id }, select: { roleId: true } });
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { roleId: true, supplierId: true, manufacturerId: true },
+  });
   if (!existing) {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  if (isPortalLinkedUser(existing)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
 
   const body = parsed.data as Record<string, unknown>;
+  if (body.supplierId != null || body.manufacturerId != null) {
+    res.status(400).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
   const password = body.password;
   const bidRaw = body.branchIds;
   const legacyBid = body.branchId;
@@ -303,8 +330,16 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
       res.status(400).json({ error: "Invalid role selected. Refresh the page and try again." });
       return;
     }
+    const portalRoleErr = await assertStaffAssignableRoleId(roleIdNum);
+    if (portalRoleErr) {
+      res.status(400).json({ error: portalRoleErr });
+      return;
+    }
     scalarRest.roleId = roleIdNum;
   }
+
+  delete scalarRest.supplierId;
+  delete scalarRest.manufacturerId;
 
   const superAdmin = await isSuperAdminRoleId(scalarRest.roleId ?? existing.roleId);
 
@@ -403,6 +438,21 @@ router.delete("/users/:id", requireAuth, requirePermission("users", "delete"), a
     return;
   }
 
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: { supplierId: true, manufacturerId: true },
+  });
+  if (!target) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  if (isPortalLinkedUser(target)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
+
   const user = await prisma.user.delete({ where: { id } }).catch(() => null);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
   res.json({ success: true });
@@ -413,6 +463,12 @@ router.patch("/users/:id/toggle-active", requireAuth, requirePermission("users",
   if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) { res.status(404).json({ error: "User not found" }); return; }
+  if (isPortalLinkedUser(existing)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
   const user = await prisma.user.update({ where: { id }, data: { isActive: !existing.isActive } });
   res.json({ ...user, passwordHash: undefined });
 });
@@ -422,6 +478,14 @@ router.post("/users/:id/reset-password", requireAuth, requirePermission("users",
   if (id == null) { res.status(400).json({ error: "Invalid user id" }); return; }
   const parsed = ResetUserPasswordBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: "User not found" }); return; }
+  if (isPortalLinkedUser(existing)) {
+    res.status(403).json({
+      error: "Supplier and manufacturer portal accounts are managed from the Suppliers or Manufacturers page.",
+    });
+    return;
+  }
   const passwordHash = await hashPassword(parsed.data.newPassword);
   const user = await prisma.user.update({ where: { id }, data: { passwordHash } }).catch(() => null);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
