@@ -100,6 +100,53 @@ async function hasInventoryLogs(
   return count > 0;
 }
 
+/** Maximum quantity that can be reduced at a branch (matches decrementProductStockForBranch rules). */
+export async function getReducibleStockQty(
+  productId: number,
+  branchId: number,
+  db: Db = prisma,
+  variantId?: number | null,
+): Promise<number> {
+  const variantCount = await db.productVariant.count({ where: { productId } });
+  if (variantCount === 0) {
+    const logged = await hasInventoryLogs(productId, null, db);
+    if (logged) {
+      return getBranchStockQty(productId, null, branchId, db);
+    }
+    const product = await db.product.findUnique({ where: { id: productId } });
+    return product?.stockQty ?? 0;
+  }
+
+  if (variantId != null) {
+    const logged = await hasInventoryLogs(productId, variantId, db);
+    if (logged) {
+      return getBranchStockQty(productId, variantId, branchId, db);
+    }
+    const variant = await db.productVariant.findFirst({ where: { id: variantId, productId } });
+    return variant?.stockQty ?? 0;
+  }
+
+  const ids = await db.productVariant.findMany({
+    where: { productId },
+    select: { id: true },
+  });
+  let total = 0;
+  for (const { id } of ids) {
+    total += await getBranchStockQty(productId, id, branchId, db);
+  }
+  return total;
+}
+
+export class InsufficientStockError extends Error {
+  readonly available: number;
+
+  constructor(available: number) {
+    super(`Cannot reduce more than in-stock quantity (${available})`);
+    this.name = "InsufficientStockError";
+    this.available = available;
+  }
+}
+
 export async function decrementProductStockForBranch(
   productId: number,
   quantity: number,
@@ -109,13 +156,13 @@ export async function decrementProductStockForBranch(
 ): Promise<StockMovement[]> {
   const count = await db.productVariant.count({ where: { productId } });
   if (count === 0) {
-    const available = await getBranchStockQty(productId, null, branchId, db);
+    const available = await getReducibleStockQty(productId, branchId, db, null);
     if (available < quantity) {
       const logged = await hasInventoryLogs(productId, null, db);
       if (!logged) {
         return decrementProductStock(productId, quantity, db, null);
       }
-      throw new Error("Insufficient stock");
+      throw new InsufficientStockError(available);
     }
     const product = await db.product.findUnique({ where: { id: productId } });
     if (!product) throw new Error(`Product ${productId} not found`);
@@ -129,13 +176,13 @@ export async function decrementProductStockForBranch(
   if (variantId != null) {
     const variant = await db.productVariant.findFirst({ where: { id: variantId, productId } });
     if (!variant) throw new Error(`Variant ${variantId} is not valid for product ${productId}`);
-    const available = await getBranchStockQty(productId, variantId, branchId, db);
+    const available = await getReducibleStockQty(productId, branchId, db, variantId);
     if (available < quantity) {
       const logged = await hasInventoryLogs(productId, variantId, db);
       if (!logged) {
         return decrementProductStock(productId, quantity, db, variantId);
       }
-      throw new Error("Insufficient stock");
+      throw new InsufficientStockError(available);
     }
     await db.productVariant.update({
       where: { id: variantId },
@@ -168,7 +215,10 @@ export async function decrementProductStockForBranch(
     remaining -= take;
   }
 
-  if (remaining > 0) throw new Error("Insufficient stock");
+  if (remaining > 0) {
+    const available = await getReducibleStockQty(productId, branchId, db, variantId);
+    throw new InsufficientStockError(available);
+  }
 
   await syncProductStockFromVariants(productId, db);
   return movements;

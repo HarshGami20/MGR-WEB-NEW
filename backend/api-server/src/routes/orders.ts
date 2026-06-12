@@ -40,6 +40,7 @@ import {
 import {
   decrementProductStockForBranch,
   incrementProductStock,
+  InsufficientStockError,
 } from "../lib/product-stock";
 import {
   isCustomLineItem,
@@ -996,13 +997,16 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     if (
+      e instanceof InsufficientStockError ||
       msg === "Insufficient stock" ||
       msg === "Insufficient stock across variants" ||
       msg.startsWith("Select a variant for product ")
     ) {
       res.status(400).json({
         error:
-          msg === "Insufficient stock" || msg === "Insufficient stock across variants"
+          e instanceof InsufficientStockError ||
+          msg === "Insufficient stock" ||
+          msg === "Insufficient stock across variants"
             ? "Insufficient stock for one or more products at this branch"
             : msg,
       });
@@ -1538,7 +1542,11 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Insufficient stock" || msg === "Insufficient stock across variants") {
+    if (
+      e instanceof InsufficientStockError ||
+      msg === "Insufficient stock" ||
+      msg === "Insufficient stock across variants"
+    ) {
       res.status(400).json({ error: "Insufficient stock for one or more products at this branch" });
       return;
     }

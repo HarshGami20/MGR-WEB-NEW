@@ -3,7 +3,13 @@ import { AdjustInventoryBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
-import { decrementProductStock, incrementProductStock, setProductStockAbsolute } from "../lib/product-stock";
+import {
+  decrementProductStockForBranch,
+  getReducibleStockQty,
+  incrementProductStock,
+  InsufficientStockError,
+  setProductStockAbsolute,
+} from "../lib/product-stock";
 import { requireWriteBranchId } from "../lib/branch-scope";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { inventoryLogProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
@@ -106,16 +112,46 @@ router.post("/inventory/adjust", requireAuth, requirePermission("inventory", "up
       if (type === "in") {
         movements = await incrementProductStock(productId, quantity, prisma, variantId);
       } else if (type === "out") {
-        movements = await decrementProductStock(productId, quantity, prisma, variantId);
+        const available = await getReducibleStockQty(productId, writeBranchId, prisma, variantId);
+        if (quantity > available) {
+          res.status(400).json({ error: `Cannot reduce more than in-stock quantity (${available})` });
+          return;
+        }
+        movements = await decrementProductStockForBranch(
+          productId,
+          quantity,
+          writeBranchId,
+          prisma,
+          variantId,
+        );
       } else {
         movements = await setProductStockAbsolute(productId, quantity, prisma, variantId);
       }
     } else {
-      if (type === "in") movements = await incrementProductStock(productId, quantity);
-      else if (type === "out") movements = await decrementProductStock(productId, quantity);
-      else movements = await setProductStockAbsolute(productId, quantity);
+      if (type === "in") {
+        movements = await incrementProductStock(productId, quantity);
+      } else if (type === "out") {
+        const available = await getReducibleStockQty(productId, writeBranchId, prisma, null);
+        if (quantity > available) {
+          res.status(400).json({ error: `Cannot reduce more than in-stock quantity (${available})` });
+          return;
+        }
+        movements = await decrementProductStockForBranch(
+          productId,
+          quantity,
+          writeBranchId,
+          prisma,
+          null,
+        );
+      } else {
+        movements = await setProductStockAbsolute(productId, quantity);
+      }
     }
   } catch (e: unknown) {
+    if (e instanceof InsufficientStockError) {
+      res.status(400).json({ error: e.message });
+      return;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === "Insufficient stock") {
       res.status(400).json({ error: "Insufficient stock" });
