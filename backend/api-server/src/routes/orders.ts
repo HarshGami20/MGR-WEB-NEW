@@ -6,6 +6,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import {
   pickBestDeliverySlot,
+  isOrderLockedForEdit,
   normalizeMainOrderStatus,
   normalizeDeliveryStatus,
   countOrdersInSlot,
@@ -1065,6 +1066,15 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
 
   const existingOrder = await prisma.order.findUnique({ where: { id } });
   if (!existingOrder) { res.status(404).json({ error: "Order not found" }); return; }
+  if (
+    isOrderLockedForEdit({
+      status: existingOrder.status,
+      deliveryStatus: (existingOrder as { deliveryStatus?: string }).deliveryStatus,
+    })
+  ) {
+    res.status(409).json({ error: "Cannot edit completed or delivered orders" });
+    return;
+  }
 
   const prevAssigneeRows = await prisma.orderAssignee.findMany({
     where: { orderId: id },

@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { assignedUserBranchIds, useBranch } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { patchOrderPaymentStatus } from "@/lib/order-api";
+import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -594,7 +595,11 @@ export default function Orders() {
               <Button variant="ghost" size="icon" onClick={() => openDetailPage(ord)}>
                 <Eye className="h-4 w-4 text-muted-foreground" />
               </Button>
-              {canEditOrders ? (
+              {canEditOrders &&
+              !isOrderLockedForEdit({
+                status: ord.status,
+                deliveryStatus: (ord as { deliveryStatus?: string }).deliveryStatus,
+              }) ? (
                 <Button variant="ghost" size="icon" onClick={() => openEditPage(ord)}>
                   <Edit className="h-4 w-4 text-primary" />
                 </Button>

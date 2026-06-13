@@ -56,6 +56,7 @@ import {
   DELIVERY_CHARGE_INPUT_RE,
   parseDeliveryChargeFormValue,
 } from "@/lib/order-form-values";
+import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import type { Driver } from "@/lib/driver-api";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
@@ -675,6 +676,16 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     return <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">Loading order…</div>;
   }
   if (isEdit && orderError) return <div className="text-muted-foreground">Order not found.</div>;
+  if (
+    isEdit &&
+    order &&
+    isOrderLockedForEdit({
+      status: order.status,
+      deliveryStatus: (order as { deliveryStatus?: string }).deliveryStatus,
+    })
+  ) {
+    return <Redirect to={`/orders/${orderId}`} />;
+  }
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-muted/40 -mx-4 -mt-4 px-4 py-6 md:-mx-8 md:px-8 md:py-8">

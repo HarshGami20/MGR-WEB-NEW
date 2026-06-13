@@ -32,6 +32,16 @@ export function normalizeDeliveryStatus(s: string | null | undefined): string {
   return "pending";
 }
 
+/** Orders marked complete or delivery-delivered cannot be edited. */
+export function isOrderLockedForEdit(params: {
+  status?: string | null;
+  deliveryStatus?: string | null;
+}): boolean {
+  const main = normalizeMainOrderStatus(params.status);
+  const delivery = normalizeDeliveryStatus(params.deliveryStatus);
+  return main === "complete" || delivery === "delivered";
+}
+
 export function utcDateOnly(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }

@@ -50,6 +50,7 @@ import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { cn } from "@/lib/utils";
+import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import {
   downloadOrderQuotationPdf,
   openWhatsAppForOrder,
@@ -466,6 +467,10 @@ export default function OrderDetailPage() {
     : null;
   const deliveryAssignees = Array.isArray(orderAny.deliveryAssignees) ? orderAny.deliveryAssignees : [];
   const canUpdateDelivery = canEditOrders || canEditDeliveries;
+  const orderLockedForEdit = isOrderLockedForEdit({
+    status: order.status,
+    deliveryStatus: orderAny.deliveryStatus,
+  });
   const balance = remainingInrPaymentAmount(order.totalAmount, order.paidAmount);
   const showPaymentFollowUp = isPendingPaymentStatus(orderAny.paymentStatus);
 
@@ -615,7 +620,7 @@ export default function OrderDetailPage() {
               <FileDown className="h-4 w-4 mr-2" />
               {quotationPdfLoading ? "Generating…" : "Quotation PDF"}
             </Button>
-            {canEditOrders ? (
+            {canEditOrders && !orderLockedForEdit ? (
               <Link href={`/orders/${order.id}/edit`}>
                 <Button type="button" variant="outline" size="sm" className="rounded-xl">
                   <PencilLine className="h-4 w-4 mr-2" />
