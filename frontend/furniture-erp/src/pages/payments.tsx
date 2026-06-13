@@ -61,7 +61,7 @@ export default function Payments() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<any>(null);
   const [orderPickerOpen, setOrderPickerOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"due" | "payments" | "followups">("due");
+  const [activeTab, setActiveTab] = useState<"due" | "payments" | "followups">("payments");
   const [paymentsOrderFilter, setPaymentsOrderFilter] = useState("all");
   const [paymentDateRange, setPaymentDateRange] = useState<DateRangeValue>({});
   const [dueDateRange, setDueDateRange] = useState<DateRangeValue>({});
@@ -328,9 +328,9 @@ export default function Payments() {
         className="space-y-4"
       >
         <TabsList>
-          <TabsTrigger value="due">Due Payments</TabsTrigger>
-          <TabsTrigger value="followups">Follow-ups</TabsTrigger>
           <TabsTrigger value="payments">All Payments</TabsTrigger>
+          <TabsTrigger value="due">Due</TabsTrigger>
+          <TabsTrigger value="followups">Follow Ups</TabsTrigger>
         </TabsList>
 
         <TabsContent value="due" className="space-y-4">

@@ -11,6 +11,7 @@ import {
   getGetOrderQueryKey,
   getListOrdersQueryKey,
   getListProductsQueryKey,
+  getListProductVariantsQueryKey,
 } from "@/api-client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CalendarClock, ImageIcon, IndianRupee, Plus, Trash2, Upload, X } from "lucide-react";
@@ -57,6 +58,11 @@ import {
   parseDeliveryChargeFormValue,
 } from "@/lib/order-form-values";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
+import {
+  type CatalogVariantRow,
+  type ProductWithBranchStock,
+  validateCatalogLineItemsStock,
+} from "@/lib/product-branch-stock";
 import type { Driver } from "@/lib/driver-api";
 
 const EMPTY_AVAIL_SLOTS: AvailableDeliverySlot[] = [];
@@ -270,7 +276,9 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
           : null
         : selectedBranchId;
 
-  const { data: productsData } = useListProducts({ limit: 1000 });
+  const { data: productsData } = useListProducts({ limit: 1000, includeVariants: "true" } as Parameters<
+    typeof useListProducts
+  >[0]);
   const { data: categoriesData } = useListCategories();
   const mainCategories = useMemo(() => {
     const roots = Array.isArray(categoriesData) ? categoriesData : [];
@@ -586,6 +594,29 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         form.setError(`items.${i}.productId`, { message: "Please select a variant for this product" });
         return;
       }
+    }
+
+    const stockError = validateCatalogLineItemsStock(
+      data.items,
+      (productsData?.data ?? []) as Array<ProductWithBranchStock & { id: number; name: string }>,
+      writeBranchId,
+      (productId) => {
+        const cached = queryClient.getQueryData(getListProductVariantsQueryKey(productId)) as
+          | CatalogVariantRow[]
+          | undefined;
+        if (cached?.length) return cached;
+        const product = productsData?.data?.find((p) => p.id === productId) as ProductWithBranchStock | undefined;
+        return product?.variants;
+      },
+    );
+    if (stockError) {
+      toast({
+        title: "Stock limit",
+        description: stockError,
+        variant: "destructive",
+      });
+      form.setError("items", { type: "manual", message: stockError });
+      return;
     }
 
     const payload = {
@@ -920,6 +951,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       onlyForLabel="order"
                       isGstInvoice={isGstInvoice}
                       defaultGstPercent={defaultGstPercent}
+                      branchId={writeBranchId}
+                      enforceStockCheck
                     />
                   </div>
                   <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-1" disabled={fields.length === 1}>

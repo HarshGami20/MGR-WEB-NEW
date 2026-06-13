@@ -160,3 +160,102 @@ export function computeProductDetailStock(
 
   return { displayStock, grandTotal, totalUnitsBranchStocks, isLow };
 }
+
+export function catalogLineMaxQuantity(stockQty: number | undefined): number | undefined {
+  if (stockQty === undefined || !Number.isFinite(stockQty)) return undefined;
+  return Math.max(0, Math.floor(stockQty));
+}
+
+export function clampCatalogLineQuantity(quantity: number, maxQuantity?: number): number {
+  const min = 1;
+  if (maxQuantity == null) return Math.max(min, quantity);
+  if (maxQuantity <= 0) return min;
+  return Math.max(min, Math.min(quantity, maxQuantity));
+}
+
+export type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
+
+export function stockStatusFromQty(qty: number, threshold = 10): StockStatus {
+  if (qty <= 0) return "out_of_stock";
+  if (qty <= threshold) return "low_stock";
+  return "in_stock";
+}
+
+/** Branch stock for order catalog lines — mirrors mobile catalogVariantStock. */
+export function catalogVariantStock(
+  product: { branchStocks?: BranchStock[]; variantCount?: number },
+  variant: VariantWithBranchStock | null | undefined,
+  branchId: number | null | undefined,
+): number | undefined {
+  if (branchId == null) return undefined;
+  if (variant) {
+    const branchStocks = Array.isArray(variant.branchStocks) ? variant.branchStocks : [];
+    if (branchStocks.length > 0) return branchStockQtyAt(branchStocks, branchId);
+    if ((product.variantCount ?? 0) <= 1) {
+      return branchStockQtyAt(product.branchStocks, branchId);
+    }
+    return 0;
+  }
+  return branchStockQtyAt(product.branchStocks, branchId);
+}
+
+export type CatalogVariantRow = VariantWithBranchStock & {
+  id: number;
+  name?: string;
+  sku?: string;
+  price?: number;
+  lowStockThreshold?: number;
+};
+
+export type ProductWithBranchStock = {
+  branchStocks?: BranchStock[];
+  variantCount?: number;
+  lowStockThreshold?: number;
+  variants?: CatalogVariantRow[];
+};
+
+export function resolveCatalogLineStock(
+  product: ProductWithBranchStock | undefined,
+  variantId: number | null | undefined,
+  variants: CatalogVariantRow[] | undefined,
+  branchId: number | null | undefined,
+): number | undefined {
+  if (!product || branchId == null) return undefined;
+  const variant =
+    variantId != null && variantId > 0
+      ? (variants ?? product.variants ?? []).find((v) => v.id === variantId)
+      : null;
+  if ((product.variantCount ?? 0) > 0 && (variantId == null || variantId <= 0)) {
+    return undefined;
+  }
+  return catalogVariantStock(product, variant, branchId);
+}
+
+export function validateCatalogLineItemsStock(
+  items: Array<{
+    isCustom?: boolean;
+    productId?: number | null;
+    variantId?: number | null;
+    quantity?: number;
+  }>,
+  products: Array<ProductWithBranchStock & { id: number; name: string }>,
+  branchId: number | null | undefined,
+  getVariants: (productId: number) => CatalogVariantRow[] | undefined,
+): string | null {
+  if (branchId == null) return null;
+  for (const item of items) {
+    if (item.isCustom) continue;
+    const pid = Number(item.productId);
+    if (!pid) continue;
+    const product = products.find((p) => p.id === pid);
+    const variants = getVariants(pid);
+    const stockQty = resolveCatalogLineStock(product, item.variantId, variants, branchId);
+    const max = catalogLineMaxQuantity(stockQty);
+    const name = product?.name ?? "Product";
+    if (max === 0) return `"${name}" is out of stock at this branch.`;
+    if (max != null && Number(item.quantity) > max) {
+      return `"${name}" exceeds available stock (max ${max}).`;
+    }
+  }
+  return null;
+}

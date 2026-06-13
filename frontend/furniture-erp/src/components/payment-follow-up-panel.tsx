@@ -19,14 +19,34 @@ import { localTodayYmd, isPastYmdDate } from "@/lib/date-range";
 import { formatErrorMessage } from "@/lib/error-message";
 import { formatInr } from "@/lib/format-currency";
 
-function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrderLink?: boolean }) {
+function FollowUpCard({
+  row,
+  showOrderLink,
+  variant = "default",
+}: {
+  row: PaymentFollowUpRow;
+  showOrderLink?: boolean;
+  variant?: "default" | "overdue" | "dueToday";
+}) {
   const order = row.order;
+  const cardClass =
+    variant === "overdue"
+      ? "bg-red-50"
+      : variant === "dueToday"
+        ? "bg-amber-50 dark:bg-amber-950/20"
+        : "bg-muted/40";
+
   return (
-    <div className="rounded-md border p-3 text-sm space-y-1">
+    <div className={`rounded-lg p-3 text-sm space-y-1 ${cardClass}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{row.followUpDate}</span>
         {order ? (
-          <Badge variant="outline">{formatPaymentStatusLabel(order.paymentStatus)}</Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant="outline">{formatPaymentStatusLabel(order.paymentStatus)}</Badge>
+            <span className="text-sm font-semibold text-destructive">
+              {formatInr(order.balanceDue)}
+            </span>
+          </div>
         ) : null}
       </div>
       {showOrderLink && order ? (
@@ -37,11 +57,6 @@ function FollowUpCard({ row, showOrderLink }: { row: PaymentFollowUpRow; showOrd
           {" · "}
           {order.customerName}
           {order.customerMobile ? ` · ${order.customerMobile}` : ""}
-        </p>
-      ) : null}
-      {order ? (
-        <p className="text-xs text-muted-foreground">
-          Balance due: <span className="font-semibold text-destructive">{formatInr(order.balanceDue)}</span>
         </p>
       ) : null}
       <p className="whitespace-pre-wrap">{row.note}</p>
@@ -180,7 +195,7 @@ export function PaymentFollowUpsCalendar({ branchId }: { branchId?: number | nul
             <div className="space-y-2">
               <p className="text-sm font-medium text-destructive">Overdue ({overdue.length})</p>
               {overdue.map((row) => (
-                <FollowUpCard key={`o-${row.id}`} row={row} showOrderLink />
+                <FollowUpCard key={`o-${row.id}`} row={row} showOrderLink variant="overdue" />
               ))}
             </div>
           )}
@@ -188,7 +203,7 @@ export function PaymentFollowUpsCalendar({ branchId }: { branchId?: number | nul
             <div className="space-y-2">
               <p className="text-sm font-medium text-amber-700">Due today ({dueToday.length})</p>
               {dueToday.map((row) => (
-                <FollowUpCard key={`t-${row.id}`} row={row} showOrderLink />
+                <FollowUpCard key={`t-${row.id}`} row={row} showOrderLink variant="dueToday" />
               ))}
             </div>
           )}

@@ -1,5 +1,7 @@
 import type { ComponentProps } from "react";
+import { useEffect, useMemo } from "react";
 import type { Product } from "@/api-client";
+import { useListProductVariants } from "@/api-client";
 import ProductVariantSelect from "@/components/product-variant-select";
 import { ProductImagesField } from "@/components/product-images-field";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,13 @@ import {
 import { ValidatedInput } from "@/components/validated-input";
 import type { UseFormReturn } from "react-hook-form";
 import { defaultCatalogLineItem, defaultCustomLineItem } from "@/lib/custom-line-item";
+import {
+  catalogLineMaxQuantity,
+  clampCatalogLineQuantity,
+  resolveCatalogLineStock,
+  type BranchStock,
+  type CatalogVariantRow,
+} from "@/lib/product-branch-stock";
 import { Package, PackagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +35,8 @@ type Props = {
   /** When true, unit price field is GST-inclusive (GST invoice orders). */
   isGstInvoice?: boolean;
   defaultGstPercent?: number;
+  branchId?: number | null;
+  enforceStockCheck?: boolean;
 };
 
 function FormMessage({ className, ...props }: ComponentProps<typeof BaseFormMessage>) {
@@ -39,10 +50,46 @@ export function LineItemRow({
   onlyForLabel = "order",
   isGstInvoice = false,
   defaultGstPercent = 18,
+  branchId = null,
+  enforceStockCheck = false,
 }: Props) {
   const isCustom = !!form.watch(`items.${index}.isCustom`);
   const productId = Number(form.watch(`items.${index}.productId`) ?? 0);
   const variantId = form.watch(`items.${index}.variantId`) ?? null;
+  const stockActive = enforceStockCheck && branchId != null && !isCustom;
+
+  const { data: variantsData } = useListProductVariants(productId > 0 ? productId : (undefined as any), {
+    query: { enabled: stockActive && productId > 0 },
+  });
+  const variants = (variantsData ?? []) as CatalogVariantRow[];
+
+  const selectedProduct = useMemo(
+    () =>
+      products.find((p) => p.id === productId) as
+        | (Product & { branchStocks?: BranchStock[]; variants?: CatalogVariantRow[] })
+        | undefined,
+    [products, productId],
+  );
+
+  const stockQty = useMemo(
+    () => resolveCatalogLineStock(selectedProduct, variantId, variants, branchId),
+    [selectedProduct, variantId, variants, branchId],
+  );
+
+  const maxQuantity = useMemo(
+    () => (stockActive ? catalogLineMaxQuantity(stockQty) : undefined),
+    [stockActive, stockQty],
+  );
+
+  useEffect(() => {
+    if (!stockActive || maxQuantity == null) return;
+    const current = Number(form.getValues(`items.${index}.quantity`));
+    if (!Number.isFinite(current) || current <= 0) return;
+    const clamped = clampCatalogLineQuantity(current, maxQuantity);
+    if (clamped !== current) {
+      form.setValue(`items.${index}.quantity`, clamped, { shouldDirty: true, shouldValidate: true });
+    }
+  }, [stockActive, maxQuantity, index, form]);
   const lineItemErrors = (
     form.formState.errors.items as
       | Array<{ productId?: { message?: string }; variantId?: { message?: string } }>
@@ -173,6 +220,8 @@ export function LineItemRow({
             products={products}
             productId={productId}
             variantId={variantId}
+            branchId={branchId}
+            enforceStockCheck={enforceStockCheck}
             onProductChange={(pid) => {
               form.setValue(`items.${index}.productId`, pid, { shouldDirty: true, shouldValidate: true });
               form.setValue(`items.${index}.variantId`, null, { shouldDirty: true, shouldValidate: true });
@@ -180,10 +229,12 @@ export function LineItemRow({
               form.setValue(`items.${index}.gstPercent`, isGstInvoice ? defaultGstPercent : 0, {
                 shouldDirty: true,
               });
+              form.setValue(`items.${index}.quantity`, 1, { shouldDirty: true, shouldValidate: true });
             }}
-            onVariantChange={(vid) =>
-              form.setValue(`items.${index}.variantId`, vid, { shouldDirty: true, shouldValidate: true })
-            }
+            onVariantChange={(vid) => {
+              form.setValue(`items.${index}.variantId`, vid, { shouldDirty: true, shouldValidate: true });
+              form.setValue(`items.${index}.quantity`, 1, { shouldDirty: true, shouldValidate: true });
+            }}
             onPriceChange={(price) =>
               form.setValue(`items.${index}.unitPrice`, Number(price || 0), { shouldDirty: true, shouldValidate: true })
             }
@@ -227,6 +278,7 @@ export function LineItemRow({
                 <Input
                   type="number"
                   min="1"
+                  max={maxQuantity != null && maxQuantity > 0 ? maxQuantity : undefined}
                   name={field.name}
                   ref={field.ref}
                   value={field.value === "" || field.value == null ? "" : String(field.value)}
@@ -237,15 +289,29 @@ export function LineItemRow({
                       return;
                     }
                     const n = Number(raw);
-                    if (Number.isFinite(n)) field.onChange(n);
+                    if (!Number.isFinite(n)) return;
+                    if (maxQuantity != null && maxQuantity > 0 && n > maxQuantity) {
+                      field.onChange(maxQuantity);
+                      return;
+                    }
+                    if (n > 0) field.onChange(n);
                   }}
                   onBlur={(e) => {
                     const n = Number(e.target.value);
-                    field.onChange(Number.isFinite(n) && n > 0 ? n : 1);
+                    const final = clampCatalogLineQuantity(
+                      Number.isFinite(n) && n > 0 ? n : 1,
+                      maxQuantity,
+                    );
+                    field.onChange(final);
                     field.onBlur();
                   }}
                 />
               </FormControl>
+              {stockActive && maxQuantity != null ? (
+                <p className="text-xs text-muted-foreground">
+                  {maxQuantity <= 0 ? "Out of stock at this branch" : `Max ${maxQuantity} available`}
+                </p>
+              ) : null}
               <FormMessage />
             </FormItem>
           )}
