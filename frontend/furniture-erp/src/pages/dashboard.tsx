@@ -4,9 +4,9 @@ import {
   useGetOrderStatusBreakdown,
   useGetSalesReport,
   useListOrders,
-  useListCategories,
   useListInventoryLogs,
 } from "@/api-client";
+import { customFetch } from "@/api-client/custom-fetch";
 import { useAuth } from "@/lib/auth";
 import { useBranch } from "@/lib/branch-context";
 import { isPartnerPortalUser } from "@/lib/partner";
@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { DashboardRevenueForecastCard } from "@/components/dashboard-revenue-forecast-card";
+import { DashboardCategorySourceCard } from "@/components/dashboard-category-source-card";
 import {
   ArrowUpRight,
   Box,
@@ -23,7 +25,6 @@ import {
   ChevronDown,
   PackageOpen,
   Activity,
-  Layers,
   AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -47,7 +48,11 @@ function statusCount(orderStatus: { status: string; count: number }[] | undefine
 
 function StaffDashboard() {
   const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
   const [revenueYear, setRevenueYear] = useState(currentYear);
+  const [forecastYear, setForecastYear] = useState(currentYear);
+  const [sourceYear, setSourceYear] = useState(currentYear);
+  const [sourceMonth, setSourceMonth] = useState(currentMonth);
   const [kpiRange, setKpiRange] = useState<"today" | "week" | "month">("today");
   const [earningRange, setEarningRange] = useState<7 | 14 | 30>(14);
   const { selectedBranchId } = useBranch();
@@ -68,10 +73,45 @@ function StaffDashboard() {
     year: revenueYear,
     ...branchIdParam,
   });
-  const { data: categoriesData } = useListCategories();
   const { data: inventoryLogsData, isLoading: logsLoading } = useListInventoryLogs({
     page: 1,
     limit: 10,
+  });
+
+  const reportYearOptions = useMemo(
+    () => Array.from({ length: 6 }, (_, idx) => currentYear - idx),
+    [currentYear],
+  );
+
+  const forecastQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("year", String(forecastYear));
+    if (selectedBranchId != null) params.set("branchId", String(selectedBranchId));
+    return `?${params.toString()}`;
+  }, [forecastYear, selectedBranchId]);
+
+  const sourceQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("year", String(sourceYear));
+    params.set("month", String(sourceMonth));
+    if (selectedBranchId != null) params.set("branchId", String(selectedBranchId));
+    return `?${params.toString()}`;
+  }, [sourceYear, sourceMonth, selectedBranchId]);
+
+  const { data: forecastReport, isLoading: forecastReportLoading } = useQuery({
+    queryKey: ["dashboard", "forecast", forecastQueryString],
+    queryFn: () =>
+      customFetch<{ categoryWiseMatrix: import("@/lib/dashboard-category-charts").CategoryRevenueMatrixShape }>(
+        `/api/reports/revenue-summary${forecastQueryString}`,
+      ),
+  });
+
+  const { data: sourceReport, isLoading: sourceReportLoading } = useQuery({
+    queryKey: ["dashboard", "source", sourceQueryString],
+    queryFn: () =>
+      customFetch<{ categoryWise: import("@/lib/dashboard-category-charts").CategoryRevenueRow[] }>(
+        `/api/reports/revenue-summary${sourceQueryString}`,
+      ),
   });
 
   const completedMain =
@@ -185,43 +225,6 @@ function StaffDashboard() {
       rows.slice(q * chunkSize, q * chunkSize + chunkSize).reduce((sum, row) => sum + row.revenue, 0),
     );
   }, [annualSalesReport]);
-
-  const categoryRevenue = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const categoryMap = new Map<number, string>();
-    for (const c of categoriesData ?? []) {
-      categoryMap.set(c.id, c.name);
-    }
-    const buckets = new Map<string, number>();
-    for (const o of allOrdersForStats) {
-      const dt = new Date(o.createdAt);
-      if (dt < monthStart || dt >= monthEnd) continue;
-      const items = ((o as any).items ?? []) as Array<{
-        totalPrice?: number;
-        unitPrice?: number;
-        quantity?: number;
-        product?: { categoryId?: number | null; categoryPath?: string | null; category?: { name?: string } | null } | null;
-      }>;
-      for (const item of items) {
-        const lineTotal =
-          item.totalPrice ?? (item.unitPrice ?? 0) * (item.quantity ?? 0);
-        const name =
-          item.product?.categoryPath ||
-          item.product?.category?.name ||
-          (item.product?.categoryId != null ? categoryMap.get(item.product.categoryId) : null) ||
-          "Uncategorised";
-        buckets.set(name, (buckets.get(name) ?? 0) + lineTotal);
-      }
-    }
-    return Array.from(buckets.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [allOrdersForStats, categoriesData]);
-
-  const categoryRevenueTotal = categoryRevenue.reduce((sum, c) => sum + c.value, 0);
 
   const paymentReminders = useMemo(() => {
     return allOrdersForStats
@@ -729,55 +732,29 @@ function StaffDashboard() {
         </div>
       </div>
 
-      {/* Revenue by Categories + Recent Orders */}
-      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-        <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-2 mb-4">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-                <Layers className="h-4 w-4 text-primary" aria-hidden />
-                Revenue by Categories
-              </h2>
-              <p className="text-sm text-muted-foreground mt-0.5">Current month · Top categories</p>
-            </div>
-            <Badge variant="outline" className="rounded-xl text-xs">
-              ₹{formatCompactCurrency(categoryRevenueTotal)}
-            </Badge>
-          </div>
-          {analyticsOrdersLoading ? (
-            <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm">
-              Loading categories…
-            </div>
-          ) : categoryRevenue.length === 0 ? (
-            <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
-              No category revenue recorded for this month
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {categoryRevenue.map((row, idx) => {
-                const pct = categoryRevenueTotal > 0 ? (row.value / categoryRevenueTotal) * 100 : 0;
-                return (
-                  <li key={`${row.name}-${idx}`} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium truncate max-w-[60%]">{row.name}</span>
-                      <span className="text-muted-foreground tabular-nums">
-                        ₹{formatCompactCurrency(row.value)} <span className="text-xs opacity-70">({pct.toFixed(1)}%)</span>
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${Math.max(pct, 2)}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+      {/* Revenue Forecast + Category Source */}
+      <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
+        <DashboardRevenueForecastCard
+          matrix={forecastReport?.categoryWiseMatrix}
+          year={forecastYear}
+          yearOptions={reportYearOptions}
+          onYearChange={setForecastYear}
+          loading={forecastReportLoading}
+        />
+        <DashboardCategorySourceCard
+          categoryWise={sourceReport?.categoryWise}
+          year={sourceYear}
+          month={sourceMonth}
+          onYearChange={setSourceYear}
+          onMonthChange={setSourceMonth}
+          yearOptions={reportYearOptions}
+          loading={sourceReportLoading}
+        />
+      </div>
 
-        <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col min-h-[320px]">
+      {/* Recent Orders */}
+      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <div className="lg:col-span-12 rounded-3xl border border-border bg-card p-5 md:p-6 shadow-sm flex flex-col min-h-[320px]">
           <div className="flex items-center justify-between gap-2 mb-4">
             <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
               <PackageOpen className="h-4 w-4 text-primary" aria-hidden />

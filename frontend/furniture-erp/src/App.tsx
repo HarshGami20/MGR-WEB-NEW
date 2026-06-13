@@ -1,3 +1,4 @@
+import { type ComponentType } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -45,6 +46,7 @@ import DriversPage from "@/pages/drivers";
 import DriverDetailPage from "@/pages/driver-detail-page";
 import ComplaintsPage from "@/pages/complaints";
 import ComplaintDetailPage from "@/pages/complaint-detail-page";
+import UserGuidePage from "@/pages/user-guide";
 
 const queryClient = new QueryClient();
 
@@ -120,6 +122,20 @@ function HomeRedirect() {
   if (isPartnerPortalUser(user)) return <Redirect to="/dashboard" />;
   const p = firstAccessiblePath();
   return <Redirect to={p ?? "/dashboard"} />;
+}
+
+/** User guide is available to every authenticated user; content filters by role permissions. */
+function GuideRoute({ component: Component }: { component: ComponentType }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  }
+  if (!user) return <Redirect to="/login" />;
+  return (
+    <Layout>
+      <Component />
+    </Layout>
+  );
 }
 
 function Router() {
@@ -225,6 +241,9 @@ function Router() {
       </Route>
       <Route path="/settings">
         <ProtectedRoute viewModule="settings" component={Settings} />
+      </Route>
+      <Route path="/user-guide">
+        <GuideRoute component={UserGuidePage} />
       </Route>
 
       <Route component={NotFound} />

@@ -166,6 +166,7 @@ function getPageTitle(location: string, partnerUser: boolean, user?: { supplierI
     if (location.endsWith("/edit")) return "Edit Product";
     return "Product";
   }
+  if (location === "/user-guide") return "User guide";
   return "MGR Casa";
 }
 
@@ -401,17 +402,20 @@ export default function Layout({ children }: LayoutProps) {
             </span>
           </Link>
         ) : null}
-        {/* <button
-          type="button"
-          onClick={() => {
-            window.open(import.meta.env.VITE_HELP_URL ?? "mailto:support@mgrcasa.example", "_blank");
-          }}
-          className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
-        >
-          <HelpCircle className="h-[18px] w-[18px]" />
-          Help
-        </button> */}
-        
+        <Link href="/user-guide" className="block" onClick={() => setMobileSidebarOpen(false)}>
+          <span
+            className={cn(
+              "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+              location === "/user-guide"
+                ? "bg-primary/10 font-semibold text-primary"
+                : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+            )}
+          >
+            <HelpCircle className="h-[18px] w-[18px]" />
+            User guide
+          </span>
+        </Link>
+
         <button
           type="button"
           className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors font-medium"
@@ -528,16 +532,19 @@ export default function Layout({ children }: LayoutProps) {
               </Link>
 
             ) : null}
-            {/* <button
-              type="button"
-              onClick={() => {
-                window.open(import.meta.env.VITE_HELP_URL ?? "mailto:support@mgrcasa.example", "_blank");
-              }}
-              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
-            >
-              <HelpCircle className="h-[18px] w-[18px]" />
-              Help
-            </button> */}
+            <Link href="/user-guide" className="block" onClick={() => setMobileSidebarOpen(false)}>
+              <span
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                  location === "/user-guide"
+                    ? "bg-primary/10 font-semibold text-primary"
+                    : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                )}
+              >
+                <HelpCircle className="h-[18px] w-[18px]" />
+                User guide
+              </span>
+            </Link>
             <button
               type="button"
               className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors font-medium"
@@ -774,7 +781,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-8 md:pt-7 md:bg-transparent md:[&]:rounded-t-none">
-          {partnerUser ? children : <div className="mx-auto">{children}</div>}
+          {partnerUser || location === "/user-guide" ? children : <div className="mx-auto">{children}</div>}
         </main>
       </div>
     </div>
