@@ -37,6 +37,7 @@ import { useAuth } from "@/lib/auth";
 import { useBranch, assignedUserBranchIds } from "@/lib/branch-context";
 import { usePermissions } from "@/lib/permissions";
 import { patchOrderDelivery } from "@/lib/delivery-api";
+import { patchOrderStaffComments } from "@/lib/order-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import {
   OrderImageGalleryDialog,
@@ -311,6 +312,8 @@ export default function OrderDetailPage() {
   const { user } = useAuth();
   const { can } = usePermissions();
   const canEditOrders = can("orders", "edit");
+  const canViewOrders = can("orders", "view");
+  const canAddStaffComment = canViewOrders;
   const canEditDeliveries = can("deliveries", "edit");
   const canAddPayments = can("payments", "add");
   const { selectedBranchId } = useBranch();
@@ -381,6 +384,21 @@ export default function OrderDetailPage() {
       },
       onError: (error: any) => toast({ title: "Update failed", description: error?.response?.data?.error ?? error?.message, variant: "destructive" }),
     },
+  });
+  const addStaffCommentMutation = useMutation({
+    mutationFn: async (staffComments: Array<{ comment: string; authorName?: string; createdAt: string }>) => {
+      if (!Number.isFinite(orderId)) throw new Error("Invalid order");
+      return patchOrderStaffComments(orderId, headerBranchId, staffComments);
+    },
+    onSuccess: (updated) => {
+      if (updated) {
+        queryClient.setQueryData(getGetOrderQueryKey(orderId), updated);
+      }
+      void refreshOrderDetail(orderId);
+      toast({ title: "Comment added" });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Comment failed", description: error.message, variant: "destructive" }),
   });
   const updateOrderStatus = useUpdateOrderStatus({
     mutation: {
@@ -495,10 +513,7 @@ export default function OrderDetailPage() {
         createdAt: new Date().toISOString(),
       },
     ];
-    updateOrder.mutate({
-      id: order.id,
-      data: { staffComments: next } as any,
-    });
+    addStaffCommentMutation.mutate(next);
     setNewStaffComment("");
     setShowStaffCommentForm(false);
   };
@@ -867,7 +882,7 @@ export default function OrderDetailPage() {
               title="Staff comments"
               // description="Internal notes visible to staff"
               action={
-                canEditOrders && !showStaffCommentForm ? (
+                canAddStaffComment && !showStaffCommentForm ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowStaffCommentForm(true)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add
@@ -892,7 +907,7 @@ export default function OrderDetailPage() {
                   )}
                 </div>
               )}
-              {canEditOrders && showStaffCommentForm ? (
+              {canAddStaffComment && showStaffCommentForm ? (
                 <div className="space-y-2 pt-2 border-t border-border/50">
                   <Textarea
                     value={newStaffComment}
@@ -907,7 +922,7 @@ export default function OrderDetailPage() {
                       variant="outline"
                       size="sm"
                       onClick={addStaffComment}
-                      disabled={!newStaffComment.trim() || updateOrder.isPending}
+                      disabled={!newStaffComment.trim() || addStaffCommentMutation.isPending}
                     >
                       <PencilLine className="h-4 w-4 mr-2" />
                       Add comment

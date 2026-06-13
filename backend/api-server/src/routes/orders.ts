@@ -22,7 +22,9 @@ import { emitOrderPaymentStatusChangedIfNeeded } from "../lib/order-payment-stat
 import { assigneeIdsKey, orderHasNonWorkflowFieldChanges } from "../lib/order-update-detect";
 import {
   findNewStaffComments,
+  normalizeStaffCommentsPayload,
   parseStaffCommentsJson,
+  staffCommentsAreAppendOnly,
 } from "../lib/order-staff-comments";
 import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
 import { assignedBranchIds } from "../lib/user-branches";
@@ -76,6 +78,16 @@ const PatchOrderDeliveryBody = z.object({
   deliveryStatus: z.enum(["pending", "out_for_delivery", "delivered"]).optional(),
   deliverySlotId: z.union([z.number().int().positive(), z.null()]).optional(),
   driverId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
+});
+
+const PatchOrderStaffCommentsBody = z.object({
+  staffComments: z.array(
+    z.object({
+      comment: z.string(),
+      authorName: z.string().optional().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
 });
 
 /** Delivery status can be set to any value independently of order status. */
@@ -1635,6 +1647,84 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
 
   res.json(await enrichOrder(order));
 });
+
+router.patch(
+  "/orders/:id/staff-comments",
+  requireAuth,
+  requirePermission("orders", "read"),
+  async (req, res): Promise<void> => {
+    const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(raw, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+
+    const parsed = PatchOrderStaffCommentsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    const existingOrder = await prisma.order.findUnique({ where: { id } });
+    if (!existingOrder) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+
+    const authUser = (req as {
+      user?: { id: number; isSales?: boolean; ordersListScope?: string | null; name?: string };
+    }).user;
+    if (!authUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const access = await assertOrderAccessibleBySalesScope(id, authUser);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.message });
+      return;
+    }
+
+    const prevStaffComments = parseStaffCommentsJson(existingOrder.staffComments);
+    const nextStaffComments = normalizeStaffCommentsPayload(parsed.data.staffComments);
+    if (!staffCommentsAreAppendOnly(prevStaffComments, nextStaffComments)) {
+      res.status(403).json({ error: "You can only add staff comments, not change existing ones" });
+      return;
+    }
+    if (nextStaffComments.length === prevStaffComments.length) {
+      res.status(400).json({ error: "No new staff comment to add" });
+      return;
+    }
+
+    const order = await prisma.order.update({
+      where: { id },
+      data: { staffComments: JSON.stringify(nextStaffComments) },
+    });
+
+    const actorId = authUser.id;
+    emitSafe("ORDER_UPDATED", {
+      orderId: id,
+      orderNumber: order.orderNumber,
+      branchId: order.branchId,
+      updatedById: actorId,
+    });
+
+    for (const row of findNewStaffComments(prevStaffComments, nextStaffComments)) {
+      const preview = row.comment.slice(0, 240);
+      emitSafe("ORDER_STAFF_COMMENT_ADDED", {
+        orderId: id,
+        orderNumber: order.orderNumber,
+        branchId: order.branchId,
+        commentPreview: preview,
+        commentByName: row.authorName?.trim() || authUser.name?.trim() || "Staff",
+        addedById: actorId,
+      });
+    }
+
+    res.json(await enrichOrder(order));
+  },
+);
 
 router.delete("/orders/:id", requireAuth, requirePermission("orders", "delete"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
