@@ -306,7 +306,7 @@ function StaffDashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           <Button asChild size="lg" className="rounded-xl px-5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
-            <Link href="/orders">
+            <Link href="/orders/new">
               <Plus className="h-4 w-4 mr-1" aria-hidden />
               New order
             </Link>
