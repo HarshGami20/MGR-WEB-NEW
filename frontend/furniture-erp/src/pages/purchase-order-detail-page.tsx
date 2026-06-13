@@ -363,11 +363,7 @@
 
     const handleDelete = () => {
       if (
-        confirm(
-          `Delete purchase order ${po.poNumber}?${
-            po.status === "delivered" ? " Stock added on delivery will be reversed." : ""
-          }`,
-        )
+        confirm(`Delete purchase order ${po.poNumber}?`)
       ) {
         deletePO.mutate({ id: po.id });
       }

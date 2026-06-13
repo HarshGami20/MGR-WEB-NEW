@@ -216,13 +216,13 @@ router.get("/inventory/low-stock", requireAuth, requirePermission("inventory", "
     const vrows = await prisma.productVariant.findMany({
       where: { productId: { in: idsWithVariants } },
       select: { productId: true, stockQty: true, lowStockThreshold: true },
-    });
+    }); 
     for (const v of vrows) {
       if (v.stockQty <= v.lowStockThreshold) productLowFromVariant.add(v.productId);
     }
   }
   const low = products
-    .filter((p) => {
+    .filter((p) => { 
       if (p._count.variants === 0) return p.stockQty <= p.lowStockThreshold;
       return productLowFromVariant.has(p.id);
     })

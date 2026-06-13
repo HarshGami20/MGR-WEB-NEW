@@ -874,7 +874,7 @@ async function main() {
     },
   });
 
-  // Inbound stock for delivered PO (matches status-patch behaviour)
+  // Demo stock for delivered PO line items (seed-only; PO status changes do not adjust inventory)
   const deliveredItems = await prisma.purchaseOrderItem.findMany({
     where: { purchaseOrderId: poDelivered.id },
   });

@@ -11,7 +11,6 @@ import { requireAuth } from "../middlewares/auth";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { purchaseOrderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 import { prisma, toNumber } from "../lib/prisma";
-import { decrementProductStock, incrementProductStock } from "../lib/product-stock";
 import {
   isCustomLineItem,
   buildCustomAttributesJson,
@@ -21,7 +20,7 @@ import {
 } from "../lib/custom-line-item";
 import { parseImageUrlsJson } from "../lib/image-urls";
 import { requirePermission } from "../lib/permissions";
-import { requireWriteBranchId, resolveLogBranchId } from "../lib/branch-scope";
+import { requireWriteBranchId } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
@@ -34,56 +33,10 @@ function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-class PurchaseOrderDeleteBlockedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PurchaseOrderDeleteBlockedError";
-  }
-}
-
-/** Reverses inbound stock when a delivered PO is removed, then deletes the PO (items cascade). */
-async function deletePurchaseOrderById(
-  id: number,
-  logBranchId: number | null,
-  actorId: number | null,
-): Promise<boolean> {
-  const existing = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    include: { items: true },
-  });
+async function deletePurchaseOrderById(id: number): Promise<boolean> {
+  const existing = await prisma.purchaseOrder.findUnique({ where: { id } });
   if (!existing) return false;
-
-  await prisma.$transaction(async (tx) => {
-    if (existing.status === "delivered") {
-      for (const item of existing.items) {
-        if (item.productId == null) continue;
-        try {
-          const movements = await decrementProductStock(item.productId, item.quantity, tx, item.variantId);
-          if (logBranchId != null) {
-            for (const movement of movements) {
-              await tx.inventoryLog.create({
-                data: {
-                  productId: movement.productId,
-                  variantId: movement.variantId,
-                  type: "out",
-                  quantity: movement.quantity,
-                  notes: `PO ${existing.poNumber} deleted (stock reversed)`,
-                  branchId: logBranchId,
-                  userId: actorId,
-                },
-              });
-            }
-          }
-        } catch {
-          throw new PurchaseOrderDeleteBlockedError(
-            `Cannot delete delivered PO ${existing.poNumber}: not enough stock to reverse inbound quantities. Adjust stock first.`,
-          );
-        }
-      }
-    }
-    await tx.purchaseOrder.delete({ where: { id } });
-  });
-
+  await prisma.purchaseOrder.delete({ where: { id } });
   return true;
 }
 
@@ -563,25 +516,14 @@ router.delete("/purchase-orders/:id", requireAuth, requirePermission("purchaseOr
     return;
   }
 
-  const user = (req as { user?: { id: number; branchId: number | null } }).user;
-  if (!user) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
-
   try {
-    const deleted = await deletePurchaseOrderById(id, logBranchId, user.id);
+    const deleted = await deletePurchaseOrderById(id);
     if (!deleted) {
       res.status(404).json({ error: "Purchase order not found" });
       return;
     }
     res.json({ success: true });
   } catch (e: unknown) {
-    if (e instanceof PurchaseOrderDeleteBlockedError) {
-      res.status(409).json({ error: e.message });
-      return;
-    }
     const msg = e instanceof Error ? e.message : "Failed to delete purchase order";
     res.status(500).json({ error: msg });
   }
@@ -613,34 +555,9 @@ router.patch("/purchase-orders/:id/status", requireAuth, requirePermission("purc
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const logBranchId = await resolveLogBranchId(req, user, existing.branchId);
   const actorId = user.id;
   try {
-    const po = await prisma.$transaction(async (tx) => {
-      const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } });
-      const applyInbound = parsed.data.status === "delivered" && existing.status !== "delivered";
-      if (applyInbound) {
-        const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: id } });
-        for (const item of items) {
-          if (item.productId == null) continue;
-          const movements = await incrementProductStock(item.productId, item.quantity, tx, item.variantId);
-          for (const movement of movements) {
-            await tx.inventoryLog.create({
-              data: {
-                productId: movement.productId,
-                variantId: movement.variantId,
-                type: "in",
-                quantity: movement.quantity,
-                notes: `PO ${updated.poNumber} delivered`,
-                branchId: logBranchId,
-                userId: actorId,
-              },
-            });
-          }
-        }
-      }
-      return updated;
-    });
+    const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: parsed.data.status } });
     if (existing.status !== po.status) {
       emitSafe("PURCHASE_ORDER_STATUS_CHANGED", {
         purchaseOrderId: po.id,
