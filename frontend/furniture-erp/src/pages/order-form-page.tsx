@@ -47,7 +47,7 @@ import { fetchAvailableDeliverySlots, type AvailableDeliverySlot } from "@/lib/d
 import { listDrivers } from "@/lib/driver-api";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { formatInr } from "@/lib/format-currency";
-import { computeOrderTotalsFromLines } from "@/lib/gst-pricing";
+import { computeOrderTotalsFromLines, roundMoney } from "@/lib/gst-pricing";
 import { zodFields } from "@/lib/form-validation";
 import { ValidatedInput } from "@/components/validated-input";
 import { uploadOrderImage } from "@/lib/upload-image-api";
@@ -125,11 +125,13 @@ const orderSchema = z.object({
     })),
     data.isGst,
   );
-  if (Number(data.advanceAmount || 0) > totals.total) {
+  const deliveryCharge = parseDeliveryChargeFormValue(data.deliveryCharge);
+  const orderTotal = roundMoney(totals.total + deliveryCharge);
+  if (Number(data.advanceAmount || 0) > orderTotal) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["advanceAmount"],
-      message: `exceed order total (${formatInr(totals.total)})`,
+      message: `exceed order total (${formatInr(orderTotal)})`,
     });
   }
   const hasChallan = data.challanImages.some((entry) => entry.imageUrl?.trim());
@@ -463,6 +465,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
   const watchedPaymentStatus = useWatch({ control: form.control, name: "paymentStatus" });
   const watchedDeliverySlotId = useWatch({ control: form.control, name: "deliverySlotId" });
+  const watchedDeliveryCharge = useWatch({ control: form.control, name: "deliveryCharge" });
+  const deliveryChargeDisplay = parseDeliveryChargeFormValue(watchedDeliveryCharge ?? "");
   const isGstInvoice = !!useWatch({ control: form.control, name: "isGst" });
   const orderSummary = useMemo(() => {
     const totals = computeOrderTotalsFromLines(
@@ -475,11 +479,13 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       defaultGstPercent,
     );
     const advance = Number(watchedAdvance ?? 0);
+    const grandTotal = roundMoney(totals.total + deliveryChargeDisplay);
     return {
       ...totals,
-      remaining: Math.max(0, totals.total - advance),
+      grandTotal,
+      remaining: Math.max(0, grandTotal - advance),
     };
-  }, [watchedItems, watchedAdvance, isGstInvoice, defaultGstPercent]);
+  }, [watchedItems, watchedAdvance, isGstInvoice, defaultGstPercent, deliveryChargeDisplay]);
 
   const otherPaidOnOrder = useMemo(() => {
     if (!isEdit || !order) return 0;
@@ -490,7 +496,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   const paidAmountDisplay = isEdit
     ? otherPaidOnOrder + Number(watchedAdvance ?? 0)
     : Number(watchedAdvance ?? 0);
-  const balanceAmountDisplay = Math.max(0, orderSummary.total - paidAmountDisplay);
+  const balanceAmountDisplay = Math.max(0, orderSummary.grandTotal - paidAmountDisplay);
   const selectedSlot =
     isEdit && order
       ? ((order as { deliverySlot?: { label: string; startTime: string; endTime: string; slotDate?: string } })
@@ -560,19 +566,22 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       !!data.isGst,
       defaultGstPercent,
     );
+    const orderTotal = roundMoney(
+      lineTotals.total + parseDeliveryChargeFormValue(data.deliveryCharge),
+    );
     const nextAdvance = Number(data.advanceAmount ?? 0);
     const maxAdvanceAllowed =
       isEdit && order
         ? Math.max(
             0,
-            lineTotals.total -
+            orderTotal -
               Math.max(
                 0,
                 Number(order.paidAmount ?? 0) -
                   Number((order as { advanceAmount?: number | string | null }).advanceAmount ?? 0),
               ),
           )
-        : lineTotals.total;
+        : orderTotal;
     if (nextAdvance > maxAdvanceAllowed) {
       form.setError("advanceAmount", {
         type: "manual",
@@ -1202,11 +1211,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       <Separator />
                     </>
                   ) : null}
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-muted-foreground">Delivery charges</span>
+                    <span className="tabular-nums">{formatInr(deliveryChargeDisplay)}</span>
+                  </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                       Total{isGstInvoice ? " (incl. GST)" : ""}
                     </span>
-                    <span className="text-xl font-bold tabular-nums">{formatInr(orderSummary.total)}</span>
+                    <span className="text-xl font-bold tabular-nums">{formatInr(orderSummary.grandTotal)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between gap-2 text-sm">

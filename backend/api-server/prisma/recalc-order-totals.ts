@@ -1,12 +1,6 @@
 /**
- * Recomputes `totalAmount` on every existing order so it equals `subtotal + taxAmount`
- * (i.e. items + GST only — delivery charge is no longer rolled into the order total).
- *
- * This is needed once after switching the order create/update logic to stop adding
- * delivery charge to `totalAmount`. The script is idempotent: orders that already
- * match `subtotal + taxAmount` (within rounding) are skipped. Orders that look like
- * they include delivery (`totalAmount ≈ subtotal + taxAmount + deliveryCharge`) are
- * lowered to `subtotal + taxAmount`. Anything else is left alone and reported.
+ * Recomputes `totalAmount` on every existing order so it equals
+ * `subtotal + taxAmount + deliveryCharge`.
  *
  * Run from backend/api-server:
  *     bun run prisma/recalc-order-totals.ts --yes
@@ -62,7 +56,7 @@ async function main() {
   });
 
   let unchanged = 0;
-  let lowered = 0;
+  let updated = 0;
   let skippedMismatch = 0;
 
   for (const o of orders) {
@@ -70,36 +64,29 @@ async function main() {
     const taxAmount = n(o.taxAmount);
     const deliveryCharge = n(o.deliveryCharge);
     const totalAmount = n(o.totalAmount);
-    const itemsPlusGst = subtotal + taxAmount;
-    const itemsPlusGstPlusDelivery = itemsPlusGst + deliveryCharge;
+    const expectedTotal = subtotal + taxAmount + deliveryCharge;
 
-    if (Math.abs(totalAmount - itemsPlusGst) < EPSILON) {
+    if (Math.abs(totalAmount - expectedTotal) < EPSILON) {
       unchanged += 1;
       continue;
     }
-    if (Math.abs(totalAmount - itemsPlusGstPlusDelivery) < EPSILON) {
-      lowered += 1;
-      const next = itemsPlusGst.toFixed(2);
-      console.log(
-        `Order ${o.orderNumber} (#${o.id}): totalAmount ${totalAmount.toFixed(2)} -> ${next} (delivery ${deliveryCharge.toFixed(2)} excluded)`,
-      );
-      if (!dry) {
-        await prisma.order.update({
-          where: { id: o.id },
-          data: { totalAmount: next },
-        });
-      }
-      continue;
-    }
-    skippedMismatch += 1;
-    console.warn(
-      `Order ${o.orderNumber} (#${o.id}): totalAmount ${totalAmount.toFixed(2)} does not match items+GST (${itemsPlusGst.toFixed(2)}) nor items+GST+delivery (${itemsPlusGstPlusDelivery.toFixed(2)}). Skipped — review manually.`,
+
+    updated += 1;
+    const next = expectedTotal.toFixed(2);
+    console.log(
+      `Order ${o.orderNumber} (#${o.id}): totalAmount ${totalAmount.toFixed(2)} -> ${next} (delivery ${deliveryCharge.toFixed(2)} included)`,
     );
+    if (!dry) {
+      await prisma.order.update({
+        where: { id: o.id },
+        data: { totalAmount: next },
+      });
+    }
   }
 
   console.log("---");
   console.log(`Unchanged: ${unchanged}`);
-  console.log(`Lowered  : ${lowered}${dry ? " (dry run, no writes)" : ""}`);
+  console.log(`Updated  : ${updated}${dry ? " (dry run, no writes)" : ""}`);
   console.log(`Skipped  : ${skippedMismatch}`);
 }
 

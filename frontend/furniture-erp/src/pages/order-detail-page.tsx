@@ -111,6 +111,7 @@ function buildQuotationFromOrder(order: {
     }),
     subtotal: Number(orderAny.subtotal ?? 0),
     taxAmount: Number(orderAny.taxAmount ?? 0),
+    deliveryCharge: Number(orderAny.deliveryCharge ?? 0),
     totalAmount: Number(order.totalAmount),
     paidAmount: Number(order.paidAmount ?? 0),
     photoComments: (Array.isArray(orderAny.photoComments) ? orderAny.photoComments : []) as Array<{
@@ -805,6 +806,10 @@ export default function OrderDetailPage() {
                         </>
                       ) : null}
                       <div className="flex justify-between gap-8 text-sm">
+                        <span className="text-muted-foreground">Delivery charges</span>
+                        <span className="tabular-nums">{formatInr(Number(orderAny.deliveryCharge ?? 0))}</span>
+                      </div>
+                      <div className="flex justify-between gap-8 text-sm">
                         <span className="text-muted-foreground">Order total{order.isGst ? " (incl. GST)" : ""}</span>
                         <span className="font-semibold tabular-nums">{formatInr(order.totalAmount)}</span>
                       </div>
@@ -1046,6 +1051,10 @@ export default function OrderDetailPage() {
                     <Separator />
                   </>
                 ) : null}
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">Delivery charges</span>
+                  <span className="tabular-nums">{formatInr(Number(orderAny.deliveryCharge ?? 0))}</span>
+                </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                     Total{order.isGst ? " (incl. GST)" : ""}

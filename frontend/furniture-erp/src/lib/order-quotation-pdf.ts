@@ -2,7 +2,7 @@ import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { downloadPdfDocument } from "@/lib/pdfmake-client";
 import { formatInr } from "@/lib/format-currency";
 import { formatDisplayDate } from "@/lib/format-datetime";
-import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
+import { inclusiveUnitFromExclusive, roundMoney } from "@/lib/gst-pricing";
 
 export type OrderQuotationLineItem = {
   label: string;
@@ -31,6 +31,7 @@ export type OrderQuotationInput = {
   items: OrderQuotationLineItem[];
   subtotal?: number;
   taxAmount?: number;
+  deliveryCharge?: number;
   totalAmount: number;
   paidAmount?: number;
   photoComments: OrderQuotationPhoto[];
@@ -411,8 +412,18 @@ function buildLineItemsTable(order: OrderQuotationInput): Content {
   };
 }
 
+function resolveQuotationOrderTotal(order: OrderQuotationInput): number {
+  const deliveryCharge = Number(order.deliveryCharge ?? 0);
+  if (order.isGst && order.subtotal != null) {
+    return roundMoney(Number(order.subtotal) + Number(order.taxAmount ?? 0) + deliveryCharge);
+  }
+  const linesTotal = order.items.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0);
+  return roundMoney(linesTotal + deliveryCharge);
+}
+
 function buildPriceSummary(order: OrderQuotationInput): Content {
-  const balance = Math.max(0, order.totalAmount - (order.paidAmount ?? 0));
+  const orderTotal = resolveQuotationOrderTotal(order);
+  const balance = Math.max(0, orderTotal - (order.paidAmount ?? 0));
   const rows: Content[][] = [];
 
   if (order.isGst && order.subtotal != null) {
@@ -425,9 +436,15 @@ function buildPriceSummary(order: OrderQuotationInput): Content {
       { text: formatInr(order.taxAmount ?? 0), fontSize: 8.5, alignment: "right" },
     ]);
   }
+  if (Number(order.deliveryCharge ?? 0) > 0) {
+    rows.push([
+      { text: "Delivery charges", fontSize: 8.5 },
+      { text: formatInr(Number(order.deliveryCharge)), fontSize: 8.5, alignment: "right" },
+    ]);
+  }
   rows.push([
     { text: "Order Total", bold: true, fontSize: 9 },
-    { text: formatInr(order.totalAmount), bold: true, fontSize: 9, alignment: "right" },
+    { text: formatInr(orderTotal), bold: true, fontSize: 9, alignment: "right" },
   ]);
   if ((order.paidAmount ?? 0) > 0) {
     rows.push([
@@ -539,7 +556,8 @@ export function buildWhatsAppQuotationMessage(
   settings?: QuotationCompanySettings,
 ): string {
   const company = settings?.companyName?.trim() || "MGR CASA";
-  const balance = Math.max(0, order.totalAmount - (order.paidAmount ?? 0));
+  const orderTotal = resolveQuotationOrderTotal(order);
+  const balance = Math.max(0, orderTotal - (order.paidAmount ?? 0));
   const lines = [
     `*${company} — Quotation*`,
     "",
@@ -547,7 +565,10 @@ export function buildWhatsAppQuotationMessage(
     `Customer: ${order.customerName}`,
     order.customerMobile?.trim() ? `Mobile: ${order.customerMobile.trim()}` : "",
     "",
-    `*Total: ${formatInr(order.totalAmount)}*`,
+    Number(order.deliveryCharge ?? 0) > 0
+      ? `Delivery: ${formatInr(Number(order.deliveryCharge))}`
+      : "",
+    `*Total: ${formatInr(orderTotal)}*`,
     (order.paidAmount ?? 0) > 0 ? `Paid: ${formatInr(order.paidAmount!)}` : "",
     (order.paidAmount ?? 0) > 0 ? `Balance: ${formatInr(balance)}` : "",
     "",

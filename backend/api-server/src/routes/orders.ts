@@ -812,9 +812,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   }
 
   const deliveryCharge = parseDeliveryCharge(orderData.deliveryCharge);
-  // Delivery charge is tracked separately and is NOT rolled into the order total used for
-  // payment summary, paid/due balance, payment status, exports, or invoices.
-  const totalAmount = subtotal + taxAmount;
+  const totalAmount = subtotal + taxAmount + deliveryCharge;
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
   const requestedStatusRaw = typeof orderData.status === "string" ? orderData.status : "order_received";
@@ -1186,8 +1184,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     payload.deliveryCharge !== undefined
       ? parseDeliveryCharge(payload.deliveryCharge)
       : toNumber((existingOrder as { deliveryCharge?: unknown }).deliveryCharge ?? 0);
-  // Delivery charge stays as a separate column; it is NOT included in totalAmount.
-  const totalAmount = subtotal + taxAmount;
+  const totalAmount = subtotal + taxAmount + nextDeliveryCharge;
   const advanceAmountProvided = Object.prototype.hasOwnProperty.call(payload, "advanceAmount");
   const paymentModeProvided = Object.prototype.hasOwnProperty.call(payload, "paymentMode");
 
