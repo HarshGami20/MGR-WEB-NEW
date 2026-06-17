@@ -34,6 +34,11 @@ import { categoryIdToParam } from "@/lib/list-category-filter";
 import { InventoryExportDialog } from "@/components/inventory-export-dialog";
 import { usePermissions } from "@/lib/permissions";
 import { formatIndianDateTime } from "@/lib/format-datetime";
+import {
+  CatalogLineImageThumb,
+  catalogLineImageUrls,
+} from "@/components/catalog-line-image-preview";
+import { productImageList, variantImageList } from "@/lib/image-urls";
 
 const adjustSchema = z.object({
   productId: z.coerce.number().min(1, "Product is required"),
@@ -44,6 +49,57 @@ const adjustSchema = z.object({
 });
 
 type AdjustFormValues = z.infer<typeof adjustSchema>;
+
+type InventoryLogRow = {
+  product?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
+  variant?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
+};
+
+function InventoryLogProductCell({ row }: { row: InventoryLogRow }) {
+  const product = row.product;
+  const variant = row.variant;
+  const name = product?.name || "Unknown Product";
+  const urls = catalogLineImageUrls(product, variant);
+
+  return (
+    <div className="flex items-start gap-3 min-w-0 max-w-[300px]">
+      <CatalogLineImageThumb urls={urls} caption={name} size="sm" className="h-11 w-11" />
+      <div className="min-w-0">
+        <div className="font-medium truncate" title={name}>
+          {name}
+        </div>
+        {variant?.name ? (
+          <div className="text-xs text-muted-foreground truncate" title={variant.name}>
+            Variant: {variant.name}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LowStockProductCell({ product }: { product: Product }) {
+  const gallery = productImageList(product);
+  const hasVariants = Number((product as { variantCount?: number }).variantCount ?? 0) > 0;
+  const { data: variantsData } = useListProductVariants(product.id, {
+    query: { enabled: gallery.length === 0 && hasVariants },
+  });
+  const variantFallbackUrls =
+    Array.isArray(variantsData) && variantsData.length > 0
+      ? variantImageList(variantsData[0] as { imageUrls?: string | string[] | null; imageUrl?: string | null })
+      : [];
+  const previewUrls = gallery.length > 0 ? gallery : variantFallbackUrls;
+  const name = String(product.name ?? "");
+
+  return (
+    <div className="flex items-center gap-3 min-w-0">
+      <CatalogLineImageThumb urls={previewUrls} caption={name} size="sm" className="h-11 w-11" />
+      <span className="font-medium truncate" title={name}>
+        {name}
+      </span>
+    </div>
+  );
+}
 
 export default function Inventory() {
   const [page, setPage] = useState(1);
@@ -200,29 +256,9 @@ export default function Inventory() {
   const columns = useMemo<ColumnDef<(typeof logs)[number]>[]>(
     () => [
       {
-        accessorKey: "createdAt",
-        header: "Date",
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap text-sm text-muted-foreground">
-            {formatIndianDateTime(row.original.createdAt)}
-          </span>
-        ),
-      },
-      {
         id: "product",
         header: "Product",
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <div className="font-medium truncate">
-              {row.original.product?.name || "Unknown Product"}
-            </div>
-            {(row.original as any).variant?.name ? (
-              <div className="text-xs text-muted-foreground truncate">
-                Variant: {(row.original as any).variant.name}
-              </div>
-            ) : null}
-          </div>
-        ),
+        cell: ({ row }) => <InventoryLogProductCell row={row.original} />,
       },
       {
         accessorKey: "type",
@@ -271,6 +307,15 @@ export default function Inventory() {
           );
         },
       },
+      {
+        accessorKey: "createdAt",
+        header: "Date",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-sm text-muted-foreground">
+            {formatIndianDateTime(row.original.createdAt)}
+          </span>
+        ),
+      },
     ],
     [getTypeIcon, getTypeBadge],
   );
@@ -280,7 +325,7 @@ export default function Inventory() {
       {
         accessorKey: "name",
         header: "Product",
-        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+        cell: ({ row }) => <LowStockProductCell product={row.original} />,
       },
       {
         accessorKey: "sku",

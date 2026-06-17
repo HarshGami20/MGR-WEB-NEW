@@ -8,6 +8,7 @@ import { emitViaBridge } from "../realtime/socket-bridge";
 import { getSocketServer } from "../realtime/socket-registry";
 import { enqueuePushBatch, enqueueScheduledNotification, notificationQueue } from "../queues/notification-queue";
 import { isSuperAdminRole } from "../lib/permissions";
+import { fcmMulticastAndroidOptions } from "../lib/fcm-android";
 
 const SOCKET_EVENT = "notification:new";
 
@@ -178,7 +179,7 @@ export async function flushPushBatch(job: {
         tokens: registrationTokens,
         notification: { title: job.title, body: job.body },
         data: job.data,
-        android: { priority: "high" },
+        android: fcmMulticastAndroidOptions(),
         apns: {
           payload: { aps: { sound: "default", contentAvailable: true } },
         },
@@ -592,7 +593,7 @@ export const notificationService = {
           body: `MGR CASA ERP — ${new Date().toLocaleString()}`,
         },
         data: { type: "web_push_test", ts: String(Date.now()) },
-        android: { priority: "high" },
+        android: fcmMulticastAndroidOptions(),
         apns: {
           payload: { aps: { sound: "default", contentAvailable: true } },
         },
