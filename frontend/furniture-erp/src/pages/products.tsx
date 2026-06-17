@@ -8,13 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Edit, Layers, ImageIcon, Eye } from "lucide-react";
+import { Plus, Search, Trash2, Edit, Layers, Eye } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { DataTable, DataTablePaginationFooter } from "@/components/data-table";
 import { ListCategoryFilter } from "@/components/list-category-filter";
 import { formatInr } from "@/lib/format-currency";
-import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { productImageList, variantImageList } from "@/lib/image-urls";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { ProductsExportDialog } from "@/components/products-export-dialog";
@@ -22,6 +21,7 @@ import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-f
 import { useBranch } from "@/lib/branch-context";
 import { productStockDisplay } from "@/lib/product-branch-stock";
 import { BranchStockBreakdown } from "@/components/branch-stock-breakdown";
+import { CatalogLineImageThumb } from "@/components/catalog-line-image-preview";
 
 type ProductRow = Record<string, any>;
 
@@ -33,23 +33,20 @@ function ProductNameCell({ product }: { product: ProductRow }) {
     query: { enabled: !hasProductImage && hasVariants },
   });
 
-  const variantFallback =
+  const variantFallbackUrls =
     Array.isArray(variantsData) && variantsData.length > 0
-      ? resolvedProductImageUrl(variantImageList(variantsData[0] as { imageUrls?: string | string[] | null; imageUrl?: string | null })[0])
-      : undefined;
-  const imageSrc = resolvedProductImageUrl(gallery[0]) ?? variantFallback;
+      ? variantImageList(variantsData[0] as { imageUrls?: string | string[] | null; imageUrl?: string | null })
+      : [];
+  const previewUrls = gallery.length > 0 ? gallery : variantFallbackUrls;
 
   return (
     <div className="flex items-start gap-3 min-w-0 max-w-[280px]">
-      <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md border border-border/70 bg-muted/30">
-        {imageSrc ? (
-          <img src={imageSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-4 w-4 opacity-60" />
-          </div>
-        )}
-      </div>
+      <CatalogLineImageThumb
+        urls={previewUrls}
+        caption={String(product.name ?? "")}
+        size="sm"
+        className="h-11 w-11"
+      />
       <div className="min-w-0">
         <Link href={`/products/${product.id}`}>
           <span className="block truncate font-semibold text-foreground hover:underline" title={String(product.name ?? "")}>

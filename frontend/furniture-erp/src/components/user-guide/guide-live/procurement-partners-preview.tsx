@@ -64,7 +64,7 @@ function StatusBadge({ active }: { active: boolean }) {
       Active
     </Badge>
   ) : (
-    <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+    <Badge variant="outline" className="bg-muted text-muted-foreground border-border">
       Inactive
     </Badge>
   );

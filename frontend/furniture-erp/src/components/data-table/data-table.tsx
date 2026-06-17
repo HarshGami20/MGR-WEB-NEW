@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isStickyRightColumn, tableRowWithStickyActionsClassName, tableStickyCellClassName, tableStickyHeadClassName } from "@/lib/table-sticky";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { getPaginationPageItems } from "@/lib/pagination";
 
 export type DataTableColumnMeta = {
   headerClassName?: string;
@@ -53,38 +54,69 @@ export function DataTablePaginationFooter({
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const from = (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
-  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pageItems = getPaginationPageItems(page, totalPages);
 
   return (
-    <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">
-      <span className="hidden xl:block">
-        Page {page} of {totalPages} · Showing {from} to {to} of {total} {itemLabel}
+    <div className="flex flex-col gap-3 border-t border-border/60 px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <span className="text-xs sm:text-sm">
+        <span className="hidden lg:inline">
+          Page {page} of {totalPages} · Showing {from} to {to} of {total} {itemLabel}
+        </span>
+        <span className="lg:hidden">
+          Page {page} of {totalPages}
+          <span className="hidden sm:inline">
+            {" "}
+            · {from}–{to} of {total}
+          </span>
+        </span>
       </span>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" className="rounded-lg" onClick={() => onPageChange((p) => Math.max(1, p - 1))} disabled={page === 1}>
-          <ChevronLeft className="h-4 w-4 block md:hidden" />
-          <span className="hidden md:inline">
-          Previous
-          </span>
+      <div className="flex items-center justify-center gap-1 sm:justify-end sm:gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-lg"
+          onClick={() => onPageChange((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          <span className="hidden md:inline">Previous</span>
         </Button>
-        <div className="items-center gap-1 flex">
-          {pageNumbers.map((n) => (
-            <Button
-              key={n}
-              variant={n === page ? "default" : "outline"}
-              size="sm"
-              className="h-8 min-w-8 rounded-md px-2"
-              onClick={() => onPageChange(() => n)}
-            >
-              {n}
-            </Button>
-          ))}
+        <div className="flex max-w-[min(100%,16rem)] items-center justify-center gap-1 overflow-x-auto px-1 sm:max-w-none">
+          {pageItems.map((item, index) =>
+            item === "ellipsis" ? (
+              <span
+                key={`ellipsis-${index}`}
+                className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground"
+                aria-hidden
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </span>
+            ) : (
+              <Button
+                key={item}
+                variant={item === page ? "default" : "outline"}
+                size="sm"
+                className="h-8 min-w-8 shrink-0 rounded-md px-2"
+                onClick={() => onPageChange(() => item)}
+                aria-label={`Page ${item}`}
+                aria-current={item === page ? "page" : undefined}
+              >
+                {item}
+              </Button>
+            ),
+          )}
         </div>
-        <Button variant="outline" size="sm" className="rounded-lg" onClick={() => onPageChange((p) => p + 1)} disabled={page >= totalPages}>
-          <ChevronRight className="h-4 w-4 block md:hidden" />
-          <span className="hidden md:inline">
-          Next
-          </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-lg"
+          onClick={() => onPageChange((p) => Math.min(totalPages, p + 1))}
+          disabled={page >= totalPages}
+          aria-label="Next page"
+        >
+          <span className="hidden md:inline">Next</span>
+          <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
     </div>

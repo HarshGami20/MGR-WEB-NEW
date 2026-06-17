@@ -454,7 +454,8 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       ids.add(user.id);
     }
     for (const u of assignableUsers) {
-      if (u.roleName === "Super Admin") ids.add(u.id);
+      const role = u.roleName?.trim().toLowerCase() ?? "";
+      if (role === "super admin" || role === "admin") ids.add(u.id);
     }
     if (ids.size > 0) {
       setValue("assigneeUserIds", [...ids], { shouldDirty: false, shouldTouch: false, shouldValidate: false });

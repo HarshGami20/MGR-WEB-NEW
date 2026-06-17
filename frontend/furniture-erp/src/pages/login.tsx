@@ -201,7 +201,7 @@ export default function Login() {
       <div className="pointer-events-none absolute bottom-0 left-1/4 h-80 w-80 rounded-full bg-violet-200/30 blur-3xl" />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center">
-        <Card className="w-full rounded-[2rem] border-white/55 bg-white/70 shadow-[0_24px_70px_rgba(56,39,67,0.14)] backdrop-blur-xl">
+        <Card className="w-full rounded-[2rem] border-border/55 bg-card/70 shadow-[0_24px_70px_rgba(56,39,67,0.14)] backdrop-blur-xl">
           <CardHeader className="space-y-3 pb-4 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/12 ring-1 ring-primary/20">
               <img src="/mgr_casa_logo_blue_mg.svg" alt="MGR Casa" className="h-10 w-10 object-contain" />
@@ -247,7 +247,7 @@ export default function Login() {
                       value={mobile}
                       onChange={(e) => handleMobileChange(e.target.value)}
                       required
-                      className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 shadow-sm tracking-wide"
+                      className="h-11 rounded-xl border-border/50 bg-background/75 pl-10 shadow-sm tracking-wide"
                     />
                   </div>
                 </div>
@@ -264,7 +264,7 @@ export default function Login() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="h-11 rounded-xl border-white/50 bg-white/75 pl-10 pr-12 shadow-sm"
+                      className="h-11 rounded-xl border-border/50 bg-background/75 pl-10 pr-12 shadow-sm"
                     />
                     <button
                       type="button"

@@ -340,7 +340,7 @@ export default function Users() {
           row.original.isActive ? (
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
           ) : (
-            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Inactive</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">Inactive</Badge>
           ),
       },
       {
@@ -353,7 +353,7 @@ export default function Users() {
             <div className="flex items-center justify-end gap-1">
               {can("users", "edit") && (
                 <Button variant="ghost" size="icon" title="Toggle Status" onClick={() => toggleUser.mutate({ id: user.id })}>
-                  <Power className={`h-4 w-4 ${user.isActive ? "text-green-600" : "text-gray-400"}`} />
+                  <Power className={`h-4 w-4 ${user.isActive ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`} />
                 </Button>
               )}
               {can("users", "edit") && (

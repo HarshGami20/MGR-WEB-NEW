@@ -54,7 +54,7 @@ import { cn } from "@/lib/utils";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import {
   downloadOrderQuotationPdf,
-  openWhatsAppForOrder,
+  shareOrderQuotationViaWhatsApp,
   type OrderQuotationInput,
   type QuotationCompanySettings,
 } from "@/lib/order-quotation-pdf";
@@ -345,6 +345,7 @@ export default function OrderDetailPage() {
   const [showDeliveryCommentForm, setShowDeliveryCommentForm] = useState(false);
   const [imageGallery, setImageGallery] = useState<{ slides: GallerySlide[]; index: number } | null>(null);
   const [quotationPdfLoading, setQuotationPdfLoading] = useState(false);
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
 
   const openImageGallery = (slides: GallerySlide[], startIndex = 0) => {
     const valid = slides.filter((s) => Boolean(s.src?.trim()));
@@ -574,8 +575,22 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleWhatsAppShare = () => {
-    openWhatsAppForOrder(quotationInput, quotationCompany);
+  const handleWhatsAppShare = async () => {
+    setWhatsappLoading(true);
+    try {
+      await shareOrderQuotationViaWhatsApp(quotationInput, quotationCompany);
+      toast({ title: "Opening WhatsApp", description: "Quotation PDF is ready to send." });
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Try again.";
+      toast({
+        title: "Could not share on WhatsApp",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setWhatsappLoading(false);
+    }
   };
 
   return (
@@ -620,10 +635,11 @@ export default function OrderDetailPage() {
               variant="outline"
               size="sm"
               className="rounded-xl border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
-              onClick={handleWhatsAppShare}
+              disabled={whatsappLoading}
+              onClick={() => void handleWhatsAppShare()}
             >
               <MessageCircle className="h-4 w-4 mr-2" />
-              WhatsApp
+              {whatsappLoading ? "Preparing…" : "WhatsApp"}
             </Button>
             <Button
               type="button"

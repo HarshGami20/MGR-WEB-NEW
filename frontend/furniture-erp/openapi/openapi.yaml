@@ -855,6 +855,11 @@ paths:
           description: Filter logs for products in this category (includes child categories when a parent is selected).
           schema:
             type: integer
+        - name: search
+          in: query
+          description: Search product name, SKU, variant, notes, or updated-by name
+          schema:
+            type: string
       responses:
         "200":
           description: Inventory logs

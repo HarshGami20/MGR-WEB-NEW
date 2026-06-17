@@ -1,5 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { formatInr } from "./format-currency";
+import {
+  appendOrderSummaryToMessage,
+  type OrderNotificationSummary,
+} from "./order-notification-summary";
 import { prisma } from "./prisma";
 import { purchaseOrderPartnerLabel } from "./notification-targets";
 
@@ -49,11 +53,13 @@ export async function copyOrderCreated(input: {
   orderId: number;
   orderNumber: string;
   createdById?: number | null;
+  summary?: OrderNotificationSummary;
 }): Promise<NotificationCopy> {
   const who = byActor(await actorName(input.createdById));
+  const message = `Order ${input.orderNumber} was created${who}. Open the order to review items and delivery.`;
   return {
     title: "New sales order",
-    message: `Order ${input.orderNumber} was created${who}. Open the order to review items and delivery.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -64,11 +70,13 @@ export async function copyOrderStatusChanged(input: {
   previousStatus: string;
   nextStatus: string;
   changedById?: number | null;
+  summary?: OrderNotificationSummary;
 }): Promise<NotificationCopy> {
   const who = byActor(await actorName(input.changedById));
+  const message = `Order ${input.orderNumber} moved from ${humanizeToken(input.previousStatus)} to ${humanizeToken(input.nextStatus)}${who}.`;
   return {
     title: "Order status changed",
-    message: `Order ${input.orderNumber} moved from ${humanizeToken(input.previousStatus)} to ${humanizeToken(input.nextStatus)}${who}.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -79,6 +87,7 @@ export async function copyOrderDeliveryUpdated(input: {
   previousDeliveryStatus: string;
   nextDeliveryStatus: string;
   changedById?: number | null;
+  summary?: OrderNotificationSummary;
 }): Promise<NotificationCopy> {
   const who = byActor(await actorName(input.changedById));
   const prev =
@@ -89,9 +98,10 @@ export async function copyOrderDeliveryUpdated(input: {
     input.nextDeliveryStatus === "out_for_delivery"
       ? "Out for delivery"
       : humanizeToken(input.nextDeliveryStatus);
+  const message = `Order ${input.orderNumber}: delivery ${prev} → ${next}${who}.`;
   return {
     title: "Delivery status updated",
-    message: `Order ${input.orderNumber}: delivery ${prev} → ${next}${who}.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -100,12 +110,14 @@ export function copyPaymentReceived(input: {
   orderId: number;
   orderNumber: string;
   amount: string;
+  summary?: OrderNotificationSummary;
 }): NotificationCopy {
   const amt = Number(input.amount);
   const amountText = Number.isFinite(amt) ? formatInr(amt) : input.amount;
+  const message = `${amountText} recorded for order ${input.orderNumber}. View payment history on the order.`;
   return {
     title: "Payment received",
-    message: `${amountText} recorded for order ${input.orderNumber}. View payment history on the order.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -122,12 +134,14 @@ export function copyPaymentStatusChanged(input: {
   orderNumber: string;
   previousPaymentStatus: string;
   nextPaymentStatus: string;
+  summary?: OrderNotificationSummary;
 }): NotificationCopy {
   const prev = formatPaymentStatusLabel(input.previousPaymentStatus);
   const next = formatPaymentStatusLabel(input.nextPaymentStatus);
+  const message = `Order ${input.orderNumber}: payment status changed from ${prev} to ${next}.`;
   return {
     title: "Payment status updated",
-    message: `Order ${input.orderNumber}: payment status changed from ${prev} to ${next}.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -137,11 +151,13 @@ export async function copyPaymentFollowUpScheduled(input: {
   orderNumber: string;
   followUpDate: string;
   createdById?: number | null;
+  summary?: OrderNotificationSummary;
 }): Promise<NotificationCopy> {
   const who = byActor(await actorName(input.createdById));
+  const message = `Order ${input.orderNumber}: collection follow-up set for ${input.followUpDate}${who}.`;
   return {
     title: "Payment follow-up scheduled",
-    message: `Order ${input.orderNumber}: collection follow-up set for ${input.followUpDate}${who}.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -151,12 +167,14 @@ export function copyPaymentReminder(input: {
   orderNumber: string;
   followUpDate: string;
   overdue: boolean;
+  summary?: OrderNotificationSummary;
 }): NotificationCopy {
+  const message = input.overdue
+    ? `Order ${input.orderNumber}: payment follow-up was due on ${input.followUpDate}. Collect or reschedule on the order.`
+    : `Order ${input.orderNumber}: payment follow-up is due today (${input.followUpDate}).`;
   return {
     title: input.overdue ? "Payment follow-up overdue" : "Payment follow-up due today",
-    message: input.overdue
-      ? `Order ${input.orderNumber}: payment follow-up was due on ${input.followUpDate}. Collect or reschedule on the order.`
-      : `Order ${input.orderNumber}: payment follow-up is due today (${input.followUpDate}).`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: orderActionPath(input.orderId),
   };
 }
@@ -165,14 +183,16 @@ export function copyDeliveryReminder(input: {
   orderId: number;
   orderNumber: string;
   deliveryStatus: string;
+  summary?: OrderNotificationSummary;
 }): NotificationCopy {
   const status =
     input.deliveryStatus === "out_for_delivery"
       ? "out for delivery"
       : "scheduled for delivery";
+  const message = `Order ${input.orderNumber} is ${status} today. Open deliveries or the order to confirm dispatch.`;
   return {
     title: "Delivery due today",
-    message: `Order ${input.orderNumber} is ${status} today. Open deliveries or the order to confirm dispatch.`,
+    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
     actionPath: deliveriesPath(),
   };
 }

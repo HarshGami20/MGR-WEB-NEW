@@ -51,6 +51,10 @@ import {
   type BranchStock,
 } from "@/lib/product-branch-stock";
 import { BranchStockBreakdown } from "@/components/branch-stock-breakdown";
+import {
+  CatalogLineImageThumb,
+} from "@/components/catalog-line-image-preview";
+import { OrderImageGalleryDialog, type GallerySlide } from "@/components/order-image-gallery-dialog";
 
 function formatVariantPrice(v: { price?: number | null }, basePrice: number): string {
   const amount = v.price != null ? Number(v.price) : Number(basePrice);
@@ -92,7 +96,7 @@ function DetailCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-2xl border border-border/60 bg-white shadow-sm", className)}>{children}</div>
+    <div className={cn("rounded-2xl border border-border/60 bg-card shadow-sm", className)}>{children}</div>
   );
 }
 
@@ -133,10 +137,35 @@ function ActiveStatusBadge({ active }: { active: boolean }) {
   );
 }
 
-function ProductDetailGallery({ urls, editHref, canEdit }: { urls: string[]; editHref?: string; canEdit?: boolean }) {
+function ProductDetailGallery({
+  urls,
+  editHref,
+  canEdit,
+  productName,
+}: {
+  urls: string[];
+  editHref?: string;
+  canEdit?: boolean;
+  productName?: string;
+}) {
   const resolved = urls.map((u) => resolvedProductImageUrl(u)).filter(Boolean) as string[];
   const [active, setActive] = useState(0);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
   const current = resolved[active] ?? resolved[0];
+  const slides: GallerySlide[] = resolved.map((src, index) => ({
+    src,
+    caption:
+      productName && resolved.length > 1
+        ? `${productName} · ${index + 1}/${resolved.length}`
+        : productName ?? null,
+  }));
+
+  const openGallery = (index: number) => {
+    if (slides.length === 0) return;
+    setGalleryIndex(index);
+    setGalleryOpen(true);
+  };
 
   if (resolved.length === 0) {
     return (
@@ -157,48 +186,65 @@ function ProductDetailGallery({ urls, editHref, canEdit }: { urls: string[]; edi
   }
 
   return (
-    <DetailCard className="overflow-hidden p-0">
-      <div className="relative overflow-hidden rounded-xl rounded-b-none bg-muted/15">
-        <div className="flex aspect-[4/3] items-center justify-center">
-          {current ? (
-            <img src={current} alt="" className="h-full w-full object-cover p-0" loading="lazy" />
+    <>
+      <DetailCard className="overflow-hidden p-0">
+        <div className="relative overflow-hidden rounded-xl rounded-b-none bg-muted/15">
+          <button
+            type="button"
+            onClick={() => openGallery(active)}
+            className="flex aspect-[4/3] w-full items-center justify-center cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="View product photo full screen"
+          >
+            {current ? (
+              <img src={current} alt="" className="h-full w-full object-cover p-0" loading="lazy" />
+            ) : null}
+          </button>
+          {resolved.length > 1 ? (
+            <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+              {resolved.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActive(i)}
+                  className={cn(
+                    "h-1.5 rounded-full transition-all",
+                    i === active ? "w-5 bg-primary" : "w-1.5 bg-border hover:bg-muted-foreground/40",
+                  )}
+                  aria-label={`Photo ${i + 1}`}
+                />
+              ))}
+            </div>
           ) : null}
         </div>
         {resolved.length > 1 ? (
-          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
-            {resolved.map((_, i) => (
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-3 px-3">
+            {resolved.map((src, i) => (
               <button
-                key={i}
+                key={`${src}-${i}`}
                 type="button"
-                onClick={() => setActive(i)}
+                onClick={() => {
+                  setActive(i);
+                  openGallery(i);
+                }}
                 className={cn(
-                  "h-1.5 rounded-full transition-all",
-                  i === active ? "w-5 bg-primary" : "w-1.5 bg-border hover:bg-muted-foreground/40",
+                  "h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-colors cursor-zoom-in",
+                  i === active ? "border-primary/70 ring-1 ring-primary/30" : "border-border/60 opacity-85 hover:opacity-100",
                 )}
-                aria-label={`Photo ${i + 1}`}
-              />
+              >
+                <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+              </button>
             ))}
           </div>
         ) : null}
-      </div>
-      {resolved.length > 1 ? (
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-3 px-3">
-          {resolved.map((src, i) => (
-            <button
-              key={`${src}-${i}`}
-              type="button"
-              onClick={() => setActive(i)}
-              className={cn(
-                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition-colors",
-                i === active ? "border-primary/70 ring-1 ring-primary/30" : "border-border/60 opacity-85 hover:opacity-100",
-              )}
-            >
-              <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </DetailCard>
+      </DetailCard>
+      <OrderImageGalleryDialog
+        open={galleryOpen}
+        slides={slides}
+        index={galleryIndex}
+        onIndexChange={setGalleryIndex}
+        onClose={() => setGalleryOpen(false)}
+      />
+    </>
   );
 }
 
@@ -407,6 +453,7 @@ export default function ProductDetail() {
           <div className="space-y-4 lg:col-span-4">
             <ProductDetailGallery
               urls={productImages}
+              productName={product.name}
               editHref={`/products/${productId}/edit`}
               canEdit={canEdit}
             />
@@ -642,18 +689,16 @@ export default function ProductDetail() {
                         const vPhotos = variantImageList(
                           v as { imageUrls?: string | string[] | null; imageUrl?: string | null },
                         );
-                        const thumb = vPhotos[0] ? resolvedProductImageUrl(vPhotos[0]) : null;
 
                         return (
                           <TableRow key={v.id} className={tableRowWithStickyActionsClassName(cn("border-border/60", inactive && "opacity-55"))}>
                             <TableCell className="px-3 py-3 align-middle">
-                              {thumb ? (
-                                <div className="h-11 w-11 overflow-hidden rounded-lg border border-border/60 bg-muted/30">
-                                  <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
-                                </div>
-                              ) : (
-                                <div className="h-11 w-11 rounded-lg border border-border/60 bg-muted/30" />
-                              )}
+                              <CatalogLineImageThumb
+                                urls={vPhotos}
+                                caption={v.name}
+                                size="sm"
+                                className="h-11 w-11"
+                              />
                             </TableCell>
                             <TableCell className="px-4 py-3 align-top max-w-[min(300px,45vw)]">
                               <p className="font-semibold text-foreground leading-snug">{v.name}</p>

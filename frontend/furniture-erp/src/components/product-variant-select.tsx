@@ -5,8 +5,12 @@ import { StockBadge } from "@/components/stock-badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Check, ChevronsUpDown, Layers } from "lucide-react";
+import { ChevronsUpDown, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  CatalogLineImageThumb,
+  catalogLineImageUrls,
+} from "@/components/catalog-line-image-preview";
 import {
   catalogVariantStock,
   stockStatusFromQty,
@@ -199,6 +203,7 @@ export default function ProductVariantSelect({
                     const threshold = row.lowStockThreshold ?? 10;
                     const status =
                       qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
+                    const isSelected = Number(productId) === p.id;
                     return (
                       <CommandItem
                         key={p.id}
@@ -206,15 +211,17 @@ export default function ProductVariantSelect({
                         keywords={[p.name, p.sku, String(p.id)]}
                         title={rowTitle}
                         disabled={outOfStock}
-                        className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2"
+                        className={cn(
+                          "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
+                          isSelected && "bg-primary/22 text-foreground ring-1 ring-primary/70",
+                        )}
                         onSelect={() => applyProduct(p.id)}
                         onMouseDown={(e) => e.preventDefault()}
                       >
-                        <Check
-                          className={cn(
-                            "h-4 w-4 shrink-0",
-                            Number(productId) === p.id ? "opacity-100" : "opacity-0",
-                          )}
+                        <CatalogLineImageThumb
+                          urls={catalogLineImageUrls(row, null)}
+                          caption={p.name}
+                          size="sm"
                         />
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <div className="flex min-w-0 items-center gap-1.5">
@@ -304,6 +311,7 @@ export default function ProductVariantSelect({
                       const outOfStock = stockActive && qty !== undefined && qty <= 0;
                       const threshold = v.lowStockThreshold ?? selectedProduct?.lowStockThreshold ?? 10;
                       const status = qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
+                      const isSelected = variantId === v.id;
                       return (
                         <CommandItem
                           key={v.id}
@@ -311,15 +319,17 @@ export default function ProductVariantSelect({
                           keywords={[variantName, variantSku, String(v.id)]}
                           title={rowTitle}
                           disabled={outOfStock}
-                          className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2"
+                          className={cn(
+                            "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
+                            isSelected && "bg-primary text-primary-foreground ring-1 ring-primary",
+                          )}
                           onSelect={() => applyVariant(v.id)}
                           onMouseDown={(e) => e.preventDefault()}
                         >
-                          <Check
-                            className={cn(
-                              "h-4 w-4 shrink-0",
-                              variantId === v.id ? "opacity-100" : "opacity-0",
-                            )}
+                          <CatalogLineImageThumb
+                            urls={catalogLineImageUrls(selectedProduct ?? null, v)}
+                            caption={variantName}
+                            size="sm"
                           />
                           <div className="min-w-0 flex-1 overflow-hidden">
                             <EllipsisText>{variantName}</EllipsisText>

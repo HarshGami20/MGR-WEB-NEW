@@ -60,8 +60,8 @@ export async function getPdfMake(): Promise<PdfMakeBrowser> {
   return initializePdfMake();
 }
 
-/** Generate a PDF and download it via a direct browser save (works without file-saver). */
-export async function downloadPdfDocument(doc: TDocumentDefinitions, filename: string): Promise<void> {
+/** Generate a PDF blob in the browser. */
+export async function generatePdfBlob(doc: TDocumentDefinitions): Promise<Blob> {
   const pdfMake = await getPdfMake();
   const pdfDoc = pdfMake.createPdf(doc);
   const blob = await Promise.race([
@@ -73,5 +73,16 @@ export async function downloadPdfDocument(doc: TDocumentDefinitions, filename: s
   if (!blob || blob.size === 0) {
     throw new Error("PDF file was empty.");
   }
+  return blob;
+}
+
+/** Save a PDF blob via a direct browser download. */
+export function downloadPdfBlob(blob: Blob, filename: string): void {
   triggerBrowserDownload(blob, filename);
+}
+
+/** Generate a PDF and download it via a direct browser save (works without file-saver). */
+export async function downloadPdfDocument(doc: TDocumentDefinitions, filename: string): Promise<void> {
+  const blob = await generatePdfBlob(doc);
+  downloadPdfBlob(blob, filename);
 }

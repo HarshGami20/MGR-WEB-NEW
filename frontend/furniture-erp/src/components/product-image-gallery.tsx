@@ -22,7 +22,7 @@ export function ProductImageGallery({ urls, editHref, canEdit, title = "Photos",
     return (
       <section className={cn("mt-8", className)} aria-label={title}>
         <h2 className="text-lg font-semibold text-foreground mb-3">{title}</h2>
-        <div className="overflow-hidden w-fit max-w-full border border-border/60 bg-white shadow-sm rounded-xl">
+        <div className="overflow-hidden w-fit max-w-full border border-border/60 bg-card shadow-sm rounded-xl">
           <div className="flex flex-col items-center justify-center gap-2 py-16 px-8 bg-muted/15 text-muted-foreground min-w-[240px]">
             <ImageIcon className="h-10 w-10 opacity-40" aria-hidden />
             <p className="text-sm text-center">No photos yet.</p>
@@ -47,7 +47,7 @@ export function ProductImageGallery({ urls, editHref, canEdit, title = "Photos",
           <span className="ml-2 text-sm font-normal text-muted-foreground">({resolved.length})</span>
         ) : null}
       </h2>
-      <div className="rounded-xl border border-border/60 bg-white shadow-sm overflow-hidden max-w-2xl">
+      <div className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden max-w-2xl">
         <div className="bg-muted/15 flex items-center justify-center min-h-[200px] max-h-[min(420px,55vh)]">
           {current ? (
             <img src={current} alt="" className="max-h-[min(420px,55vh)] w-full object-contain" loading="lazy" />

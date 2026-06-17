@@ -697,7 +697,7 @@ export default function DeliveriesPage() {
             <div className="space-y-1">
                     <ListDateRangeFilter
                       context="deliveries"
-                      className="max-w-md bg-white"
+                      className="max-w-md bg-background"
                       value={bookedDateRange}
                       onChange={setBookedDateRange}
                       numberOfMonths={2}

@@ -1,4 +1,5 @@
 import { Router, IRouter } from "express";
+import type { Prisma } from "@prisma/client";
 import { AdjustInventoryBody } from "../zod";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission } from "../lib/permissions";
@@ -18,16 +19,16 @@ import { emitInventoryUpdated } from "../lib/inventory-events";
 const router: IRouter = Router();
 
 router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"), async (req, res): Promise<void> => {
-  const { productId, type, branchId, page = "1", limit = "20", createdFrom, createdTo, categoryId } =
+  const { productId, type, branchId, page = "1", limit = "20", createdFrom, createdTo, categoryId, search } =
     req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
-  const where: Record<string, any> = {};
-  if (productId) where.productId = parseInt(productId, 10);
-  if (type) where.type = type;
-  if (branchId) where.branchId = parseInt(branchId, 10);
+  const and: Prisma.InventoryLogWhereInput[] = [];
+  if (productId) and.push({ productId: parseInt(productId, 10) });
+  if (type) and.push({ type });
+  if (branchId) and.push({ branchId: parseInt(branchId, 10) });
 
   const createdAtFilter: { gte?: Date; lte?: Date } = {};
   if (typeof createdFrom === "string" && createdFrom.trim()) {
@@ -39,13 +40,29 @@ router.get("/inventory/logs", requireAuth, requirePermission("inventory", "read"
     if (end) createdAtFilter.lte = end;
   }
   if (createdAtFilter.gte != null || createdAtFilter.lte != null) {
-    where.createdAt = createdAtFilter;
+    and.push({ createdAt: createdAtFilter });
   }
 
   const categoryIds = await resolveCategoryFilterIds(categoryId);
   if (categoryIds) {
-    Object.assign(where, inventoryLogProductInCategories(categoryIds));
+    and.push(inventoryLogProductInCategories(categoryIds));
   }
+
+  const searchTrim = typeof search === "string" ? search.trim() : "";
+  if (searchTrim) {
+    and.push({
+      OR: [
+        { notes: { contains: searchTrim, mode: "insensitive" } },
+        { product: { name: { contains: searchTrim, mode: "insensitive" } } },
+        { product: { sku: { contains: searchTrim, mode: "insensitive" } } },
+        { variant: { name: { contains: searchTrim, mode: "insensitive" } } },
+        { variant: { sku: { contains: searchTrim, mode: "insensitive" } } },
+        { user: { name: { contains: searchTrim, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  const where: Prisma.InventoryLogWhereInput = and.length ? { AND: and } : {};
 
   const [total, logs] = await prisma.$transaction([
     prisma.inventoryLog.count({ where }),

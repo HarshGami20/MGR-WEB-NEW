@@ -1,4 +1,5 @@
 import { copyDeliveryReminder, copyPaymentReminder, withActionMeta } from "../lib/notification-copy";
+import { loadOrderNotificationSummary } from "../lib/order-notification-summary";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import {
@@ -43,11 +44,13 @@ async function runPaymentReminders(today: Date): Promise<void> {
 
     const overdue = row.followUpDate < today;
     const dateLabel = row.followUpDate.toISOString().slice(0, 10);
+    const summary = await loadOrderNotificationSummary(order.id);
     const copy = copyPaymentReminder({
       orderId: order.id,
       orderNumber: order.orderNumber,
       followUpDate: dateLabel,
       overdue,
+      summary: summary ?? undefined,
     });
     await notificationService.sendToUsers(targets, {
       title: copy.title,
@@ -102,10 +105,12 @@ async function runDeliveryReminders(today: Date): Promise<void> {
 
     if (targets.size === 0) continue;
 
+    const summary = await loadOrderNotificationSummary(order.id);
     const copy = copyDeliveryReminder({
       orderId: order.id,
       orderNumber: order.orderNumber,
       deliveryStatus: order.deliveryStatus,
+      summary: summary ?? undefined,
     });
     await notificationService.sendToUsers([...targets], {
       title: copy.title,

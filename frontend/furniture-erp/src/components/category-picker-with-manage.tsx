@@ -137,7 +137,7 @@ export function CategoryPickerWithManage({
             }
             onValueChange={handleParentSelectChange}
           >
-            <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
+            <SelectTrigger className="h-11 rounded-lg border-border/80 bg-background">
               <SelectValue placeholder="Select category" />
             </SelectTrigger>
             <SelectContent>
@@ -179,7 +179,7 @@ export function CategoryPickerWithManage({
               onValueChange={(v) => onSubChange(v === "__none__" ? "" : v)}
               disabled={!parentCategoryId}
             >
-              <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
+              <SelectTrigger className="h-11 rounded-lg border-border/80 bg-background">
                 <SelectValue placeholder="Choose a subcategory" />
               </SelectTrigger>
               <SelectContent>
@@ -193,7 +193,7 @@ export function CategoryPickerWithManage({
             </Select>
           ) : (
             <Select disabled value={undefined}>
-              <SelectTrigger className="h-11 rounded-lg border-border/80 bg-white">
+              <SelectTrigger className="h-11 rounded-lg border-border/80 bg-background">
                 <SelectValue
                   placeholder={
                     parentCategoryId ? "No subcategories for this category" : "Select a category first"

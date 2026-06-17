@@ -26,6 +26,7 @@ import {
 } from "@/lib/product-branch-stock";
 import { Package, PackagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CatalogLineImagePreview } from "@/components/catalog-line-image-preview";
 
 type Props = {
   index: number;
@@ -90,6 +91,15 @@ export function LineItemRow({
       form.setValue(`items.${index}.quantity`, clamped, { shouldDirty: true, shouldValidate: true });
     }
   }, [stockActive, maxQuantity, index, form]);
+  const selectedVariant = useMemo(
+    () => variants.find((v) => v.id === variantId) ?? null,
+    [variants, variantId],
+  );
+
+  const catalogLineCaption = selectedProduct
+    ? `${selectedProduct.name}${selectedVariant?.sku ? ` · ${selectedVariant.sku}` : selectedProduct.sku ? ` · ${selectedProduct.sku}` : ""}`
+    : undefined;
+
   const lineItemErrors = (
     form.formState.errors.items as
       | Array<{ productId?: { message?: string }; variantId?: { message?: string } }>
@@ -243,6 +253,24 @@ export function LineItemRow({
             <p className="text-sm font-medium text-destructive -mt-3">
               {productSelectionError}
             </p>
+          ) : null}
+          {productId > 0 ? (
+            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/10 px-3 py-2">
+              <CatalogLineImagePreview
+                product={selectedProduct}
+                variant={selectedVariant}
+                caption={catalogLineCaption}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{selectedProduct?.name ?? "Product"}</p>
+                <p className="text-xs text-muted-foreground font-mono truncate">
+                  {selectedVariant?.sku ?? selectedProduct?.sku ?? "—"}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Tap photo to view all images
+                </p>
+              </div>
+            </div>
           ) : null}
         </>
       )}

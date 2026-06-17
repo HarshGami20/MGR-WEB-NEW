@@ -1,5 +1,5 @@
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
-import { downloadPdfDocument } from "@/lib/pdfmake-client";
+import { downloadPdfBlob, downloadPdfDocument, generatePdfBlob } from "@/lib/pdfmake-client";
 import { formatInr } from "@/lib/format-currency";
 import { formatDisplayDate } from "@/lib/format-datetime";
 import { inclusiveUnitFromExclusive, roundMoney } from "@/lib/gst-pricing";
@@ -412,39 +412,27 @@ function buildLineItemsTable(order: OrderQuotationInput): Content {
   };
 }
 
-function resolveQuotationOrderTotal(order: OrderQuotationInput): number {
-  const deliveryCharge = Number(order.deliveryCharge ?? 0);
-  if (order.isGst && order.subtotal != null) {
-    return roundMoney(Number(order.subtotal) + Number(order.taxAmount ?? 0) + deliveryCharge);
-  }
-  const linesTotal = order.items.reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0);
-  return roundMoney(linesTotal + deliveryCharge);
-}
-
 function buildPriceSummary(order: OrderQuotationInput): Content {
-  const orderTotal = resolveQuotationOrderTotal(order);
-  const balance = Math.max(0, orderTotal - (order.paidAmount ?? 0));
+  const deliveryCharge = roundMoney(Number(order.deliveryCharge ?? 0));
+  const subtotal = roundMoney(order.totalAmount);
+  const total = roundMoney(subtotal + deliveryCharge);
+  const balance = Math.max(0, subtotal - (order.paidAmount ?? 0));
   const rows: Content[][] = [];
 
-  if (order.isGst && order.subtotal != null) {
-    rows.push([
-      { text: "Sub Total", fontSize: 8.5 },
-      { text: formatInr(order.subtotal), fontSize: 8.5, alignment: "right" },
-    ]);
-    rows.push([
-      { text: "GST", fontSize: 8.5 },
-      { text: formatInr(order.taxAmount ?? 0), fontSize: 8.5, alignment: "right" },
-    ]);
-  }
-  if (Number(order.deliveryCharge ?? 0) > 0) {
-    rows.push([
-      { text: "Delivery charges", fontSize: 8.5 },
-      { text: formatInr(Number(order.deliveryCharge)), fontSize: 8.5, alignment: "right" },
-    ]);
-  }
+  rows.push([
+    {
+      text: order.isGst ? "Subtotal (incl. GST)" : "Subtotal",
+      fontSize: 8.5,
+    },
+    { text: formatInr(subtotal), fontSize: 8.5, alignment: "right" },
+  ]);
+  rows.push([
+    { text: "Delivery charge", fontSize: 8.5 },
+    { text: formatInr(deliveryCharge), fontSize: 8.5, alignment: "right" },
+  ]);
   rows.push([
     { text: "Order Total", bold: true, fontSize: 9 },
-    { text: formatInr(orderTotal), bold: true, fontSize: 9, alignment: "right" },
+    { text: formatInr(total), bold: true, fontSize: 9, alignment: "right" },
   ]);
   if ((order.paidAmount ?? 0) > 0) {
     rows.push([
@@ -556,8 +544,10 @@ export function buildWhatsAppQuotationMessage(
   settings?: QuotationCompanySettings,
 ): string {
   const company = settings?.companyName?.trim() || "MGR CASA";
-  const orderTotal = resolveQuotationOrderTotal(order);
-  const balance = Math.max(0, orderTotal - (order.paidAmount ?? 0));
+  const deliveryCharge = roundMoney(Number(order.deliveryCharge ?? 0));
+  const subtotal = roundMoney(order.totalAmount);
+  const total = roundMoney(subtotal + deliveryCharge);
+  const balance = Math.max(0, subtotal - (order.paidAmount ?? 0));
   const lines = [
     `*${company} — Quotation*`,
     "",
@@ -565,10 +555,9 @@ export function buildWhatsAppQuotationMessage(
     `Customer: ${order.customerName}`,
     order.customerMobile?.trim() ? `Mobile: ${order.customerMobile.trim()}` : "",
     "",
-    Number(order.deliveryCharge ?? 0) > 0
-      ? `Delivery: ${formatInr(Number(order.deliveryCharge))}`
-      : "",
-    `*Total: ${formatInr(orderTotal)}*`,
+    `Subtotal: ${formatInr(subtotal)}`,
+    `Delivery charge: ${formatInr(deliveryCharge)}`,
+    `*Total: ${formatInr(total)}*`,
     (order.paidAmount ?? 0) > 0 ? `Paid: ${formatInr(order.paidAmount!)}` : "",
     (order.paidAmount ?? 0) > 0 ? `Balance: ${formatInr(balance)}` : "",
     "",
@@ -577,11 +566,56 @@ export function buildWhatsAppQuotationMessage(
   return lines.join("\n");
 }
 
-export function openWhatsAppForOrder(order: OrderQuotationInput, settings?: QuotationCompanySettings): void {
-  const phone = normalizeWhatsAppPhone(order.customerMobile);
-  const text = buildWhatsAppQuotationMessage(order, settings);
+function openWhatsAppUrl(phone: string | null, text: string): void {
   const url = phone
     ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
     : `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+export function openWhatsAppForOrder(order: OrderQuotationInput, settings?: QuotationCompanySettings): void {
+  const phone = normalizeWhatsAppPhone(order.customerMobile);
+  const text = buildWhatsAppQuotationMessage(order, settings);
+  openWhatsAppUrl(phone, text);
+}
+
+/** Download quotation PDF, then open WhatsApp to the customer with the quotation message. */
+export async function shareOrderQuotationViaWhatsApp(
+  order: OrderQuotationInput,
+  settings?: QuotationCompanySettings,
+): Promise<void> {
+  const phone = normalizeWhatsAppPhone(order.customerMobile);
+  if (!phone) {
+    throw new Error("Customer phone number is missing or invalid. Add a mobile number on the order first.");
+  }
+
+  const text = buildWhatsAppQuotationMessage(order, settings);
+  const doc = await Promise.race([
+    buildOrderQuotationDocument(order, settings),
+    new Promise<never>((_, reject) => {
+      window.setTimeout(
+        () => reject(new Error("Quotation took too long to prepare. Refresh and try again.")),
+        120_000,
+      );
+    }),
+  ]);
+  const safeName = order.orderNumber.replace(/[^\w.-]+/g, "_");
+  const filename = `Quotation_${safeName}.pdf`;
+  const blob = await generatePdfBlob(doc);
+  const file = new File([blob], filename, { type: "application/pdf" });
+  const shareData: ShareData = { files: [file], text, title: filename };
+
+  if (typeof navigator !== "undefined" && navigator.share) {
+    try {
+      if (!navigator.canShare || navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+    }
+  }
+
+  downloadPdfBlob(blob, filename);
+  openWhatsAppUrl(phone, text);
 }

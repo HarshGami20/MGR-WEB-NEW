@@ -822,6 +822,10 @@ createdTo?: string;
  * Filter logs for products in this category (includes child categories when a parent is selected).
  */
 categoryId?: number;
+/**
+ * Search product name, SKU, variant, notes, or updated-by name
+ */
+search?: string;
 };
 
 export type ListInventoryLogsType = typeof ListInventoryLogsType[keyof typeof ListInventoryLogsType];

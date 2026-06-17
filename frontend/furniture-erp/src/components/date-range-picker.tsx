@@ -117,7 +117,7 @@ export function DateRangePicker({
       disabled={disabled}
       className={cn(
         "inline-flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-transparent px-3 text-sm font-normal shadow-sm ring-offset-background transition-colors",
-        "hover:bg-[#F7F7F7] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
         !hasSelection && "text-muted-foreground",
         triggerClassName,

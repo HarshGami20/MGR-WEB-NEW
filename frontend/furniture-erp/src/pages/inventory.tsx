@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import ProductVariantSelect from "@/components/product-variant-select";
-import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw } from "lucide-react";
+import { Plus, AlertTriangle, ArrowDownToLine, ArrowUpToLine, RefreshCw, Search } from "lucide-react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -47,6 +47,7 @@ type AdjustFormValues = z.infer<typeof adjustSchema>;
 
 export default function Inventory() {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [filterType, setFilterType] = useState<"all" | "in" | "out" | "adjustment">("all");
   const [filterSource, setFilterSource] = useState<"all" | "manual" | "order" | "product" | "variant" | "other">("all");
@@ -65,10 +66,11 @@ export default function Inventory() {
       limit: 10,
       type: filterType !== "all" ? filterType : undefined,
       branchId: selectedBranchId ?? undefined,
+      search: search || undefined,
       ...dateRangeToCreatedParams(logDateRange),
       ...categoryIdToParam(categoryId),
     }),
-    [page, filterType, selectedBranchId, logDateRange.from, logDateRange.to, categoryId],
+    [page, filterType, selectedBranchId, search, logDateRange.from, logDateRange.to, categoryId],
   );
 
   const { data: logsData, isLoading } = useListInventoryLogs(
@@ -184,6 +186,16 @@ export default function Inventory() {
     filterSource === "all"
       ? logs
       : logs.filter((log) => getLogSource(log.notes) === filterSource);
+
+  const filteredLowStockItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return lowStockItems;
+    return lowStockItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.sku.toLowerCase().includes(q),
+    );
+  }, [lowStockItems, search]);
 
   const columns = useMemo<ColumnDef<(typeof logs)[number]>[]>(
     () => [
@@ -334,6 +346,18 @@ export default function Inventory() {
 
       <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border">
         <div className="flex flex-1 flex-wrap gap-4 items-center">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search inventory..."
+              className="pl-8"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
           <ListDateRangeFilter
             context="inventory"
             value={logDateRange}
@@ -413,9 +437,9 @@ export default function Inventory() {
           </div>
           <DataTable
             columns={lowStockColumns}
-            data={lowStockItems}
+            data={filteredLowStockItems}
             isLoading={lowStockLoading}
-            emptyMessage="No low stock products."
+            emptyMessage={search.trim() ? "No low stock products match your search." : "No low stock products."}
             className="border-0 shadow-none rounded-none"
             tableClassName="bg-card"
           />
@@ -426,7 +450,11 @@ export default function Inventory() {
             columns={columns}
             data={filteredLogs}
             isLoading={isLoading}
-            emptyMessage="No inventory history found for selected filters."
+            emptyMessage={
+              search.trim()
+                ? "No inventory history matches your search."
+                : "No inventory history found for selected filters."
+            }
             footer={
               <DataTablePaginationFooter
                 page={page}

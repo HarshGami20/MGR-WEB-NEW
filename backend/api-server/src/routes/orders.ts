@@ -60,6 +60,11 @@ import {
   loadDeliveryAssigneesForOrder,
   replaceOrderDeliveryAssignees,
 } from "../lib/order-delivery-assignees";
+import {
+  loadOrderAssigneeUserIdsTx,
+  loadOrderAutoAssigneeUserIds,
+  mergeOrderAssigneeUserIds,
+} from "../lib/order-assignees";
 import { parseDeliveryCharge, resolveDriverIdForOrder } from "../lib/drivers";
 import multer from "multer";
 import fs from "node:fs";
@@ -834,13 +839,16 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       ? [Number(clientAssignedToId)]
       : [];
 
+  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds();
+  const finalAssigneeIds = mergeOrderAssigneeUserIds(assigneeIdsFromBody, autoAssigneeIds);
+
   const deliveryAssigneeIdsFromBody = Array.isArray(inputDeliveryAssigneeUserIds)
     ? normalizeAssigneeUserIds(inputDeliveryAssigneeUserIds)
     : [];
 
   let resolvedDriverId: number | null = null;
   try {
-    await assertActiveUserIdsExist(assigneeIdsFromBody);
+    await assertActiveUserIdsExist(finalAssigneeIds);
     await assertActiveUserIdsExist(deliveryAssigneeIdsFromBody);
     resolvedDriverId = await resolveDriverIdForOrder(orderData.driverId, branchId);
   } catch (e: unknown) {
@@ -905,7 +913,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           deliveryComments: JSON.stringify(
             Array.isArray(orderData.deliveryComments) ? orderData.deliveryComments : [],
           ),
-          assignedToId: assigneeIdsFromBody[0] ?? null,
+          assignedToId: finalAssigneeIds[0] ?? null,
           createdById: actorId,
           deliveryDate: orderData.deliveryDate ? new Date(orderData.deliveryDate) : null,
           deliverySlotId: resolvedDeliverySlotId,
@@ -923,7 +931,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
         },
       });
 
-      await replaceOrderAssignees(tx, order.id, assigneeIdsFromBody);
+      await replaceOrderAssignees(tx, order.id, finalAssigneeIds);
       await replaceOrderDeliveryAssignees(tx, order.id, deliveryAssigneeIdsFromBody);
 
       for (const item of resolvedItems) {
@@ -1222,6 +1230,8 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       return;
     }
   }
+
+  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds();
 
   let order;
   try {
@@ -1522,18 +1532,18 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         },
       });
 
-      if (
+      const selectedAssigneeIds =
         Object.prototype.hasOwnProperty.call(payload, "assigneeUserIds") ||
         Object.prototype.hasOwnProperty.call(payload, "assignedToId")
-      ) {
-        const nextAssigneeIds = Object.prototype.hasOwnProperty.call(payload, "assigneeUserIds")
-          ? normalizeAssigneeUserIds(payloadAssigneeUserIds)
-          : payloadAssignedToIdField != null && Number.isFinite(Number(payloadAssignedToIdField))
-            ? [Number(payloadAssignedToIdField)]
-            : [];
-        await assertActiveUserIdsExist(nextAssigneeIds);
-        await replaceOrderAssignees(tx, id, nextAssigneeIds);
-      }
+          ? Object.prototype.hasOwnProperty.call(payload, "assigneeUserIds")
+            ? normalizeAssigneeUserIds(payloadAssigneeUserIds)
+            : payloadAssignedToIdField != null && Number.isFinite(Number(payloadAssignedToIdField))
+              ? [Number(payloadAssignedToIdField)]
+              : []
+          : await loadOrderAssigneeUserIdsTx(tx, id);
+      const mergedAssigneeIds = mergeOrderAssigneeUserIds(selectedAssigneeIds, autoAssigneeIds);
+      await assertActiveUserIdsExist(mergedAssigneeIds);
+      await replaceOrderAssignees(tx, id, mergedAssigneeIds);
 
       if (Object.prototype.hasOwnProperty.call(payload, "deliveryAssigneeUserIds")) {
         const nextDeliveryAssigneeIds = normalizeAssigneeUserIds(payloadDeliveryAssigneeUserIds);

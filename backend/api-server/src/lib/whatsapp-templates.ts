@@ -1,5 +1,9 @@
 import { formatInr } from "./format-currency";
 import { humanizeToken } from "./notification-copy";
+import {
+  orderNotificationWhatsAppDetail,
+  type OrderNotificationSummary,
+} from "./order-notification-summary";
 
 function formatAmountText(amount: string): string {
   const n = Number(amount);
@@ -58,12 +62,9 @@ export function templateOrderCreated(input: {
   recipientName: string;
   createdByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
-  customerName: string;
-  totalAmount: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.orderNumber} | ${input.customerName} | ${formatAmountText(input.totalAmount)}`;
   return {
     name: process.env["WHATSAPP_TEMPLATE_ORDER_CREATED"]?.trim() || "mgr_carsa_order_managment",
     language: { code: process.env["WHATSAPP_TEMPLATE_ORDER_CREATED_LANG"]?.trim() || "en_US" },
@@ -74,7 +75,7 @@ export function templateOrderCreated(input: {
           bodyParam("recipient_name", input.recipientName),
           bodyParam("created_by_name", input.createdByName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", detail),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
         ],
       },
       orderButton(input.orderId),
@@ -87,9 +88,9 @@ export function templateOrderStatusChanged(input: {
   recipientName: string;
   changedByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
   nextStatus: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return {
     name: process.env["WHATSAPP_TEMPLATE_ORDER_STATUS"]?.trim() || "mgr_job_status_guj",
@@ -100,7 +101,7 @@ export function templateOrderStatusChanged(input: {
         parameters: [
           bodyParam("recipient_name", input.recipientName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", `${input.orderNumber} (#${input.orderId})`),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("job_status", humanizeToken(input.nextStatus)),
           bodyParam("changed_by_name", input.changedByName),
         ],
@@ -115,11 +116,9 @@ export function templateOrderUpdated(input: {
   recipientName: string;
   updatedByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
-  customerName: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
-  const detail = `${input.orderNumber} | ${input.customerName}`;
   return {
     name: process.env["WHATSAPP_TEMPLATE_ORDER_UPDATED"]?.trim() || "mgr_order_updated_guj",
     language: { code: process.env["WHATSAPP_TEMPLATE_ORDER_UPDATED_LANG"]?.trim() || "en" },
@@ -129,7 +128,7 @@ export function templateOrderUpdated(input: {
         parameters: [
           bodyParam("recipient_name", input.recipientName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", detail),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("updated_by_name", input.updatedByName),
         ],
       },
@@ -150,9 +149,9 @@ function templatePaymentStatusMessage(input: {
   recipientName: string;
   actorName: string;
   orderId: number;
-  orderDetail: string;
   branchName: string;
   paymentStatus: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return {
     name: paymentStatusTemplateName(),
@@ -163,7 +162,7 @@ function templatePaymentStatusMessage(input: {
         parameters: [
           bodyParam("recipient_name", input.recipientName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", input.orderDetail),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("payment_status", humanizePaymentStatus(input.paymentStatus)),
           bodyParam("recorded_by_name", input.actorName),
         ],
@@ -178,18 +177,17 @@ export function templatePaymentReceived(input: {
   recipientName: string;
   recordedByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
   paymentStatus: string;
-  amount: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return templatePaymentStatusMessage({
     recipientName: input.recipientName,
     actorName: input.recordedByName,
     orderId: input.orderId,
-    orderDetail: `${input.orderNumber} | ${formatAmountText(input.amount)} received`,
     branchName: input.branchName,
     paymentStatus: input.paymentStatus,
+    orderSummary: input.orderSummary,
   });
 }
 
@@ -198,10 +196,10 @@ export function templatePaymentStatusChanged(input: {
   recipientName: string;
   changedByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
   previousPaymentStatus: string;
   nextPaymentStatus: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return {
     name:
@@ -216,7 +214,7 @@ export function templatePaymentStatusChanged(input: {
         type: "body",
         parameters: [
           bodyParam("recipient_name", input.recipientName),
-          bodyParam("order_id", `${input.orderNumber} (#${input.orderId})`),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("branch_name", input.branchName),
           bodyParam("previous_status", humanizePaymentStatus(input.previousPaymentStatus)),
           bodyParam("new_status", humanizePaymentStatus(input.nextPaymentStatus)),
@@ -233,10 +231,10 @@ export function templateDeliveryUpdated(input: {
   recipientName: string;
   changedByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
   deliveryStatus: string;
   driverName: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return {
     name: process.env["WHATSAPP_TEMPLATE_DELIVERY_UPDATED"]?.trim() || "mgr_delivery_status_en",
@@ -247,7 +245,7 @@ export function templateDeliveryUpdated(input: {
         parameters: [
           bodyParam("recipient_name", input.recipientName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", `${input.orderNumber} (#${input.orderId})`),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("delivery_status", humanizeDeliveryStatus(input.deliveryStatus)),
           bodyParam("driver_name", input.driverName),
           bodyParam("changed_by_name", input.changedByName),
@@ -263,9 +261,9 @@ export function templateOrderCommentAdded(input: {
   recipientName: string;
   commentByName: string;
   orderId: number;
-  orderNumber: string;
   branchName: string;
   commentPreview: string;
+  orderSummary: OrderNotificationSummary;
 }): WhatsAppTemplateMessage {
   return {
     name: process.env["WHATSAPP_TEMPLATE_ORDER_COMMENT"]?.trim() || "mgr_order_comment_en",
@@ -276,7 +274,7 @@ export function templateOrderCommentAdded(input: {
         parameters: [
           bodyParam("recipient_name", input.recipientName),
           bodyParam("branch_name", input.branchName),
-          bodyParam("order_id", `${input.orderNumber} (#${input.orderId})`),
+          bodyParam("order_id", orderNotificationWhatsAppDetail(input.orderSummary)),
           bodyParam("comment_by_name", input.commentByName),
           bodyParam("comment_preview", input.commentPreview),
         ],

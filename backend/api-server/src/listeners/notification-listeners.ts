@@ -28,6 +28,7 @@ import {
   copyPurchaseOrderUpdated,
   withActionMeta,
 } from "../lib/notification-copy";
+import { loadOrderNotificationSummary } from "../lib/order-notification-summary";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import {
@@ -64,10 +65,12 @@ export function registerNotificationEventListeners(): void {
           evLog.debug({ orderId: payload.orderId }, "ORDER_CREATED: no notification targets");
           return;
         }
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = await copyOrderCreated({
           orderId: payload.orderId,
           orderNumber: payload.orderNumber,
           createdById: payload.createdById,
+          summary: summary ?? undefined,
         });
         await notificationService.sendToUsers(
           targets,
@@ -97,12 +100,14 @@ export function registerNotificationEventListeners(): void {
         if (payload.previousStatus === payload.nextStatus) return;
         const targets = await orderNotificationTargets(payload.orderId);
         if (targets.length === 0) return;
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = await copyOrderStatusChanged({
           orderId: payload.orderId,
           orderNumber: payload.orderNumber,
           previousStatus: payload.previousStatus,
           nextStatus: payload.nextStatus,
           changedById: payload.changedById,
+          summary: summary ?? undefined,
         });
         await notificationService.sendToUsers(
           targets,
@@ -134,12 +139,14 @@ export function registerNotificationEventListeners(): void {
         if (payload.previousDeliveryStatus === payload.nextDeliveryStatus) return;
         const targets = await orderNotificationTargets(payload.orderId);
         if (targets.length === 0) return;
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = await copyOrderDeliveryUpdated({
           orderId: payload.orderId,
           orderNumber: payload.orderNumber,
           previousDeliveryStatus: payload.previousDeliveryStatus,
           nextDeliveryStatus: payload.nextDeliveryStatus,
           changedById: payload.changedById,
+          summary: summary ?? undefined,
         });
         await notificationService.sendToUsers(
           targets,
@@ -175,10 +182,12 @@ export function registerNotificationEventListeners(): void {
           select: { orderNumber: true },
         });
         if (!order) return;
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = copyPaymentReceived({
           orderId: payload.orderId,
           orderNumber: order.orderNumber,
           amount: payload.amount,
+          summary: summary ?? undefined,
         });
         await notificationService.sendToUsers(
           recipientIds,
@@ -207,11 +216,13 @@ export function registerNotificationEventListeners(): void {
       try {
         const recipientIds = await orderNotificationTargets(payload.orderId);
         if (recipientIds.length === 0) return;
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = copyPaymentStatusChanged({
           orderId: payload.orderId,
           orderNumber: payload.orderNumber,
           previousPaymentStatus: payload.previousPaymentStatus,
           nextPaymentStatus: payload.nextPaymentStatus,
+          summary: summary ?? undefined,
         });
         await notificationService.sendToUsers(
           recipientIds,
@@ -240,11 +251,13 @@ export function registerNotificationEventListeners(): void {
       try {
         const targets = await orderNotificationTargets(payload.orderId);
         if (targets.length === 0) return;
+        const summary = await loadOrderNotificationSummary(payload.orderId);
         const copy = await copyPaymentFollowUpScheduled({
           orderId: payload.orderId,
           orderNumber: payload.orderNumber,
           followUpDate: payload.followUpDate,
           createdById: payload.createdById,
+          summary: summary ?? undefined,
         });
         const scheduledAt = reminderScheduledAt(payload.followUpDate);
         await notificationService.scheduleNotification(

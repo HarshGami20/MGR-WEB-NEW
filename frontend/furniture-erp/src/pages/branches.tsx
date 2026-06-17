@@ -187,7 +187,7 @@ export default function Branches() {
           row.original.isActive ? (
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
           ) : (
-            <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">Inactive</Badge>
           ),
       },
       ...(hasRowActions

@@ -366,7 +366,7 @@ function ProductDetailPreview({ activeHighlight }: { activeHighlight: string | n
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12 max-w-7xl mx-auto">
         <div className="space-y-4 lg:col-span-4">
           <GuideTarget id="product-gallery" activeHighlight={activeHighlight} label="Photo gallery">
-            <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
               <div className="aspect-[4/3] bg-muted/15 flex items-center justify-center">
                 <ImageIcon className="h-10 w-10 text-muted-foreground opacity-40" />
               </div>
@@ -374,7 +374,7 @@ function ProductDetailPreview({ activeHighlight }: { activeHighlight: string | n
           </GuideTarget>
 
           <GuideTarget id="product-stats" activeHighlight={activeHighlight} label="Stock & pricing stats">
-            <div className="rounded-2xl border bg-white shadow-sm px-4 py-1">
+            <div className="rounded-2xl border bg-card shadow-sm px-4 py-1">
               <div className="grid grid-cols-2 divide-x border-b">
                 <div className="py-4 text-center">
                   <p className="text-2xl font-bold tabular-nums">{DUMMY.product.stock}</p>
@@ -411,7 +411,7 @@ function ProductDetailPreview({ activeHighlight }: { activeHighlight: string | n
 
         <div className="space-y-6 lg:col-span-8">
           <GuideTarget id="product-description" activeHighlight={activeHighlight} label="Description">
-            <div className="rounded-2xl border bg-white shadow-sm p-5 md:p-6">
+            <div className="rounded-2xl border bg-card shadow-sm p-5 md:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <AlignLeft className="h-4 w-4 text-muted-foreground" />
                 <h2 className="text-lg font-semibold">Description</h2>
@@ -423,7 +423,7 @@ function ProductDetailPreview({ activeHighlight }: { activeHighlight: string | n
           </GuideTarget>
 
           <GuideTarget id="variants-table" activeHighlight={activeHighlight} label="Variations table">
-            <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
+            <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
               <div className="flex items-center justify-between gap-3 border-b px-5 py-4 md:px-6">
                 <div className="flex items-center gap-2">
                   <Hexagon className="h-4 w-4 text-muted-foreground" />
@@ -470,7 +470,7 @@ function ProductDetailPreview({ activeHighlight }: { activeHighlight: string | n
       </div>
 
       <GuideTarget id="delete-dialog" activeHighlight={activeHighlight} label="Delete product">
-        <div className="rounded-lg border bg-white shadow-lg p-4 max-w-sm ml-auto mt-6">
+        <div className="rounded-lg border bg-card shadow-lg p-4 max-w-sm ml-auto mt-6">
           <p className="font-semibold text-sm text-destructive">Delete product</p>
           <p className="text-xs text-muted-foreground mt-1">From the ⋮ menu — deletes product and all variants.</p>
         </div>

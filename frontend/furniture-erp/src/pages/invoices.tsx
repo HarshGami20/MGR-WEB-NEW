@@ -150,7 +150,7 @@ export default function Invoices() {
           row.original.isGst ? (
             <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">GST</Badge>
           ) : (
-            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Standard</Badge>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">Standard</Badge>
           ),
       },
       {
@@ -243,7 +243,7 @@ export default function Invoices() {
             <DialogTitle>Invoice Details</DialogTitle>
           </DialogHeader>
           {selectedInvoice ? (
-            <div className="space-y-8 bg-white p-8 rounded border">
+            <div className="space-y-8 bg-card p-8 rounded border">
               {/* Invoice Header */}
               <div className="flex justify-between items-start border-b pb-6">
                 <div>

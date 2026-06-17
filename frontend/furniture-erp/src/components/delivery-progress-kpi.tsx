@@ -47,7 +47,7 @@ function CurvedProgressBar({ pct }: { pct: number }) {
           transform: "translate(-50%, calc(-100% - 10px))",
         }}
       >
-        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold tabular-nums text-foreground shadow-lg">
+        <span className="rounded-full bg-card px-3 py-1 text-xs font-semibold tabular-nums text-foreground shadow-lg">
           {clamped}%
         </span>
         <span

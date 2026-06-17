@@ -236,9 +236,10 @@ export default function ComplaintsPage() {
           assigneeUserIds: formAssigneeIds.length > 0 ? formAssigneeIds : undefined,
         });
       }
+      const orderIdNum = parseInt(formOrderId, 10);
       return createComplaint({
         kind: "sales_order",
-        orderId: parseInt(formOrderId, 10),
+        ...(Number.isFinite(orderIdNum) && orderIdNum > 0 ? { orderId: orderIdNum } : {}),
         productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
         subject: formSubject.trim() || null,
         description: formDescription.trim(),
@@ -315,7 +316,7 @@ export default function ComplaintsPage() {
   const isPoTab = partnerUser || activeTab === "purchase_order";
   const createDisabled = isPoTab
     ? !formPoId || !formDescription.trim()
-    : !formOrderId || !formDescription.trim();
+    : !formDescription.trim();
 
   const salesColumns = useMemo<ColumnDef<Complaint>[]>(
     () => [
@@ -702,18 +703,19 @@ export default function ComplaintsPage() {
             ) : (
               <>
                 <div className="space-y-2">
-                  <Label>Linked order *</Label>
+                  <Label>Linked order (optional)</Label>
                   <Select
-                    value={formOrderId}
+                    value={formOrderId || "none"}
                     onValueChange={(v) => {
-                      setFormOrderId(v);
+                      setFormOrderId(v === "none" ? "" : v);
                       setFormProductId("none");
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select order" />
+                      <SelectValue placeholder="No linked order" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">No linked order</SelectItem>
                       {(ordersData?.data ?? []).map((o) => (
                         <SelectItem key={o.id} value={String(o.id)}>
                           {o.orderNumber} — {o.customerName}

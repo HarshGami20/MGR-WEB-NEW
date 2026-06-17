@@ -915,15 +915,15 @@ function StaffDashboard() {
                 const ago = relativeTimeFromNow(created);
                 const typeChip =
                   log.type === "in" ? (
-                    <Badge className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-2 py-0">
+                    <Badge className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0">
                       +{log.quantity}
                     </Badge>
                   ) : log.type === "out" ? (
-                    <Badge className="rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] px-2 py-0">
+                    <Badge className="rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 text-[10px] px-2 py-0">
                       -{log.quantity}
                     </Badge>
                   ) : (
-                    <Badge className="rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] px-2 py-0">
+                    <Badge className="rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-[10px] px-2 py-0">
                       Adj {log.quantity}
                     </Badge>
                   );
@@ -972,29 +972,29 @@ function KpiCard({
       "bg-[linear-gradient(145deg,hsl(var(--primary))_0%,hsl(var(--primary-dim))_45%,hsl(var(--primary-deep))_100%)] text-primary-foreground border-primary/20 shadow-[0_14px_34px_rgba(56,39,67,0.22)]",
     info: "bg-card border-border text-card-foreground",
     accent: "bg-card border-border text-card-foreground",
-    success: "bg-emerald-50 border-emerald-200 text-emerald-900",
-    warning: "bg-amber-50 border-amber-200 text-amber-900",
+    success: "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400",
+    warning: "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400",
   };
   const iconBg: Record<KpiTone, string> = {
-    primary: "bg-white/15 text-primary-foreground",
+    primary: "bg-primary-foreground/15 text-primary-foreground",
     info: "bg-primary/10 text-primary",
     accent: "bg-primary/10 text-primary",
-    success: "bg-emerald-100 text-emerald-700",
-    warning: "bg-amber-100 text-amber-700",
+    success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    warning: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   };
   const labelClass: Record<KpiTone, string> = {
     primary: "text-primary-foreground/80",
     info: "text-muted-foreground",
     accent: "text-muted-foreground",
-    success: "text-emerald-700",
-    warning: "text-amber-700",
+    success: "text-emerald-700 dark:text-emerald-400",
+    warning: "text-amber-700 dark:text-amber-400",
   };
   const hintClass: Record<KpiTone, string> = {
     primary: "text-primary-foreground/75",
     info: "text-muted-foreground",
     accent: "text-muted-foreground",
-    success: "text-emerald-700/80",
-    warning: "text-amber-700/80",
+    success: "text-emerald-700/80 dark:text-emerald-400/80",
+    warning: "text-amber-700/80 dark:text-amber-400/80",
   };
   return (
     <div

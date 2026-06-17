@@ -13,6 +13,7 @@ import {
   type PurchaseOrderUpdatedPayload,
 } from "../lib/app-events";
 import { actorName } from "../lib/notification-copy";
+import { buildOrderNotificationSummary } from "../lib/order-notification-summary";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import {
@@ -67,9 +68,25 @@ async function loadOrderWhatsAppContext(orderId: number) {
       totalAmount: true,
       paymentStatus: true,
       deliveryStatus: true,
+      categoryId: true,
+      category: { select: { name: true } },
       branch: { select: { name: true } },
       driver: { select: { name: true } },
     },
+  });
+}
+
+function orderSummaryFromContext(order: {
+  orderNumber: string;
+  totalAmount: unknown;
+  status: string;
+  category: { name: string } | null;
+}) {
+  return buildOrderNotificationSummary({
+    orderNumber: order.orderNumber,
+    totalAmount: String(order.totalAmount ?? "0"),
+    status: order.status,
+    categoryName: order.category?.name ?? null,
   });
 }
 
@@ -160,17 +177,15 @@ export function registerWhatsAppEventListeners(): void {
         if (!order) return;
 
         const createdBy = (await actorName(payload.createdById)) ?? "Staff";
-        const total = String(order.totalAmount ?? "0");
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templateOrderCreated({
             recipientName: recipient.name,
             createdByName: createdBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
-            customerName: order.customerName,
-            totalAmount: total,
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -188,15 +203,16 @@ export function registerWhatsAppEventListeners(): void {
         if (!order) return;
 
         const changedBy = (await actorName(payload.changedById)) ?? "Staff";
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templateOrderStatusChanged({
             recipientName: recipient.name,
             changedByName: changedBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
             nextStatus: payload.nextStatus,
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -212,15 +228,15 @@ export function registerWhatsAppEventListeners(): void {
         if (!order) return;
 
         const updatedBy = (await actorName(payload.updatedById)) ?? "Staff";
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templateOrderUpdated({
             recipientName: recipient.name,
             updatedByName: updatedBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
-            customerName: order.customerName,
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -237,16 +253,16 @@ export function registerWhatsAppEventListeners(): void {
 
         const recordedBy = (await actorName(payload.recordedById)) ?? "Staff";
         const paymentStatus = String(order.paymentStatus ?? "due");
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templatePaymentReceived({
             recipientName: recipient.name,
             recordedByName: recordedBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
             paymentStatus,
-            amount: payload.amount,
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -262,16 +278,17 @@ export function registerWhatsAppEventListeners(): void {
         if (!order) return;
 
         const changedBy = (await actorName(payload.changedById)) ?? "Staff";
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templatePaymentStatusChanged({
             recipientName: recipient.name,
             changedByName: changedBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
             previousPaymentStatus: payload.previousPaymentStatus,
             nextPaymentStatus: payload.nextPaymentStatus,
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -289,16 +306,17 @@ export function registerWhatsAppEventListeners(): void {
         if (!order) return;
 
         const changedBy = (await actorName(payload.changedById)) ?? "Staff";
+        const orderSummary = orderSummaryFromContext(order);
 
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templateDeliveryUpdated({
             recipientName: recipient.name,
             changedByName: changedBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
             deliveryStatus: payload.nextDeliveryStatus,
             driverName: driverLabel(order),
+            orderSummary,
           }),
         );
       } catch (err) {
@@ -318,14 +336,16 @@ export function registerWhatsAppEventListeners(): void {
           commentBy = (await actorName(payload.addedById)) ?? "Staff";
         }
 
+        const orderSummary = orderSummaryFromContext(order);
+
         await sendWhatsAppToAssignees(payload.orderId, (recipient) =>
           templateOrderCommentAdded({
             recipientName: recipient.name,
             commentByName: commentBy,
             orderId: order.id,
-            orderNumber: order.orderNumber,
             branchName: branchLabel(order),
             commentPreview: payload.commentPreview,
+            orderSummary,
           }),
         );
       } catch (err) {

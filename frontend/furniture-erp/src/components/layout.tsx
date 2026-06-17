@@ -47,6 +47,7 @@ import { useListBranches, useGetDashboardSummary } from "@/api-client";
 import { useEffect, useState, useMemo, type ComponentType } from "react";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { ROUTE_VIEW_MODULE, usePermissions } from "@/lib/permissions";
 
 const SIDEBAR_APP_PROMO_DISMISSED_KEY = "erp_sidebar_app_promo_dismissed";
@@ -291,7 +292,7 @@ export default function Layout({ children }: LayoutProps) {
       <div className="pointer-events-none absolute right-[-66px] top-28 h-56 w-56 rounded-full border-2 border-white/15" />
 
       <div className="relative z-[1]">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-primary">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary-foreground text-primary">
           <BadgeCheck className="h-5 w-5" />
         </span>
         <p className="mt-3 text-[1.025rem] font-semibold leading-tight">
@@ -304,7 +305,7 @@ export default function Layout({ children }: LayoutProps) {
       <Button
         type="button"
         size="sm"
-        className="relative z-[1] mt-5 rounded-full bg-white text-primary hover:bg-white/90 font-semibold w-full h-11 shadow-sm border-0"
+        className="relative z-[1] mt-5 rounded-full bg-primary-foreground text-primary hover:bg-primary-foreground/90 font-semibold w-full h-11 shadow-sm border-0"
         onClick={() => window.scrollTo({ top: 0 })}
       >
         Download
@@ -716,12 +717,7 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="flex items-center gap-2">
 
-          {/* {!partnerUser && (
-            <Button variant="ghost" size="icon" type="button" className="shrink-0 rounded-xl hidden lg:flex relative" aria-label="Messages">
-              <Mail className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" aria-hidden />
-            </Button>
-          )} */}
+          <ThemeToggle />
 
           <div className="hidden sm:flex">
             <NotificationBell />

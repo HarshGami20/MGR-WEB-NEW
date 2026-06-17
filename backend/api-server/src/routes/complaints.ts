@@ -63,9 +63,15 @@ const CreateComplaintBody = z
   })
   .superRefine((data, ctx) => {
     if (data.kind === "sales_order") {
-      if (!data.orderId) ctx.addIssue({ code: "custom", path: ["orderId"], message: "orderId is required" });
       if (data.purchaseOrderId) {
         ctx.addIssue({ code: "custom", path: ["purchaseOrderId"], message: "not allowed for sales order complaints" });
+      }
+      if (!data.orderId && data.productId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["productId"],
+          message: "product can only be set when an order is linked",
+        });
       }
     } else {
       if (!data.purchaseOrderId) {
@@ -311,31 +317,6 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     parsed.data.imageUrls && parsed.data.imageUrls.length > 0 ? JSON.stringify(parsed.data.imageUrls) : null;
 
   if (kind === "sales_order") {
-    const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId! } });
-    if (!order) {
-      res.status(400).json({ error: "Order not found" });
-      return;
-    }
-
-    const branchScope = branchFilterForUser(authUser);
-    if (branchScope && order.branchId != null) {
-      const allowed = assignedBranchIds(authUser);
-      if (!allowed.includes(order.branchId)) {
-        res.status(403).json({ error: "Forbidden", message: "Order is outside your branch access" });
-        return;
-      }
-    }
-
-    if (parsed.data.productId) {
-      if (!(await validateProductOnOrder(order.id, parsed.data.productId))) {
-        res.status(400).json({ error: "Selected product is not part of this order" });
-        return;
-      }
-    }
-
-    const branchId = order.branchId ?? (await requireWriteBranchId(req, res, authUser));
-    if (order.branchId == null && branchId == null) return;
-
     const assigneeIds = normalizeAssigneeUserIds(parsed.data.assigneeUserIds);
     try {
       await assertActiveUserIdsExist(assigneeIds);
@@ -344,14 +325,48 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
       return;
     }
 
+    let orderId: number | null = null;
+    let branchId: number | null = null;
+
+    if (parsed.data.orderId) {
+      const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId } });
+      if (!order) {
+        res.status(400).json({ error: "Order not found" });
+        return;
+      }
+
+      const branchScope = branchFilterForUser(authUser);
+      if (branchScope && order.branchId != null) {
+        const allowed = assignedBranchIds(authUser);
+        if (!allowed.includes(order.branchId)) {
+          res.status(403).json({ error: "Forbidden", message: "Order is outside your branch access" });
+          return;
+        }
+      }
+
+      if (parsed.data.productId) {
+        if (!(await validateProductOnOrder(order.id, parsed.data.productId))) {
+          res.status(400).json({ error: "Selected product is not part of this order" });
+          return;
+        }
+      }
+
+      orderId = order.id;
+      branchId = order.branchId ?? (await requireWriteBranchId(req, res, authUser));
+      if (order.branchId == null && branchId == null) return;
+    } else {
+      branchId = await requireWriteBranchId(req, res, authUser);
+      if (branchId == null) return;
+    }
+
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.complaint.create({
         data: {
           complaintNumber: await generateComplaintNumber(tx),
           kind: "sales_order",
-          orderId: order.id,
+          orderId,
           productId: parsed.data.productId ?? null,
-          branchId: order.branchId ?? branchId,
+          branchId,
           createdById: authUser.id,
           subject: parsed.data.subject?.trim() || null,
           description: parsed.data.description.trim(),
@@ -366,7 +381,7 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
       complaintId: created.id,
       complaintNumber: created.complaintNumber,
       kind: "sales_order",
-      orderId: order.id,
+      orderId,
       purchaseOrderId: null,
       branchId: created.branchId,
       createdById: authUser.id,
