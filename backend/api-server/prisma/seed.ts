@@ -548,7 +548,7 @@ async function main() {
       address: "Flat 902, Oberoi Springs, Andheri West",
       pincode: "400058",
       branchId: branchAndheri.id,
-      status: "complete",
+      status: "delivered",
       deliveryStatus: "delivered",
       deliveryDate: daysAgo(3),
       deliverySlotId: slotAndheriTodayMorning,
@@ -744,7 +744,7 @@ async function main() {
       },
     });
 
-    if (spec.status === "complete" && spec.paidFraction >= 1) {
+    if (spec.status === "delivered" && spec.paidFraction >= 1) {
       const half = taxAmount / 2;
       await prisma.invoice.create({
         data: {

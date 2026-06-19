@@ -206,7 +206,7 @@ export default function Orders() {
       case "ready_to_ship": return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Ready To Ship</Badge>;
       case "complete":
       case "delivered":
-        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Complete</Badge>;
+        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Delivered</Badge>;
       case "cancelled": return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Cancelled</Badge>;
       default: return <Badge>{status}</Badge>;
     }
@@ -384,13 +384,11 @@ export default function Orders() {
         cell: ({ row }) => (
           <div className="flex flex-col">
 
-        
           <span
             className="block truncate font-medium"
             title={`${row.original.customerName}${row.original.customerMobile ? ` (${row.original.customerMobile})` : ""}`}
           >
             {row.original.customerName}
-            
             
           </span>
           <span className="text-xs text-muted-foreground">{row.original.customerMobile ? ` ${row.original.customerMobile}` : ""}</span>
@@ -412,7 +410,7 @@ export default function Orders() {
         cell: ({ row }) =>
           canEditOrders ? (
             <Select
-              value={String(row.original.status) === "delivered" ? "complete" : String(row.original.status)}
+              value={String(row.original.status) === "complete" ? "delivered" : String(row.original.status)}
               onValueChange={(val: any) =>
                 updateStatus.mutate({ id: row.original.id, data: { status: val } })
               }
@@ -424,7 +422,7 @@ export default function Orders() {
                 <SelectItem value="order_received">Order Received</SelectItem>
                 <SelectItem value="manufacturing">Manufacturing</SelectItem>
                 <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
@@ -703,7 +701,7 @@ export default function Orders() {
                 <SelectItem value="order_received">Order Received</SelectItem>
                 <SelectItem value="manufacturing">Manufacturing</SelectItem>
                 <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>

@@ -118,6 +118,9 @@ function buildQuotationFromOrder(order: {
       imageUrl?: string;
       comment?: string;
     }>,
+    challanImageUrls: (Array.isArray(orderAny.challanImages) ? orderAny.challanImages : [])
+      .map((url) => String(url).trim())
+      .filter(Boolean),
     deliveryDate: deliveryDate ? String(deliveryDate).slice(0, 10) : null,
   };
 }
@@ -141,7 +144,7 @@ function getStatusBadge(status: string) {
       return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Ready To Ship</Badge>;
     case "complete":
     case "delivered":
-      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Complete</Badge>;
+      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Delivered</Badge>;
     case "cancelled":
       return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Cancelled</Badge>;
     default:
@@ -450,7 +453,7 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (!order) return;
     const orderAny = order as any;
-    setStatus(orderAny.status === "delivered" ? "complete" : (orderAny.status ?? "order_received"));
+    setStatus(orderAny.status === "complete" ? "delivered" : (orderAny.status ?? "order_received"));
     setDeliveryStatus(orderAny.deliveryStatus ?? "pending");
     setPaymentStatus(orderAny.paymentStatus ?? "due");
     setPaymentMode(orderAny.paymentMode ?? "cash");
@@ -1355,7 +1358,7 @@ export default function OrderDetailPage() {
                         <SelectItem value="order_received">Order Received</SelectItem>
                         <SelectItem value="manufacturing">Manufacturing</SelectItem>
                         <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
-                        <SelectItem value="complete">Complete</SelectItem>
+                        <SelectItem value="delivered">Delivered</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>

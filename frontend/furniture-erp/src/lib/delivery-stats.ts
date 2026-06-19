@@ -54,7 +54,8 @@ export function formatYmdLabel(ymd: string): string {
 }
 
 export function normalizeMainStatus(status: string): string {
-  return status === "delivered" ? "complete" : status;
+  if (status === "complete" || status === "completed") return "delivered";
+  return status;
 }
 
 export function normalizeDeliveryStatus(status: string | null | undefined): DeliveryStatusValue {

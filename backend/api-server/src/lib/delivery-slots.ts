@@ -23,8 +23,12 @@ export function slotServesPincode(servicePincodesJson: string, pincode: string |
 }
 
 export function normalizeMainOrderStatus(status: string | null | undefined): string {
-  const s = status ?? "order_received";
-  return s === "delivered" ? "complete" : s;
+  const s = String(status ?? "order_received")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (s === "complete" || s === "completed") return "delivered";
+  return s;
 }
 
 export function normalizeDeliveryStatus(s: string | null | undefined): string {
@@ -32,14 +36,14 @@ export function normalizeDeliveryStatus(s: string | null | undefined): string {
   return "pending";
 }
 
-/** Orders marked complete or delivery-delivered cannot be edited. */
+/** Orders marked delivered cannot be edited. */
 export function isOrderLockedForEdit(params: {
   status?: string | null;
   deliveryStatus?: string | null;
 }): boolean {
   const main = normalizeMainOrderStatus(params.status);
   const delivery = normalizeDeliveryStatus(params.deliveryStatus);
-  return main === "complete" || delivery === "delivered";
+  return main === "delivered" || delivery === "delivered";
 }
 
 export function utcDateOnly(d: Date): Date {

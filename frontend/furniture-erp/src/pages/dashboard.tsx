@@ -287,9 +287,8 @@ function StaffDashboard() {
       case "ready_to_ship":
         return <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">Ready To Ship</Badge>;
       case "complete":
-        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Complete</Badge>;
       case "delivered":
-        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Complete</Badge>;
+        return <Badge variant="outline" className="rounded-full border-primary/25 bg-primary/5 text-primary">Delivered</Badge>;
       case "cancelled":
         return <Badge variant="outline" className="rounded-full border-rose-200 bg-rose-50 text-rose-700">Cancelled</Badge>;
       default:

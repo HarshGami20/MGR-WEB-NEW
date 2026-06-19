@@ -81,7 +81,10 @@ const orderSchema = z.object({
   isGst: z.boolean(),
   customerGstNumber: zodFields.gstNumberOptional(),
   items: z.array(lineItemFormSchema).min(1, "At least one item is required"),
-  categoryId: z.number().int().positive().nullable().optional(),
+  categoryId: z.number({
+    required_error: "Select an order category.",
+    invalid_type_error: "Select an order category.",
+  }).int().positive("Select an order category."),
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
   advanceAmount: z.coerce.number().min(0).default(0),
@@ -161,7 +164,7 @@ const ORDER_STATUS_OPTIONS = [
   { value: "order_received", label: "Order Received" },
   { value: "manufacturing", label: "Manufacturing" },
   { value: "ready_to_ship", label: "Ready To Ship" },
-  { value: "complete", label: "Complete" },
+  { value: "delivered", label: "Delivered" },
   { value: "cancelled", label: "Cancelled" },
 ];
 const PAYMENT_STATUS_OPTIONS = [
@@ -191,7 +194,7 @@ const ORDER_FORM_DEFAULTS: OrderFormValues = {
   isGst: false,
   customerGstNumber: "",
   items: [{ ...defaultCatalogLineItem }],
-  categoryId: null,
+  categoryId: undefined,
   status: "order_received",
   paymentStatus: "due",
   advanceAmount: 0,
@@ -640,7 +643,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       isGst: !!data.isGst,
       customerGstNumber: data.customerGstNumber || null,
       items: data.items.map((item) => lineItemToApiPayload(item)),
-      categoryId: data.categoryId ?? null,
+      categoryId: data.categoryId,
       status: isEdit ? data.status : "order_received",
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
@@ -917,7 +920,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <FormItem className="max-w-md">
                       <FormLabel>Order status</FormLabel>
                       <Select
-                        value={field.value === "delivered" ? "complete" : field.value}
+                        value={field.value === "complete" ? "delivered" : field.value}
                         onValueChange={field.onChange}
                       >
                         <FormControl>
@@ -984,18 +987,17 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                 name="categoryId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Category</FormLabel>
+                    <FormLabel>Category *</FormLabel>
                     <Select
-                      value={field.value != null && field.value > 0 ? String(field.value) : "none"}
-                      onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v, 10))}
+                      value={field.value != null && field.value > 0 ? String(field.value) : undefined}
+                      onValueChange={(v) => field.onChange(parseInt(v, 10))}
                     >
                       <FormControl>
                         <SelectTrigger className="max-w-md">
-                          <SelectValue placeholder="Select main category (optional)" />
+                          <SelectValue placeholder="Select main category" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none">Not Specified</SelectItem>
                         {mainCategories.map((cat) => (
                           <SelectItem key={cat.id} value={String(cat.id)}>
                             {cat.name}

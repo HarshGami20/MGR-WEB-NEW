@@ -226,9 +226,10 @@ export default function ComplaintsPage() {
     mutationFn: () => {
       const isPo = partnerUser || activeTab === "purchase_order";
       if (isPo) {
+        const poIdNum = parseInt(formPoId, 10);
         return createComplaint({
           kind: "purchase_order",
-          purchaseOrderId: parseInt(formPoId, 10),
+          ...(Number.isFinite(poIdNum) && poIdNum > 0 ? { purchaseOrderId: poIdNum } : {}),
           productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
           subject: formSubject.trim() || null,
           description: formDescription.trim(),
@@ -314,9 +315,7 @@ export default function ComplaintsPage() {
   };
 
   const isPoTab = partnerUser || activeTab === "purchase_order";
-  const createDisabled = isPoTab
-    ? !formPoId || !formDescription.trim()
-    : !formDescription.trim();
+  const createDisabled = !formDescription.trim();
 
   const salesColumns = useMemo<ColumnDef<Complaint>[]>(
     () => [
@@ -656,18 +655,19 @@ export default function ComplaintsPage() {
             {isPoTab ? (
               <>
                 <div className="space-y-2">
-                  <Label>Linked purchase order *</Label>
+                  <Label>Linked purchase order (optional)</Label>
                   <Select
-                    value={formPoId}
+                    value={formPoId || "none"}
                     onValueChange={(v) => {
-                      setFormPoId(v);
+                      setFormPoId(v === "none" ? "" : v);
                       setFormProductId("none");
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select purchase order" />
+                      <SelectValue placeholder="No linked purchase order" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">No linked purchase order</SelectItem>
                       {(poData?.data ?? []).map((po) => (
                         <SelectItem key={po.id} value={String(po.id)}>
                           {po.poNumber} — {po.status.replace(/_/g, " ")}

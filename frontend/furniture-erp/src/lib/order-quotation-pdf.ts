@@ -3,6 +3,7 @@ import { downloadPdfBlob, downloadPdfDocument, generatePdfBlob } from "@/lib/pdf
 import { formatInr } from "@/lib/format-currency";
 import { formatDisplayDate } from "@/lib/format-datetime";
 import { inclusiveUnitFromExclusive, roundMoney } from "@/lib/gst-pricing";
+import { getQuotationLogoDataUrl, QUOTATION_LOGO_HEIGHT } from "@/lib/quotation-logo-asset";
 
 export type OrderQuotationLineItem = {
   label: string;
@@ -35,6 +36,7 @@ export type OrderQuotationInput = {
   totalAmount: number;
   paidAmount?: number;
   photoComments: OrderQuotationPhoto[];
+  challanImageUrls: string[];
   deliveryDate?: string | null;
 };
 
@@ -171,6 +173,7 @@ async function embedImage(url: string): Promise<string | null> {
 
 /** A4 content width with 40pt side margins (~515pt). */
 const PDF_CONTENT_WIDTH = 515;
+const CHALLAN_IMAGE_HEIGHT = 300;
 const PRODUCT_GRID_COLS = 3;
 const PRODUCT_CELL_W = Math.floor((PDF_CONTENT_WIDTH - 12) / PRODUCT_GRID_COLS);
 const PRODUCT_CELL_H = 112;
@@ -183,6 +186,14 @@ function emptyGridCell(cellHeight: number): Content {
     text: "—",
     alignment: "center",
     margin: [0, cellHeight / 2 - 6, 0, 0] as [number, number, number, number],
+  };
+}
+
+function containImageBlock(dataUrl: string, width: number, height: number): Content {
+  return {
+    image: dataUrl,
+    fit: [width, height],
+    alignment: "center",
   };
 }
 
@@ -279,12 +290,23 @@ async function buildSitePhotoGrid(photos: OrderQuotationPhoto[]): Promise<Conten
   };
 }
 
-function companyHeader(settings?: QuotationCompanySettings): Content[] {
+async function buildCompanyHeader(settings?: QuotationCompanySettings): Promise<Content[]> {
   const name = settings?.companyName?.trim() || "MGR CASA";
-  const lines: Content[] = [
-    { text: name, style: "logoHeader" },
-    { text: "QUOTATION", style: "subHeader" },
-  ];
+  const lines: Content[] = [];
+
+  const logo = await getQuotationLogoDataUrl();
+  if (logo) {
+    lines.push({
+      image: logo,
+      fit: [PDF_CONTENT_WIDTH, QUOTATION_LOGO_HEIGHT],
+      alignment: "center",
+      margin: [0, 0, 0, 6] as [number, number, number, number],
+    });
+  } else {
+    lines.push({ text: name, style: "logoHeader" });
+  }
+
+  lines.push({ text: "QUOTATION", style: "subHeader" });
   const contact: string[] = [];
   if (settings?.address?.trim()) contact.push(settings.address.trim());
   if (settings?.phone?.trim()) contact.push(`Ph: ${settings.phone.trim()}`);
@@ -455,6 +477,33 @@ function buildPriceSummary(order: OrderQuotationInput): Content {
   };
 }
 
+async function buildFullWidthImageStack(urls: string[]): Promise<Content> {
+  const items = await Promise.all(
+    urls.map(async (url) => {
+      const data = await embedImage(url);
+      const imageContent =
+        data && isPdfSafeDataUrl(data)
+          ? containImageBlock(data, PDF_CONTENT_WIDTH, CHALLAN_IMAGE_HEIGHT)
+          : emptyGridCell(CHALLAN_IMAGE_HEIGHT);
+      return {
+        stack: [imageContent],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
+      } satisfies Content;
+    }),
+  );
+  return { stack: items };
+}
+
+async function buildChallanImagesSection(urls: string[]): Promise<Content[]> {
+  const withImage = urls.map((u) => u.trim()).filter(Boolean);
+  if (withImage.length === 0) return [];
+
+  return [
+    { text: "Challan images", style: "sectionTitle" },
+    await buildFullWidthImageStack(withImage),
+  ];
+}
+
 async function buildProductImagesSection(order: OrderQuotationInput): Promise<Content[]> {
   const blocks: Content[] = [];
   let any = false;
@@ -467,7 +516,10 @@ async function buildProductImagesSection(order: OrderQuotationInput): Promise<Co
     );
   }
   if (!any) return [];
-  return [{ text: "Product images", style: "sectionTitle" }, ...blocks];
+  return [
+    { text: "Product images", style: "sectionTitle", pageBreak: "before" as const },
+    ...blocks,
+  ];
 }
 
 async function buildSitePhotosSection(photos: OrderQuotationPhoto[]): Promise<Content[]> {
@@ -487,13 +539,14 @@ export async function buildOrderQuotationDocument(
   embeddedImageCount = 0;
 
   const content: Content[] = [
-    ...companyHeader(settings),
+    ...(await buildCompanyHeader(settings)),
     { text: "Order Quotation", style: "docTitle" },
     { text: "Order details", style: "sectionTitle" },
     buildCompactOrderDetails(order),
     { text: "Order items", style: "sectionTitle" },
     buildLineItemsTable(order),
     buildPriceSummary(order),
+    ...(await buildChallanImagesSection(order.challanImageUrls)),
     ...(await buildProductImagesSection(order)),
     ...(await buildSitePhotosSection(order.photoComments)),
     {

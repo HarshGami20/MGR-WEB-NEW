@@ -48,8 +48,12 @@ router.get("/dashboard/summary", requireAuth, dashboardRead, async (req, res): P
   }
 
   const totalOrders = orders.length;
-  const totalRevenue = orders.filter((o) => o.status === "complete" || o.status === "delivered").reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
-  const pendingOrders = orders.filter((o) => o.status !== "complete" && o.status !== "delivered" && o.status !== "cancelled").length;
+  const totalRevenue = orders
+    .filter((o) => o.status === "delivered" || o.status === "complete")
+    .reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
+  const pendingOrders = orders.filter(
+    (o) => o.status !== "delivered" && o.status !== "complete" && o.status !== "cancelled",
+  ).length;
   const lowStockCount = products.filter((p) => {
     if (p._count.variants === 0) return p.stockQty <= p.lowStockThreshold;
     return productLowFromVariant.has(p.id);
@@ -63,7 +67,9 @@ router.get("/dashboard/summary", requireAuth, dashboardRead, async (req, res): P
 
   const today = new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const completedOrdersToday = orders.filter((o) => (o.status === "complete" || o.status === "delivered") && new Date(o.updatedAt) >= startOfDay).length;
+  const completedOrdersToday = orders.filter(
+    (o) => (o.status === "delivered" || o.status === "complete") && new Date(o.updatedAt) >= startOfDay,
+  ).length;
 
   res.json({
     totalOrders, totalRevenue, pendingOrders, lowStockCount, totalProducts, totalSuppliers, pendingPayments, completedOrdersToday

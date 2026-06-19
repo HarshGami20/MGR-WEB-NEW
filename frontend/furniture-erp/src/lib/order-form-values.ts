@@ -73,7 +73,7 @@ export function buildOrderFormValues(order: OrderFormSource) {
       Array.isArray(order.items) && order.items.length > 0
         ? order.items.map((item) => apiItemToFormValues(item as Parameters<typeof apiItemToFormValues>[0], { priceIncludesGst: isGst }))
         : [{ ...defaultCatalogLineItem }],
-    status: order.status === "delivered" ? "complete" : (order.status ?? "order_received"),
+    status: order.status === "complete" ? "delivered" : (order.status ?? "order_received"),
     paymentStatus: order.paymentStatus ?? "due",
     advanceAmount: Number(order.advanceAmount ?? order.paidAmount ?? 0),
     paymentMode: order.paymentMode ?? "cash",

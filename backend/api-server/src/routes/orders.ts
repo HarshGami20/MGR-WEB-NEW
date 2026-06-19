@@ -75,7 +75,7 @@ const ORDER_STATUSES = new Set([
   "order_received",
   "manufacturing",
   "ready_to_ship",
-  "complete",
+  "delivered",
   "cancelled",
 ]);
 
@@ -622,8 +622,8 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
 
   const where: any = {};
   if (status) {
-    if (status === "complete") {
-      where.status = { in: ["complete", "delivered"] };
+    if (status === "delivered") {
+      where.status = { in: ["delivered", "complete"] };
     } else {
       where.status = status;
     }
@@ -800,6 +800,10 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     res.status(400).json({ error: "Invalid order category. Choose a main category." });
     return;
   }
+  if (parsedCategoryId === null) {
+    res.status(400).json({ error: "Order category is required." });
+    return;
+  }
   let resolvedItems: ResolvedOrderLine[];
   try {
     resolvedItems = await resolveOrderLineItems(items as IncomingLineItem[], !!orderData.isGst);
@@ -820,8 +824,9 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   const totalAmount = subtotal + taxAmount + deliveryCharge;
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
-  const requestedStatusRaw = typeof orderData.status === "string" ? orderData.status : "order_received";
-  const requestedStatus = requestedStatusRaw === "delivered" ? "complete" : requestedStatusRaw;
+  const requestedStatus = normalizeMainOrderStatus(
+    typeof orderData.status === "string" ? orderData.status : "order_received",
+  );
   const status = ORDER_STATUSES.has(requestedStatus) ? requestedStatus : "order_received";
   const requestedPaymentStatus = typeof orderData.paymentStatus === "string" ? orderData.paymentStatus : undefined;
   const paymentStatus = normalizePaymentStatus(totalAmount, safeAdvanceAmount, requestedPaymentStatus);
@@ -1090,7 +1095,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
       deliveryStatus: (existingOrder as { deliveryStatus?: string }).deliveryStatus,
     })
   ) {
-    res.status(409).json({ error: "Cannot edit completed or delivered orders" });
+    res.status(409).json({ error: "Cannot edit delivered orders" });
     return;
   }
 
@@ -1342,6 +1347,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         if (parsedCat === "invalid") {
           throw new Error("Invalid order category. Choose a main category.");
         }
+        if (parsedCat === null) {
+          throw new Error("Order category is required.");
+        }
         nextCategoryId = parsedCat;
       }
       const eo = existingOrder as any;
@@ -1349,7 +1357,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         typeof orderFields.status === "string"
           ? orderFields.status
           : String(existingOrder.status || "order_received");
-      const requestedStatusNorm = requestedStatusRaw === "delivered" ? "complete" : requestedStatusRaw;
+      const requestedStatusNorm = normalizeMainOrderStatus(requestedStatusRaw);
       const safeStatus = ORDER_STATUSES.has(requestedStatusNorm)
         ? requestedStatusNorm
         : normalizeMainOrderStatus(String(existingOrder.status));
@@ -1918,7 +1926,7 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
   let nextStatus = normalizeMainOrderStatus(String(existing.status));
   if (hasStatus) {
     const rawSt = body.status as string;
-    const norm = rawSt === "delivered" ? "complete" : rawSt;
+    const norm = normalizeMainOrderStatus(rawSt);
     nextStatus = ORDER_STATUSES.has(norm) ? norm : nextStatus;
   }
 

@@ -74,8 +74,12 @@ const CreateComplaintBody = z
         });
       }
     } else {
-      if (!data.purchaseOrderId) {
-        ctx.addIssue({ code: "custom", path: ["purchaseOrderId"], message: "purchaseOrderId is required" });
+      if (!data.purchaseOrderId && data.productId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["productId"],
+          message: "product can only be set when a purchase order is linked",
+        });
       }
       if (data.orderId) {
         ctx.addIssue({ code: "custom", path: ["orderId"], message: "not allowed for purchase order complaints" });
@@ -391,38 +395,6 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     return;
   }
 
-  const po = await prisma.purchaseOrder.findUnique({ where: { id: parsed.data.purchaseOrderId! } });
-  if (!po) {
-    res.status(400).json({ error: "Purchase order not found" });
-    return;
-  }
-
-  if (partnerScope && !purchaseOrderMatchesScope(po, partnerScope)) {
-    res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your portal access" });
-    return;
-  }
-
-  if (!partnerScope) {
-    const branchScope = branchFilterForUser(authUser);
-    if (branchScope && po.branchId != null) {
-      const allowed = assignedBranchIds(authUser);
-      if (!allowed.includes(po.branchId)) {
-        res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your branch access" });
-        return;
-      }
-    }
-  }
-
-  if (parsed.data.productId) {
-    if (!(await validateProductOnPurchaseOrder(po.id, parsed.data.productId))) {
-      res.status(400).json({ error: "Selected product is not part of this purchase order" });
-      return;
-    }
-  }
-
-  const branchId = po.branchId ?? (partnerScope ? null : await requireWriteBranchId(req, res, authUser));
-  if (!partnerScope && po.branchId == null && branchId == null) return;
-
   const assigneeIds = normalizeAssigneeUserIds(parsed.data.assigneeUserIds);
   try {
     await assertActiveUserIdsExist(assigneeIds);
@@ -431,14 +403,57 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     return;
   }
 
+  let purchaseOrderId: number | null = null;
+  let branchId: number | null = null;
+  let poNumber: string | null = null;
+
+  if (parsed.data.purchaseOrderId) {
+    const po = await prisma.purchaseOrder.findUnique({ where: { id: parsed.data.purchaseOrderId } });
+    if (!po) {
+      res.status(400).json({ error: "Purchase order not found" });
+      return;
+    }
+
+    if (partnerScope && !purchaseOrderMatchesScope(po, partnerScope)) {
+      res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your portal access" });
+      return;
+    }
+
+    if (!partnerScope) {
+      const branchScope = branchFilterForUser(authUser);
+      if (branchScope && po.branchId != null) {
+        const allowed = assignedBranchIds(authUser);
+        if (!allowed.includes(po.branchId)) {
+          res.status(403).json({ error: "Forbidden", message: "Purchase order is outside your branch access" });
+          return;
+        }
+      }
+    }
+
+    if (parsed.data.productId) {
+      if (!(await validateProductOnPurchaseOrder(po.id, parsed.data.productId))) {
+        res.status(400).json({ error: "Selected product is not part of this purchase order" });
+        return;
+      }
+    }
+
+    purchaseOrderId = po.id;
+    poNumber = po.poNumber;
+    branchId = po.branchId ?? (partnerScope ? null : await requireWriteBranchId(req, res, authUser));
+    if (!partnerScope && po.branchId == null && branchId == null) return;
+  } else {
+    branchId = partnerScope ? null : await requireWriteBranchId(req, res, authUser);
+    if (!partnerScope && branchId == null) return;
+  }
+
   const created = await prisma.$transaction(async (tx) => {
     const row = await tx.complaint.create({
       data: {
         complaintNumber: await generateComplaintNumber(tx),
         kind: "purchase_order",
-        purchaseOrderId: po.id,
+        purchaseOrderId,
         productId: parsed.data.productId ?? null,
-        branchId: po.branchId ?? branchId,
+        branchId,
         createdById: authUser.id,
         subject: parsed.data.subject?.trim() || null,
         description: parsed.data.description.trim(),
@@ -454,8 +469,8 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     complaintNumber: created.complaintNumber,
     kind: "purchase_order",
     orderId: null,
-    purchaseOrderId: po.id,
-    poNumber: po.poNumber,
+    purchaseOrderId,
+    poNumber,
     branchId: created.branchId,
     createdById: authUser.id,
   });
