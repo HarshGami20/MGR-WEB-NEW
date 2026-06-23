@@ -108,6 +108,12 @@ function assertOrderDeliveryCoherence(_mainStatus: string, _deliveryStatus: stri
   return { ok: true };
 }
 
+/** When main order status is delivered, delivery status must also be delivered. */
+function resolveDeliveryStatusForOrder(mainStatus: string, deliveryStatus: string): string {
+  if (normalizeMainOrderStatus(mainStatus) === "delivered") return "delivered";
+  return normalizeDeliveryStatus(deliveryStatus);
+}
+
 async function assertValidOrderDeliverySlot(
   tx: Prisma.TransactionClient,
   params: {
@@ -1429,10 +1435,12 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         }
       }
 
-      const nextDelStatus =
+      const nextDelStatus = resolveDeliveryStatusForOrder(
+        safeStatus,
         payloadDeliveryStatus !== undefined
           ? normalizeDeliveryStatus(payloadDeliveryStatus)
-          : normalizeDeliveryStatus(eo.deliveryStatus);
+          : normalizeDeliveryStatus(eo.deliveryStatus),
+      );
 
       const prevDel = normalizeDeliveryStatus(eo.deliveryStatus);
       if (payloadDeliveryStatus !== undefined) {
@@ -1940,12 +1948,15 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
     nextPaymentStatus = ps;
   }
 
+  const prevDeliveryStatus = normalizeDeliveryStatus((existing as { deliveryStatus?: string }).deliveryStatus);
+
   const order = await prisma.order
     .update({
       where: { id },
       data: {
         ...(hasStatus ? { status: nextStatus } : {}),
         ...(hasPaymentStatus ? { paymentStatus: nextPaymentStatus } : {}),
+        ...(hasStatus && nextStatus === "delivered" ? { deliveryStatus: "delivered" } : {}),
       },
     })
     .catch(() => null);
@@ -1961,6 +1972,17 @@ router.patch("/orders/:id/status", requireAuth, requirePermission("orders", "upd
         branchId: order.branchId,
         previousStatus: prevStatus,
         nextStatus,
+        changedById: actorId,
+      });
+    }
+    if (nextStatus === "delivered" && prevDeliveryStatus !== "delivered") {
+      const actorId = (req as { user?: { id: number } }).user?.id;
+      emitSafe("ORDER_DELIVERY_UPDATED", {
+        orderId: id,
+        orderNumber: order.orderNumber,
+        branchId: order.branchId,
+        previousDeliveryStatus: prevDeliveryStatus,
+        nextDeliveryStatus: "delivered",
         changedById: actorId,
       });
     }
