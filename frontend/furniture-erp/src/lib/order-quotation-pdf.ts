@@ -3,7 +3,6 @@ import { downloadPdfBlob, downloadPdfDocument, generatePdfBlob } from "@/lib/pdf
 import { formatInr } from "@/lib/format-currency";
 import { formatDisplayDate } from "@/lib/format-datetime";
 import { inclusiveUnitFromExclusive, roundMoney } from "@/lib/gst-pricing";
-import { getQuotationLogoDataUrl, QUOTATION_LOGO_HEIGHT } from "@/lib/quotation-logo-asset";
 
 export type OrderQuotationLineItem = {
   label: string;
@@ -49,7 +48,6 @@ export type QuotationCompanySettings = {
 };
 
 const PDF_STYLES = {
-  logoHeader: { fontSize: 18, bold: true, alignment: "center" as const },
   subHeader: {
     fontSize: 8,
     alignment: "center" as const,
@@ -313,22 +311,7 @@ async function buildSitePhotoGrid(photos: OrderQuotationPhoto[]): Promise<Conten
 }
 
 async function buildCompanyHeader(settings?: QuotationCompanySettings): Promise<Content[]> {
-  const name = settings?.companyName?.trim() || "MGR CASA";
-  const lines: Content[] = [];
-
-  const logo = await getQuotationLogoDataUrl();
-  if (logo) {
-    lines.push({
-      image: logo,
-      fit: [PDF_CONTENT_WIDTH, QUOTATION_LOGO_HEIGHT],
-      alignment: "center",
-      margin: [0, 0, 0, 6] as [number, number, number, number],
-    });
-  } else {
-    lines.push({ text: name, style: "logoHeader" });
-  }
-
-  lines.push({ text: "QUOTATION", style: "subHeader" });
+  const lines: Content[] = [{ text: "QUOTATION", style: "subHeader" }];
   const contact: string[] = [];
   if (settings?.address?.trim()) contact.push(settings.address.trim());
   if (settings?.phone?.trim()) contact.push(`Ph: ${settings.phone.trim()}`);
