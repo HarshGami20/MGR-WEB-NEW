@@ -56,6 +56,9 @@ const CreateComplaintBody = z
     orderId: z.coerce.number().int().positive().optional(),
     purchaseOrderId: z.coerce.number().int().positive().optional(),
     productId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
+    customerName: z.string().max(200).optional().nullable(),
+    customerMobile: z.string().max(20).optional().nullable(),
+    customerAddress: z.string().max(500).optional().nullable(),
     subject: z.string().max(200).optional().nullable(),
     description: z.string().min(1, "Issue description is required"),
     imageUrls: z.array(z.string()).optional(),
@@ -71,6 +74,20 @@ const CreateComplaintBody = z
           code: "custom",
           path: ["productId"],
           message: "product can only be set when an order is linked",
+        });
+      }
+      if (!data.orderId && !data.customerName?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["customerName"],
+          message: "customer name is required when no order is linked",
+        });
+      }
+      if (data.orderId && (data.customerName?.trim() || data.customerMobile?.trim() || data.customerAddress?.trim())) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["customerName"],
+          message: "customer details come from the linked order",
         });
       }
     } else {
@@ -238,6 +255,8 @@ router.get("/complaints", requireAuth, requirePermission("complaints", "read"), 
         { description: { contains: q, mode: "insensitive" } },
         { order: { orderNumber: { contains: q, mode: "insensitive" } } },
         { order: { customerName: { contains: q, mode: "insensitive" } } },
+        { customerName: { contains: q, mode: "insensitive" } },
+        { customerMobile: { contains: q } },
         { purchaseOrder: { poNumber: { contains: q, mode: "insensitive" } } },
       ],
     };
@@ -331,6 +350,9 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
 
     let orderId: number | null = null;
     let branchId: number | null = null;
+    let customerName: string | null = null;
+    let customerMobile: string | null = null;
+    let customerAddress: string | null = null;
 
     if (parsed.data.orderId) {
       const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId } });
@@ -361,6 +383,9 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
     } else {
       branchId = await requireWriteBranchId(req, res, authUser);
       if (branchId == null) return;
+      customerName = parsed.data.customerName?.trim() || null;
+      customerMobile = parsed.data.customerMobile?.trim() || null;
+      customerAddress = parsed.data.customerAddress?.trim() || null;
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -372,6 +397,9 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
           productId: parsed.data.productId ?? null,
           branchId,
           createdById: authUser.id,
+          customerName,
+          customerMobile,
+          customerAddress,
           subject: parsed.data.subject?.trim() || null,
           description: parsed.data.description.trim(),
           imageUrls,

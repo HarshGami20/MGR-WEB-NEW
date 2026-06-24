@@ -54,9 +54,9 @@ type Props = {
   onPriceChange: (price: number) => void;
   /** `inline` = product and variant side by side (e.g. order line items). Default stacks vertically. */
   layout?: "stacked" | "inline";
-  /** Branch for stock display and out-of-stock checks (sales orders). */
+  /** Branch for stock display on sales orders. */
   branchId?: number | null;
-  /** When true with branchId, show stock and block out-of-stock catalog picks. */
+  /** When true with branchId, show branch stock in the picker (no quantity cap). */
   enforceStockCheck?: boolean;
 };
 
@@ -93,11 +93,6 @@ export default function ProductVariantSelect({
 
   const applyProduct = (nextProductId: number) => {
     const p = products.find((it) => it.id === nextProductId) as ProductWithStock | undefined;
-    const singleSku = (p?.variantCount ?? 0) === 0;
-    if (stockActive && p && singleSku) {
-      const qty = catalogVariantStock(p, null, branchId);
-      if (qty !== undefined && qty <= 0) return;
-    }
     onProductChange(nextProductId);
     onVariantChange(null);
     onPriceChange(Number(p?.price ?? 0));
@@ -105,11 +100,6 @@ export default function ProductVariantSelect({
   };
 
   const applyVariant = (nextVariantId: number | null) => {
-    if (stockActive && selectedProduct && nextVariantId) {
-      const selectedVariant = variants.find((v) => v.id === nextVariantId);
-      const qty = catalogVariantStock(selectedProduct, selectedVariant ?? null, branchId);
-      if (qty !== undefined && qty <= 0) return;
-    }
     onVariantChange(nextVariantId);
     if (!nextVariantId) {
       onPriceChange(Number(selectedProduct?.price ?? 0));
@@ -199,7 +189,6 @@ export default function ProductVariantSelect({
                       stockActive && singleSku
                         ? catalogVariantStock(row, null, branchId)
                         : undefined;
-                    const outOfStock = stockActive && singleSku && qty !== undefined && qty <= 0;
                     const threshold = row.lowStockThreshold ?? 10;
                     const status =
                       qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
@@ -210,7 +199,6 @@ export default function ProductVariantSelect({
                         value={`${p.name} ${p.sku}`}
                         keywords={[p.name, p.sku, String(p.id)]}
                         title={rowTitle}
-                        disabled={outOfStock}
                         className={cn(
                           "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
                           isSelected && "bg-primary/22 text-foreground ring-1 ring-primary/70",
@@ -308,7 +296,6 @@ export default function ProductVariantSelect({
                       const qty = stockActive
                         ? catalogVariantStock(selectedProduct ?? {}, v, branchId)
                         : undefined;
-                      const outOfStock = stockActive && qty !== undefined && qty <= 0;
                       const threshold = v.lowStockThreshold ?? selectedProduct?.lowStockThreshold ?? 10;
                       const status = qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
                       const isSelected = variantId === v.id;
@@ -318,7 +305,6 @@ export default function ProductVariantSelect({
                           value={`${variantName} ${variantSku}`}
                           keywords={[variantName, variantSku, String(v.id)]}
                           title={rowTitle}
-                          disabled={outOfStock}
                           className={cn(
                             "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
                             isSelected && "bg-primary text-primary-foreground ring-1 ring-primary",

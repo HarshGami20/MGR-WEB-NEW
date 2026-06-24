@@ -48,6 +48,7 @@ export function BranchStockBreakdown({
               className={cn(
                 "font-mono text-foreground",
                 isSelected && "font-semibold text-primary",
+                branch.stockQty < 0 && "text-destructive",
               )}
             >
               {branch.stockQty}

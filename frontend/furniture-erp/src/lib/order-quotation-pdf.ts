@@ -173,13 +173,22 @@ async function embedImage(url: string): Promise<string | null> {
 
 /** A4 content width with 40pt side margins (~515pt). */
 const PDF_CONTENT_WIDTH = 515;
-const CHALLAN_IMAGE_HEIGHT = 300;
-const PRODUCT_GRID_COLS = 3;
-const PRODUCT_CELL_W = Math.floor((PDF_CONTENT_WIDTH - 12) / PRODUCT_GRID_COLS);
-const PRODUCT_CELL_H = 112;
-const SITE_GRID_COLS = 2;
-const SITE_CELL_W = Math.floor((PDF_CONTENT_WIDTH - 8) / SITE_GRID_COLS);
-const SITE_CELL_H = 128;
+const PDF_PAGE_USABLE_HEIGHT = 842 - 72;
+const CHALLAN_IMAGE_HEIGHT = 400;
+/** 2×2 image grid — 4 images per page. */
+const IMAGE_GRID_COLS = 2;
+const IMAGE_GRID_ROWS = 2;
+const IMAGES_PER_PAGE = IMAGE_GRID_COLS * IMAGE_GRID_ROWS;
+const IMAGE_GRID_ROW_GAP = 8;
+const IMAGE_COMMENT_BLOCK = 16;
+const IMAGE_CELL_W = Math.floor((PDF_CONTENT_WIDTH - 8) / IMAGE_GRID_COLS);
+/** Height tuned so two rows fit on one page without row/page breaks. */
+const PRODUCT_IMAGE_CELL_H = Math.floor(
+  (PDF_PAGE_USABLE_HEIGHT - IMAGE_GRID_ROW_GAP) / IMAGE_GRID_ROWS - 32,
+);
+const SITE_IMAGE_CELL_H = Math.floor(
+  (PDF_PAGE_USABLE_HEIGHT - IMAGE_GRID_ROW_GAP) / IMAGE_GRID_ROWS - IMAGE_COMMENT_BLOCK - 32,
+);
 
 function emptyGridCell(cellHeight: number): Content {
   return {
@@ -190,6 +199,14 @@ function emptyGridCell(cellHeight: number): Content {
 }
 
 function containImageBlock(dataUrl: string, width: number, height: number): Content {
+  return {
+    image: dataUrl,
+    fit: [width, height],
+    alignment: "center",
+  };
+}
+
+function gridImageBlock(dataUrl: string, width: number, height: number): Content {
   return {
     image: dataUrl,
     fit: [width, height],
@@ -212,7 +229,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return rows;
 }
 
-/** Grid of cover-cropped images (3 columns for products, etc.). */
+/** Grid of fitted images (2×2 — 4 per page, kept together with unbreakable). */
 async function buildCoverImageGrid(
   urls: string[],
   columns: number,
@@ -224,16 +241,16 @@ async function buildCoverImageGrid(
       const data = await embedImage(url);
       const imageContent =
         data && isPdfSafeDataUrl(data)
-          ? coverImageBlock(data, cellWidth, cellHeight)
+          ? gridImageBlock(data, cellWidth, cellHeight)
           : emptyGridCell(cellHeight);
       return {
         stack: [imageContent],
-        margin: [2, 2, 2, 4] as [number, number, number, number],
+        margin: [2, 2, 2, 2] as [number, number, number, number],
       } satisfies Content;
     }),
   );
 
-  const body: Content[][] = chunk(cells, columns).map((row) => {
+  const rows: Content[][] = chunk(cells, columns).map((row) => {
     const padded: Content[] = [...row];
     while (padded.length < columns) padded.push({ text: "" } as Content);
     return padded;
@@ -242,23 +259,26 @@ async function buildCoverImageGrid(
   return {
     table: {
       widths: Array(columns).fill("*"),
-      body,
+      heights: Array(rows.length).fill(cellHeight + 4),
+      body: rows,
     },
     layout: "noBorders",
     margin: [0, 0, 0, 8] as [number, number, number, number],
+    unbreakable: true,
   };
 }
 
-/** Two-column grid: cover image with comment under each site photo. */
+/** 2×2 grid matching product images — fitted image with comment under each site photo. */
 async function buildSitePhotoGrid(photos: OrderQuotationPhoto[]): Promise<Content> {
+  const rowHeight = SITE_IMAGE_CELL_H + IMAGE_COMMENT_BLOCK + 4;
   const cards = await Promise.all(
     photos.map(async (entry) => {
       const url = entry.imageUrl!.trim();
       const data = await embedImage(url);
       const imageContent =
         data && isPdfSafeDataUrl(data)
-          ? coverImageBlock(data, SITE_CELL_W, SITE_CELL_H)
-          : emptyGridCell(SITE_CELL_H);
+          ? gridImageBlock(data, IMAGE_CELL_W, SITE_IMAGE_CELL_H)
+          : emptyGridCell(SITE_IMAGE_CELL_H);
       return {
         stack: [
           imageContent,
@@ -266,27 +286,29 @@ async function buildSitePhotoGrid(photos: OrderQuotationPhoto[]): Promise<Conten
             text: entry.comment?.trim() || "—",
             fontSize: 8,
             color: "#444444",
-            margin: [0, 4, 0, 0] as [number, number, number, number],
+            margin: [0, 2, 0, 0] as [number, number, number, number],
           },
         ],
-        margin: [2, 2, 2, 8] as [number, number, number, number],
+        margin: [2, 2, 2, 2] as [number, number, number, number],
       } satisfies Content;
     }),
   );
 
-  const body: Content[][] = chunk(cards, SITE_GRID_COLS).map((row) => {
+  const rows: Content[][] = chunk(cards, IMAGE_GRID_COLS).map((row) => {
     const padded: Content[] = [...row];
-    while (padded.length < SITE_GRID_COLS) padded.push({ text: "" } as Content);
+    while (padded.length < IMAGE_GRID_COLS) padded.push({ text: "" } as Content);
     return padded;
   });
 
   return {
     table: {
-      widths: Array(SITE_GRID_COLS).fill("*"),
-      body,
+      widths: Array(IMAGE_GRID_COLS).fill("*"),
+      heights: Array(rows.length).fill(rowHeight),
+      body: rows,
     },
     layout: "noBorders",
-    margin: [0, 0, 0, 4] as [number, number, number, number],
+    margin: [0, 0, 0, 8] as [number, number, number, number],
+    unbreakable: true,
   };
 }
 
@@ -505,31 +527,67 @@ async function buildChallanImagesSection(urls: string[]): Promise<Content[]> {
 }
 
 async function buildProductImagesSection(order: OrderQuotationInput): Promise<Content[]> {
-  const blocks: Content[] = [];
-  let any = false;
+  const labeledUrls: { label: string; url: string }[] = [];
   for (const item of order.items) {
-    if (item.imageUrls.length === 0) continue;
-    any = true;
-    blocks.push({ text: item.label, bold: true, fontSize: 8.5, margin: [0, 4, 0, 2] });
+    for (const url of item.imageUrls) {
+      if (url.trim()) labeledUrls.push({ label: item.label, url: url.trim() });
+    }
+  }
+  if (labeledUrls.length === 0) return [];
+
+  const blocks: Content[] = [
+    { text: "Product images", style: "sectionTitle", pageBreak: "before" as const },
+  ];
+  const pages = chunk(labeledUrls, IMAGES_PER_PAGE);
+
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const pageItems = pages[pageIndex];
+    if (pageIndex > 0) {
+      blocks.push({ text: "", pageBreak: "before" as const });
+    }
+
+    const labels = [...new Set(pageItems.map((item) => item.label))];
+    if (labels.length === 1) {
+      blocks.push({ text: labels[0], bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] });
+    } else if (labels.length > 1) {
+      blocks.push({
+        text: labels.join(" · "),
+        bold: true,
+        fontSize: 8.5,
+        margin: [0, 0, 0, 2],
+      });
+    }
+
     blocks.push(
-      await buildCoverImageGrid(item.imageUrls, PRODUCT_GRID_COLS, PRODUCT_CELL_W, PRODUCT_CELL_H),
+      await buildCoverImageGrid(
+        pageItems.map((item) => item.url),
+        IMAGE_GRID_COLS,
+        IMAGE_CELL_W,
+        PRODUCT_IMAGE_CELL_H,
+      ),
     );
   }
-  if (!any) return [];
-  return [
-    { text: "Product images", style: "sectionTitle", pageBreak: "before" as const },
-    ...blocks,
-  ];
+
+  return blocks;
 }
 
 async function buildSitePhotosSection(photos: OrderQuotationPhoto[]): Promise<Content[]> {
   const withImage = photos.filter((p) => p.imageUrl?.trim());
   if (withImage.length === 0) return [];
 
-  return [
-    { text: "Site photos & comments", style: "sectionTitle" },
-    await buildSitePhotoGrid(withImage),
+  const blocks: Content[] = [
+    { text: "Site photos & comments", style: "sectionTitle", pageBreak: "before" as const },
   ];
+  const pages = chunk(withImage, IMAGES_PER_PAGE);
+
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    if (pageIndex > 0) {
+      blocks.push({ text: "", pageBreak: "before" as const });
+    }
+    blocks.push(await buildSitePhotoGrid(pages[pageIndex]));
+  }
+
+  return blocks;
 }
 
 export async function buildOrderQuotationDocument(

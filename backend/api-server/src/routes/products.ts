@@ -198,7 +198,7 @@ async function branchStockByProduct(productIds: number[]): Promise<Map<number, B
     const branch = branchLabels.get(branchKey);
     if (!branch) continue;
     const rows = result.get(productId) ?? [];
-    rows.push({ ...branch, stockQty: Math.max(0, qty) });
+    rows.push({ ...branch, stockQty: qty });
     result.set(productId, rows);
   }
 

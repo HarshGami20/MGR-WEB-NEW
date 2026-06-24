@@ -74,6 +74,9 @@ export async function enrichComplaint(complaint: {
   productId: number | null;
   branchId: number | null;
   createdById: number | null;
+  customerName: string | null;
+  customerMobile: string | null;
+  customerAddress: string | null;
   subject: string | null;
   description: string;
   status: ComplaintStatus;
@@ -168,8 +171,15 @@ export async function enrichComplaint(complaint: {
 
   const assignees = await loadComplaintAssignees(complaint.id);
 
+  const customerName = order?.customerName ?? complaint.customerName ?? null;
+  const customerMobile = order?.customerMobile ?? complaint.customerMobile ?? null;
+  const customerAddress = order?.customerAddress ?? complaint.customerAddress ?? null;
+
   return {
     ...complaint,
+    customerName,
+    customerMobile,
+    customerAddress,
     imageUrls: safeJsonParse<string[]>(complaint.imageUrls, []),
     assignees,
     order,

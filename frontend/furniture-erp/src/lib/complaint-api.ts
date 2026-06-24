@@ -81,6 +81,9 @@ export type Complaint = {
   description: string;
   status: ComplaintStatus;
   imageUrls: string[];
+  customerName: string | null;
+  customerMobile: string | null;
+  customerAddress: string | null;
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -153,6 +156,9 @@ export async function createComplaint(body: {
   orderId?: number;
   purchaseOrderId?: number;
   productId?: number | null;
+  customerName?: string | null;
+  customerMobile?: string | null;
+  customerAddress?: string | null;
   subject?: string | null;
   description: string;
   imageUrls?: string[];

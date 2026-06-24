@@ -125,6 +125,9 @@ export default function ComplaintsPage() {
 
   const [formOrderId, setFormOrderId] = useState("");
   const [formPoId, setFormPoId] = useState("");
+  const [formCustomerName, setFormCustomerName] = useState("");
+  const [formCustomerMobile, setFormCustomerMobile] = useState("");
+  const [formCustomerAddress, setFormCustomerAddress] = useState("");
   const [formProductId, setFormProductId] = useState("none");
   const [formSubject, setFormSubject] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -238,9 +241,17 @@ export default function ComplaintsPage() {
         });
       }
       const orderIdNum = parseInt(formOrderId, 10);
+      const hasLinkedOrder = Number.isFinite(orderIdNum) && orderIdNum > 0;
       return createComplaint({
         kind: "sales_order",
-        ...(Number.isFinite(orderIdNum) && orderIdNum > 0 ? { orderId: orderIdNum } : {}),
+        ...(hasLinkedOrder ? { orderId: orderIdNum } : {}),
+        ...(!hasLinkedOrder
+          ? {
+              customerName: formCustomerName.trim(),
+              customerMobile: formCustomerMobile.trim() || null,
+              customerAddress: formCustomerAddress.trim() || null,
+            }
+          : {}),
         productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
         subject: formSubject.trim() || null,
         description: formDescription.trim(),
@@ -261,6 +272,9 @@ export default function ComplaintsPage() {
   const resetForm = () => {
     setFormOrderId("");
     setFormPoId("");
+    setFormCustomerName("");
+    setFormCustomerMobile("");
+    setFormCustomerAddress("");
     setFormProductId("none");
     setFormSubject("");
     setFormDescription("");
@@ -315,7 +329,8 @@ export default function ComplaintsPage() {
   };
 
   const isPoTab = partnerUser || activeTab === "purchase_order";
-  const createDisabled = !formDescription.trim();
+  const createDisabled =
+    !formDescription.trim() || (!isPoTab && !formOrderId && !formCustomerName.trim());
 
   const salesColumns = useMemo<ColumnDef<Complaint>[]>(
     () => [
@@ -341,10 +356,10 @@ export default function ComplaintsPage() {
         meta: { cellClassName: "max-w-[220px]" },
         cell: ({ row }) => (
           <div className="flex flex-col">
-            <span className="block truncate font-medium" title={row.original.order?.customerName}>
-              {row.original.order?.customerName ?? "—"}
+            <span className="block truncate font-medium" title={row.original.customerName ?? undefined}>
+              {row.original.customerName ?? "—"}
             </span>
-            <span className="text-xs text-muted-foreground">{row.original.order?.customerMobile ?? ""}</span>
+            <span className="text-xs text-muted-foreground">{row.original.customerMobile ?? ""}</span>
           </div>
         ),
       },
@@ -709,6 +724,11 @@ export default function ComplaintsPage() {
                     onValueChange={(v) => {
                       setFormOrderId(v === "none" ? "" : v);
                       setFormProductId("none");
+                      if (v !== "none") {
+                        setFormCustomerName("");
+                        setFormCustomerMobile("");
+                        setFormCustomerAddress("");
+                      }
                     }}
                   >
                     <SelectTrigger>
@@ -724,13 +744,51 @@ export default function ComplaintsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {selectedOrder && (
-                  <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                    <p className="font-medium">Order summary</p>
-                    <p className="text-muted-foreground">{selectedOrder.customerMobile}</p>
-                    <p className="mt-1 text-muted-foreground line-clamp-2">{selectedOrder.customerAddress}</p>
+                {selectedOrder ? (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+                    <p className="font-medium">Customer (from order)</p>
+                    <p className="text-muted-foreground">{selectedOrder.customerName}</p>
+                    {selectedOrder.customerMobile ? (
+                      <p className="text-muted-foreground">{selectedOrder.customerMobile}</p>
+                    ) : null}
+                    {selectedOrder.customerAddress ? (
+                      <p className="text-muted-foreground line-clamp-3">{selectedOrder.customerAddress}</p>
+                    ) : null}
                   </div>
-                )}
+                ) : null}
+                {!formOrderId ? (
+                  <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                    <p className="text-sm font-medium">Customer details</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="complaint-customer-name">Name *</Label>
+                      <Input
+                        id="complaint-customer-name"
+                        value={formCustomerName}
+                        onChange={(e) => setFormCustomerName(e.target.value)}
+                        placeholder="Customer name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="complaint-customer-mobile">Mobile</Label>
+                      <Input
+                        id="complaint-customer-mobile"
+                        value={formCustomerMobile}
+                        onChange={(e) => setFormCustomerMobile(e.target.value)}
+                        placeholder="Phone number"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="complaint-customer-address">Address</Label>
+                      <Textarea
+                        id="complaint-customer-address"
+                        rows={2}
+                        value={formCustomerAddress}
+                        onChange={(e) => setFormCustomerAddress(e.target.value)}
+                        placeholder="Customer address"
+                      />
+                    </div>
+                  </div>
+                ) : null}
                 <div className="space-y-2">
                   <Label>Product (optional)</Label>
                   <Select value={formProductId} onValueChange={setFormProductId} disabled={!formOrderId}>

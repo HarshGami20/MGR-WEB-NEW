@@ -20,7 +20,7 @@ export function branchStockQtyAt(
   if (selectedBranchId == null) return 0;
   for (const row of stocks ?? []) {
     if (row.branchId != null && Number(row.branchId) === selectedBranchId) {
-      return Math.max(0, Math.floor(Number(row.stockQty ?? 0)));
+      return Math.floor(Number(row.stockQty ?? 0));
     }
   }
   return 0;
@@ -161,22 +161,19 @@ export function computeProductDetailStock(
   return { displayStock, grandTotal, totalUnitsBranchStocks, isLow };
 }
 
-export function catalogLineMaxQuantity(stockQty: number | undefined): number | undefined {
-  if (stockQty === undefined || !Number.isFinite(stockQty)) return undefined;
-  return Math.max(0, Math.floor(stockQty));
+export function catalogLineMaxQuantity(_stockQty: number | undefined): number | undefined {
+  return undefined;
 }
 
-export function clampCatalogLineQuantity(quantity: number, maxQuantity?: number): number {
-  const min = 1;
-  if (maxQuantity == null) return Math.max(min, quantity);
-  if (maxQuantity <= 0) return min;
-  return Math.max(min, Math.min(quantity, maxQuantity));
+export function clampCatalogLineQuantity(quantity: number, _maxQuantity?: number): number {
+  return Math.max(1, quantity);
 }
 
-export type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
+export type StockStatus = "in_stock" | "low_stock" | "out_of_stock" | "negative_stock";
 
 export function stockStatusFromQty(qty: number, threshold = 10): StockStatus {
-  if (qty <= 0) return "out_of_stock";
+  if (qty < 0) return "negative_stock";
+  if (qty === 0) return "out_of_stock";
   if (qty <= threshold) return "low_stock";
   return "in_stock";
 }
@@ -232,30 +229,15 @@ export function resolveCatalogLineStock(
 }
 
 export function validateCatalogLineItemsStock(
-  items: Array<{
+  _items: Array<{
     isCustom?: boolean;
     productId?: number | null;
     variantId?: number | null;
     quantity?: number;
   }>,
-  products: Array<ProductWithBranchStock & { id: number; name: string }>,
-  branchId: number | null | undefined,
-  getVariants: (productId: number) => CatalogVariantRow[] | undefined,
+  _products: Array<ProductWithBranchStock & { id: number; name: string }>,
+  _branchId: number | null | undefined,
+  _getVariants: (productId: number) => CatalogVariantRow[] | undefined,
 ): string | null {
-  if (branchId == null) return null;
-  for (const item of items) {
-    if (item.isCustom) continue;
-    const pid = Number(item.productId);
-    if (!pid) continue;
-    const product = products.find((p) => p.id === pid);
-    const variants = getVariants(pid);
-    const stockQty = resolveCatalogLineStock(product, item.variantId, variants, branchId);
-    const max = catalogLineMaxQuantity(stockQty);
-    const name = product?.name ?? "Product";
-    if (max === 0) return `"${name}" is out of stock at this branch.`;
-    if (max != null && Number(item.quantity) > max) {
-      return `"${name}" exceeds available stock (max ${max}).`;
-    }
-  }
   return null;
 }

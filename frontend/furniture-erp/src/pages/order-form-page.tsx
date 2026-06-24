@@ -60,8 +60,6 @@ import {
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import {
   type CatalogVariantRow,
-  type ProductWithBranchStock,
-  validateCatalogLineItemsStock,
 } from "@/lib/product-branch-stock";
 import type { Driver } from "@/lib/driver-api";
 
@@ -607,29 +605,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
         form.setError(`items.${i}.productId`, { message: "Please select a variant for this product" });
         return;
       }
-    }
-
-    const stockError = validateCatalogLineItemsStock(
-      data.items,
-      (productsData?.data ?? []) as Array<ProductWithBranchStock & { id: number; name: string }>,
-      writeBranchId,
-      (productId) => {
-        const cached = queryClient.getQueryData(getListProductVariantsQueryKey(productId)) as
-          | CatalogVariantRow[]
-          | undefined;
-        if (cached?.length) return cached;
-        const product = productsData?.data?.find((p) => p.id === productId) as ProductWithBranchStock | undefined;
-        return product?.variants;
-      },
-    );
-    if (stockError) {
-      toast({
-        title: "Stock limit",
-        description: stockError,
-        variant: "destructive",
-      });
-      form.setError("items", { type: "manual", message: stockError });
-      return;
     }
 
     const payload = {

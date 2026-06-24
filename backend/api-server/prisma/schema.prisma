@@ -414,6 +414,10 @@ model Complaint {
   subject         String?
   description     String
   status          ComplaintStatus @default(open)
+  /** Customer details when sales complaint is not linked to an order */
+  customerName    String?         @map("customer_name")
+  customerMobile  String?         @map("customer_mobile")
+  customerAddress String?         @map("customer_address")
   /** JSON string array of image URLs */
   imageUrls       String?         @map("image_urls")
   resolvedAt      DateTime?       @map("resolved_at") @db.Timestamptz(6)

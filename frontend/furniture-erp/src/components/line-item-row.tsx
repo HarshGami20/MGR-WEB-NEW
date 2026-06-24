@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { Product } from "@/api-client";
 import { useListProductVariants } from "@/api-client";
 import ProductVariantSelect from "@/components/product-variant-select";
@@ -18,12 +18,12 @@ import { ValidatedInput } from "@/components/validated-input";
 import type { UseFormReturn } from "react-hook-form";
 import { defaultCatalogLineItem, defaultCustomLineItem } from "@/lib/custom-line-item";
 import {
-  catalogLineMaxQuantity,
-  clampCatalogLineQuantity,
   resolveCatalogLineStock,
+  stockStatusFromQty,
   type BranchStock,
   type CatalogVariantRow,
 } from "@/lib/product-branch-stock";
+import { StockBadge } from "@/components/stock-badge";
 import { Package, PackagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogLineImagePreview } from "@/components/catalog-line-image-preview";
@@ -77,20 +77,6 @@ export function LineItemRow({
     [selectedProduct, variantId, variants, branchId],
   );
 
-  const maxQuantity = useMemo(
-    () => (stockActive ? catalogLineMaxQuantity(stockQty) : undefined),
-    [stockActive, stockQty],
-  );
-
-  useEffect(() => {
-    if (!stockActive || maxQuantity == null) return;
-    const current = Number(form.getValues(`items.${index}.quantity`));
-    if (!Number.isFinite(current) || current <= 0) return;
-    const clamped = clampCatalogLineQuantity(current, maxQuantity);
-    if (clamped !== current) {
-      form.setValue(`items.${index}.quantity`, clamped, { shouldDirty: true, shouldValidate: true });
-    }
-  }, [stockActive, maxQuantity, index, form]);
   const selectedVariant = useMemo(
     () => variants.find((v) => v.id === variantId) ?? null,
     [variants, variantId],
@@ -306,7 +292,6 @@ export function LineItemRow({
                 <Input
                   type="number"
                   min="1"
-                  max={maxQuantity != null && maxQuantity > 0 ? maxQuantity : undefined}
                   name={field.name}
                   ref={field.ref}
                   value={field.value === "" || field.value == null ? "" : String(field.value)}
@@ -318,27 +303,21 @@ export function LineItemRow({
                     }
                     const n = Number(raw);
                     if (!Number.isFinite(n)) return;
-                    if (maxQuantity != null && maxQuantity > 0 && n > maxQuantity) {
-                      field.onChange(maxQuantity);
-                      return;
-                    }
                     if (n > 0) field.onChange(n);
                   }}
                   onBlur={(e) => {
                     const n = Number(e.target.value);
-                    const final = clampCatalogLineQuantity(
-                      Number.isFinite(n) && n > 0 ? n : 1,
-                      maxQuantity,
-                    );
+                    const final = Number.isFinite(n) && n > 0 ? n : 1;
                     field.onChange(final);
                     field.onBlur();
                   }}
                 />
               </FormControl>
-              {stockActive && maxQuantity != null ? (
-                <p className="text-xs text-muted-foreground">
-                  {maxQuantity <= 0 ? "Out of stock at this branch" : `Max ${maxQuantity} available`}
-                </p>
+              {stockActive && stockQty != null ? (
+                <StockBadge
+                  status={stockStatusFromQty(stockQty, selectedProduct?.lowStockThreshold ?? 10)}
+                  qty={stockQty}
+                />
               ) : null}
               <FormMessage />
             </FormItem>

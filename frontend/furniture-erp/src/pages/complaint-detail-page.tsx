@@ -388,8 +388,33 @@ export default function ComplaintDetailPage() {
                     </div>
                   </div>
                 </div>
+              ) : complaint.customerName ? (
+                <div className="rounded-lg border bg-muted/10 px-3 py-2.5">
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Name</p>
+                      <p className="font-medium text-foreground">{complaint.customerName}</p>
+                    </div>
+                    {complaint.customerMobile ? (
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Mobile</p>
+                        <p className="font-mono text-foreground">{complaint.customerMobile}</p>
+                      </div>
+                    ) : null}
+                    {complaint.customerAddress ? (
+                      <div className="min-w-0 sm:col-span-2">
+                        <p className="text-xs text-muted-foreground">Address</p>
+                        <p className="text-foreground leading-snug">{complaint.customerAddress}</p>
+                      </div>
+                    ) : null}
+                    <div className="min-w-0 sm:col-span-2">
+                      <p className="text-xs text-muted-foreground">Linked order</p>
+                      <p className="text-muted-foreground">None</p>
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Order not found</p>
+                <p className="text-sm text-muted-foreground">No customer or order linked</p>
               )}
             </DetailSection>
 

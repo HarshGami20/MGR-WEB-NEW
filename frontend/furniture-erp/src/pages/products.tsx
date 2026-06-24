@@ -217,7 +217,7 @@ export default function Products() {
               <div
                 className={cn(
                   "flex items-center justify-end gap-1.5 font-medium tabular-nums",
-                  low && "text-destructive",
+                  (displayStock < 0 || low) && "text-destructive",
                 )}
               >
                 {hasVariants ? (

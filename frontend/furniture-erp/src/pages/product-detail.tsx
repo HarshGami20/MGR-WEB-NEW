@@ -461,7 +461,14 @@ export default function ProductDetail() {
             <DetailCard className="px-4 py-1">
               <div className="grid grid-cols-2 divide-x divide-border/60 border-b border-border/60">
                 <div className="py-4 text-center">
-                  <p className="text-2xl font-bold tabular-nums leading-none">{statsTotalUnits}</p>
+                  <p
+                    className={cn(
+                      "text-2xl font-bold tabular-nums leading-none",
+                      statsTotalUnits < 0 && "text-destructive",
+                    )}
+                  >
+                    {statsTotalUnits}
+                  </p>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Total units
                   </p>
@@ -564,11 +571,13 @@ export default function ProductDetail() {
                     <p
                       className={cn(
                         "mt-1 text-lg font-bold tabular-nums",
-                        productStockLow
-                          ? "text-amber-600"
-                          : productDisplayStock === 0
-                            ? "text-destructive"
-                            : "text-foreground",
+                        productDisplayStock < 0
+                          ? "text-destructive"
+                          : productStockLow
+                            ? "text-amber-600"
+                            : productDisplayStock === 0
+                              ? "text-destructive"
+                              : "text-foreground",
                       )}
                     >
                       {productDisplayStock}
@@ -685,7 +694,8 @@ export default function ProductDetail() {
                               )
                             : null;
                         const displayStock = variantDisplayStock(v, selectedBranchId);
-                        const isLowStock = displayStock <= low;
+                        const isNegativeStock = displayStock < 0;
+                        const isLowStock = displayStock > 0 && displayStock <= low;
                         const vPhotos = variantImageList(
                           v as { imageUrls?: string | string[] | null; imageUrl?: string | null },
                         );
@@ -711,7 +721,7 @@ export default function ProductDetail() {
                               <div
                                 className={cn(
                                   "tabular-nums font-semibold",
-                                  isLowStock && "text-destructive",
+                                  (isNegativeStock || isLowStock) && "text-destructive",
                                 )}
                               >
                                 {displayStock}

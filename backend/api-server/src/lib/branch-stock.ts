@@ -21,7 +21,7 @@ function netQtyFromLogs(logs: InventoryLogLike[]): number {
     else if (log.type === "out") qty -= log.quantity;
     else if (log.type === "adjustment") qty = log.quantity;
   }
-  return Math.max(0, qty);
+  return qty;
 }
 
 /** On-hand quantity for one product/variant SKU at a branch (inventory logs are source of truth). */
@@ -83,7 +83,7 @@ export async function branchStockByVariant(variantIds: number[]): Promise<Map<nu
     const branch = branchLabels.get(branchKey);
     if (!branch) continue;
     const rows = result.get(variantId) ?? [];
-    rows.push({ ...branch, stockQty: Math.max(0, qty) });
+    rows.push({ ...branch, stockQty: qty });
     result.set(variantId, rows);
   }
 
