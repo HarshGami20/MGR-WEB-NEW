@@ -192,6 +192,8 @@ export default function ProductVariantSelect({
                     const threshold = row.lowStockThreshold ?? 10;
                     const status =
                       qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
+                    const stockDimmed =
+                      stockActive && qty !== undefined && qty <= 0;
                     const isSelected = Number(productId) === p.id;
                     return (
                       <CommandItem
@@ -201,6 +203,7 @@ export default function ProductVariantSelect({
                         title={rowTitle}
                         className={cn(
                           "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
+                          stockDimmed && "opacity-60",
                           isSelected && "bg-primary/22 text-foreground ring-1 ring-primary/70",
                         )}
                         onSelect={() => applyProduct(p.id)}
@@ -298,6 +301,7 @@ export default function ProductVariantSelect({
                         : undefined;
                       const threshold = v.lowStockThreshold ?? selectedProduct?.lowStockThreshold ?? 10;
                       const status = qty !== undefined ? stockStatusFromQty(qty, threshold) : undefined;
+                      const stockDimmed = stockActive && qty !== undefined && qty <= 0;
                       const isSelected = variantId === v.id;
                       return (
                         <CommandItem
@@ -307,6 +311,7 @@ export default function ProductVariantSelect({
                           title={rowTitle}
                           className={cn(
                             "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-2",
+                            stockDimmed && "opacity-60",
                             isSelected && "bg-primary text-primary-foreground ring-1 ring-primary",
                           )}
                           onSelect={() => applyVariant(v.id)}

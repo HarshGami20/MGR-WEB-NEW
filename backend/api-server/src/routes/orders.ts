@@ -41,9 +41,8 @@ import {
   resolveOrdersAssignmentScope,
 } from "../lib/sales-order-scope";
 import {
-  decrementProductStockForBranch,
+  decrementProductStockForOrder,
   incrementProductStock,
-  InsufficientStockError,
 } from "../lib/product-stock";
 import {
   isCustomLineItem,
@@ -964,10 +963,9 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           },
         });
         if (!item.isCustom && item.productId != null) {
-          const movements = await decrementProductStockForBranch(
+          const movements = await decrementProductStockForOrder(
             item.productId,
             item.quantity,
-            branchId,
             tx,
             item.variantId,
           );
@@ -1026,20 +1024,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (
-      e instanceof InsufficientStockError ||
-      msg === "Insufficient stock" ||
-      msg === "Insufficient stock across variants" ||
-      msg.startsWith("Select a variant for product ")
-    ) {
-      res.status(400).json({
-        error:
-          e instanceof InsufficientStockError ||
-          msg === "Insufficient stock" ||
-          msg === "Insufficient stock across variants"
-            ? "Insufficient stock for one or more products at this branch"
-            : msg,
-      });
+    if (msg.startsWith("Select a variant for product ")) {
+      res.status(400).json({ error: msg });
       return;
     }
     res.status(500).json({ error: msg });
@@ -1266,10 +1252,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         if (!product) throw new Error(`Product ${productId} not found while updating stock`);
 
         if (delta > 0) {
-          const movements = await decrementProductStockForBranch(
+          const movements = await decrementProductStockForOrder(
             productId,
             delta,
-            stockBranchId!,
             tx,
             variantId,
           );
@@ -1587,14 +1572,6 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (
-      e instanceof InsufficientStockError ||
-      msg === "Insufficient stock" ||
-      msg === "Insufficient stock across variants"
-    ) {
-      res.status(400).json({ error: "Insufficient stock for one or more products at this branch" });
-      return;
-    }
     res.status(400).json({ error: msg || "Failed to update order" });
     return;
   }

@@ -233,6 +233,60 @@ export async function decrementProductStockForBranch(
   return movements;
 }
 
+/**
+ * Reduce stock when a sales order line is placed or increased.
+ * Never blocks on available quantity — balances may go negative.
+ * Inventory logs for the branch are written separately in orders routes.
+ */
+export async function decrementProductStockForOrder(
+  productId: number,
+  quantity: number,
+  db: Db = prisma,
+  variantId?: number | null,
+): Promise<StockMovement[]> {
+  if (quantity <= 0) return [];
+
+  const count = await db.productVariant.count({ where: { productId } });
+  if (count === 0) {
+    const product = await db.product.findUnique({ where: { id: productId } });
+    if (!product) throw new Error(`Product ${productId} not found`);
+    await db.product.update({
+      where: { id: productId },
+      data: { stockQty: product.stockQty - quantity },
+    });
+    return [{ productId, variantId: null, quantity }];
+  }
+
+  let targetVariantId = variantId ?? null;
+  if (targetVariantId == null) {
+    if (count === 1) {
+      const only = await db.productVariant.findFirst({
+        where: { productId },
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
+      targetVariantId = only?.id ?? null;
+    }
+    if (targetVariantId == null) {
+      throw new Error(`Select a variant for product ${productId}`);
+    }
+  }
+
+  const variant = await db.productVariant.findFirst({
+    where: { id: targetVariantId, productId },
+  });
+  if (!variant) {
+    throw new Error(`Variant ${targetVariantId} is not valid for product ${productId}`);
+  }
+
+  await db.productVariant.update({
+    where: { id: targetVariantId },
+    data: { stockQty: variant.stockQty - quantity },
+  });
+  await syncProductStockFromVariants(productId, db);
+  return [{ productId, variantId: targetVariantId, quantity }];
+}
+
 export async function incrementProductStock(
   productId: number,
   quantity: number,

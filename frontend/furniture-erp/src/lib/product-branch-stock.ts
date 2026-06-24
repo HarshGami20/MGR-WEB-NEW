@@ -165,6 +165,20 @@ export function catalogLineMaxQuantity(_stockQty: number | undefined): number | 
   return undefined;
 }
 
+/** Branch stock snapshot for order line display (not enforced as a cap). */
+export function catalogLineDisplayStock(stockQty: number | undefined): number | undefined {
+  if (stockQty === undefined || !Number.isFinite(stockQty)) return undefined;
+  return Math.floor(stockQty);
+}
+
+export function catalogLineStockHint(stockQty: number | undefined): string | null {
+  if (stockQty === undefined || !Number.isFinite(stockQty)) return null;
+  const q = Math.floor(stockQty);
+  if (q < 0) return `${q} in stock at this branch`;
+  if (q === 0) return "Out of stock at this branch";
+  return `Max ${q} available`;
+}
+
 export function clampCatalogLineQuantity(quantity: number, _maxQuantity?: number): number {
   return Math.max(1, quantity);
 }

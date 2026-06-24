@@ -940,7 +940,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                       isGstInvoice={isGstInvoice}
                       defaultGstPercent={defaultGstPercent}
                       branchId={writeBranchId}
-                      enforceStockCheck
                     />
                   </div>
                   <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-1" disabled={fields.length === 1}>

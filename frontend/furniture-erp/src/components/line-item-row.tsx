@@ -18,12 +18,11 @@ import { ValidatedInput } from "@/components/validated-input";
 import type { UseFormReturn } from "react-hook-form";
 import { defaultCatalogLineItem, defaultCustomLineItem } from "@/lib/custom-line-item";
 import {
+  catalogLineStockHint,
   resolveCatalogLineStock,
-  stockStatusFromQty,
   type BranchStock,
   type CatalogVariantRow,
 } from "@/lib/product-branch-stock";
-import { StockBadge } from "@/components/stock-badge";
 import { Package, PackagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogLineImagePreview } from "@/components/catalog-line-image-preview";
@@ -314,10 +313,9 @@ export function LineItemRow({
                 />
               </FormControl>
               {stockActive && stockQty != null ? (
-                <StockBadge
-                  status={stockStatusFromQty(stockQty, selectedProduct?.lowStockThreshold ?? 10)}
-                  qty={stockQty}
-                />
+                <p className="text-xs text-muted-foreground">
+                  {catalogLineStockHint(stockQty)}
+                </p>
               ) : null}
               <FormMessage />
             </FormItem>
