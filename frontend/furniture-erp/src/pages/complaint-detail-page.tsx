@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
+import { AddressOrLink } from "@/components/address-or-link";
 import {
   OrderImageGalleryDialog,
   type GallerySlide,
@@ -368,9 +369,9 @@ export default function ComplaintDetailPage() {
                       </div>
                     ) : null}
                     {order.customerAddress ? (
-                      <div className="min-w-0">
+                      <div className="min-w-0 sm:col-span-2">
                         <p className="text-xs text-muted-foreground">Address</p>
-                        <p className="text-foreground leading-snug">{order.customerAddress}</p>
+                        <AddressOrLink text={order.customerAddress} className="text-foreground" />
                       </div>
                     ) : null}
                     <div className="min-w-0">
@@ -404,7 +405,7 @@ export default function ComplaintDetailPage() {
                     {complaint.customerAddress ? (
                       <div className="min-w-0 sm:col-span-2">
                         <p className="text-xs text-muted-foreground">Address</p>
-                        <p className="text-foreground leading-snug">{complaint.customerAddress}</p>
+                        <AddressOrLink text={complaint.customerAddress} className="text-foreground" />
                       </div>
                     ) : null}
                     <div className="min-w-0 sm:col-span-2">

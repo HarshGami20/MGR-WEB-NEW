@@ -22,6 +22,9 @@ import {
 import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { canUpdateComplaintStatus } from "@/lib/complaint-status-access";
 import { AssigneesMultiSelect } from "@/components/assignees-multi-select";
+import { SearchableSelect } from "@/components/searchable-select";
+import { AddressOrLink } from "@/components/address-or-link";
+import { isExternalLinkText } from "@/lib/address-or-link";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,6 +125,7 @@ export default function ComplaintsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [singleDeleteId, setSingleDeleteId] = useState<number | null>(null);
+  const [complaintDialogEl, setComplaintDialogEl] = useState<HTMLDivElement | null>(null);
 
   const [formOrderId, setFormOrderId] = useState("");
   const [formPoId, setFormPoId] = useState("");
@@ -550,6 +554,52 @@ export default function ComplaintsPage() {
     [selectedOrder],
   );
 
+  const orderSelectOptions = useMemo(
+    () => [
+      { value: "none", label: "No linked order" },
+      ...(ordersData?.data ?? []).map((o) => ({
+        value: String(o.id),
+        label: `${o.orderNumber} — ${o.customerName}`,
+        keywords: [o.orderNumber, o.customerName, o.customerMobile ?? ""].filter(Boolean),
+      })),
+    ],
+    [ordersData],
+  );
+
+  const poSelectOptions = useMemo(
+    () => [
+      { value: "none", label: "No linked purchase order" },
+      ...(poData?.data ?? []).map((po) => ({
+        value: String(po.id),
+        label: `${po.poNumber} — ${po.status.replace(/_/g, " ")}`,
+        keywords: [po.poNumber, po.status, po.type].filter(Boolean),
+      })),
+    ],
+    [poData],
+  );
+
+  const poProductSelectOptions = useMemo(
+    () => [
+      { value: "none", label: "All / general issue" },
+      ...poProductOptions.map((opt) => ({
+        value: String(opt.productId),
+        label: opt.label,
+      })),
+    ],
+    [poProductOptions],
+  );
+
+  const orderProductSelectOptions = useMemo(
+    () => [
+      { value: "none", label: "All / general issue" },
+      ...orderProductOptions.map((opt) => ({
+        value: String(opt.productId),
+        label: opt.label,
+      })),
+    ],
+    [orderProductOptions],
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -657,8 +707,11 @@ export default function ComplaintsPage() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent
+          ref={setComplaintDialogEl}
+          className="max-w-lg max-h-[90vh] flex flex-col gap-4 overflow-visible"
+        >
+          <DialogHeader className="shrink-0">
             <DialogTitle>Register complaint</DialogTitle>
             {/* <DialogDescription>
               {isPoTab
@@ -666,30 +719,24 @@ export default function ComplaintsPage() {
                 : "Link a sales order, describe the issue, and attach photos if needed."}
             </DialogDescription> */}
           </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain -mx-1 px-1">
           <div className="space-y-4 py-2">
             {isPoTab ? (
               <>
                 <div className="space-y-2">
                   <Label>Linked purchase order (optional)</Label>
-                  <Select
+                  <SearchableSelect
                     value={formPoId || "none"}
                     onValueChange={(v) => {
                       setFormPoId(v === "none" ? "" : v);
                       setFormProductId("none");
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="No linked purchase order" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No linked purchase order</SelectItem>
-                      {(poData?.data ?? []).map((po) => (
-                        <SelectItem key={po.id} value={String(po.id)}>
-                          {po.poNumber} — {po.status.replace(/_/g, " ")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    options={poSelectOptions}
+                    placeholder="No linked purchase order"
+                    searchPlaceholder="Search by PO number or status…"
+                    emptyMessage="No purchase order found."
+                    portalContainer={complaintDialogEl}
+                  />
                 </div>
                 {selectedPo && (
                   <div className="rounded-md border bg-muted/40 p-3 text-sm">
@@ -700,26 +747,23 @@ export default function ComplaintsPage() {
                 )}
                 <div className="space-y-2">
                   <Label>Product (optional)</Label>
-                  <Select value={formProductId} onValueChange={setFormProductId} disabled={!formPoId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All products on PO" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">All / general issue</SelectItem>
-                      {poProductOptions.map((opt) => (
-                        <SelectItem key={opt.productId} value={String(opt.productId)}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={formProductId}
+                    onValueChange={setFormProductId}
+                    options={poProductSelectOptions}
+                    placeholder="All products on PO"
+                    searchPlaceholder="Search product…"
+                    emptyMessage="No product found."
+                    disabled={!formPoId}
+                    portalContainer={complaintDialogEl}
+                  />
                 </div>
               </>
             ) : (
               <>
                 <div className="space-y-2">
                   <Label>Linked order (optional)</Label>
-                  <Select
+                  <SearchableSelect
                     value={formOrderId || "none"}
                     onValueChange={(v) => {
                       setFormOrderId(v === "none" ? "" : v);
@@ -730,19 +774,12 @@ export default function ComplaintsPage() {
                         setFormCustomerAddress("");
                       }
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="No linked order" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No linked order</SelectItem>
-                      {(ordersData?.data ?? []).map((o) => (
-                        <SelectItem key={o.id} value={String(o.id)}>
-                          {o.orderNumber} — {o.customerName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    options={orderSelectOptions}
+                    placeholder="No linked order"
+                    searchPlaceholder="Search by order number or customer…"
+                    emptyMessage="No order found."
+                    portalContainer={complaintDialogEl}
+                  />
                 </div>
                 {selectedOrder ? (
                   <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
@@ -752,7 +789,10 @@ export default function ComplaintsPage() {
                       <p className="text-muted-foreground">{selectedOrder.customerMobile}</p>
                     ) : null}
                     {selectedOrder.customerAddress ? (
-                      <p className="text-muted-foreground line-clamp-3">{selectedOrder.customerAddress}</p>
+                      <AddressOrLink
+                        text={selectedOrder.customerAddress}
+                        className="text-muted-foreground line-clamp-3"
+                      />
                     ) : null}
                   </div>
                 ) : null}
@@ -778,32 +818,34 @@ export default function ComplaintsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="complaint-customer-address">Address</Label>
+                      <Label htmlFor="complaint-customer-address">Address / location link</Label>
                       <Textarea
                         id="complaint-customer-address"
-                        rows={2}
+                        rows={3}
                         value={formCustomerAddress}
                         onChange={(e) => setFormCustomerAddress(e.target.value)}
-                        placeholder="Customer address"
+                        placeholder="Street address or Google Maps link (https://maps.google.com/…)"
                       />
+                      {isExternalLinkText(formCustomerAddress) ? (
+                        <p className="text-xs text-muted-foreground">
+                          Saved as a location link — it will open in maps from the complaint detail.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
                 <div className="space-y-2">
                   <Label>Product (optional)</Label>
-                  <Select value={formProductId} onValueChange={setFormProductId} disabled={!formOrderId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All products on order" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">All / general issue</SelectItem>
-                      {orderProductOptions.map((opt) => (
-                        <SelectItem key={opt.productId} value={String(opt.productId)}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={formProductId}
+                    onValueChange={setFormProductId}
+                    options={orderProductSelectOptions}
+                    placeholder="All products on order"
+                    searchPlaceholder="Search product…"
+                    emptyMessage="No product found."
+                    disabled={!formOrderId}
+                    portalContainer={complaintDialogEl}
+                  />
                 </div>
               </>
             )}
@@ -917,7 +959,8 @@ export default function ComplaintsPage() {
               </Button>
             </div>
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
@@ -969,3 +1012,5 @@ export default function ComplaintsPage() {
     </div>
   );
 }
+
+
