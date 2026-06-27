@@ -9,6 +9,14 @@ export function isSuperAdminUser(
   return user?.role?.name === "Super Admin";
 }
 
+/** Admin or Super Admin — required for destructive bulk order delete. */
+export function isAdminOrSuperAdminUser(
+  user: { role?: { name?: string | null } | null } | null | undefined,
+): boolean {
+  if (isSuperAdminUser(user)) return true;
+  return user?.role?.name === "Admin";
+}
+
 /** Branch ids the signed-in user may work in (from `/auth/me`: `branchIds`, `branches`, or legacy `branchId`). */
 export function assignedUserBranchIds(
   user: {

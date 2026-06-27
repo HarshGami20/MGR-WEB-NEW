@@ -76,6 +76,22 @@ export function isDateRangeActive(value: DateRangeValue): boolean {
   return Boolean(value.from?.trim() || value.to?.trim());
 }
 
+export function formatYmdLabel(
+  ymd: string | undefined,
+  options?: { placeholder?: string; locale?: string },
+): string {
+  const placeholder = options?.placeholder ?? "Select date";
+  const value = ymd?.trim();
+  if (!value) return placeholder;
+  const d = ymdToDate(value);
+  if (!d) return value;
+  return d.toLocaleDateString(options?.locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function formatDateRangeLabel(
   value: DateRangeValue,
   options?: { placeholder?: string; locale?: string },

@@ -113,6 +113,11 @@ export function isSuperAdminRole(user: { role?: { name?: string | null } | null 
   return user.role?.name === "Super Admin";
 }
 
+export function isAdminOrSuperAdminRole(user: { role?: { name?: string | null } | null }): boolean {
+  const name = user.role?.name?.trim() ?? "";
+  return name === "Super Admin" || name === "Admin";
+}
+
 export function hasStdPermission(
   matrix: Record<string, NormalizedModulePerms>,
   user: unknown,

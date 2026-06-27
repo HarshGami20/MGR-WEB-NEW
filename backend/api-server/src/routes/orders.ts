@@ -3,7 +3,7 @@ import { Router, IRouter } from "express";
 import { z } from "zod";
 import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission, requirePermissionAny } from "../lib/permissions";
+import { requirePermission, requirePermissionAny, isAdminOrSuperAdminRole } from "../lib/permissions";
 import {
   pickBestDeliverySlot,
   isOrderLockedForEdit,
@@ -53,6 +53,7 @@ import {
 } from "../lib/custom-line-item";
 import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
 import { parseImageUrlsJson } from "../lib/image-urls";
+import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { DELIVERY_SLOTS_ENABLED } from "../lib/delivery-feature";
 import {
@@ -350,6 +351,82 @@ async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
   deleteUploadFilesByUrl(uploadUrls);
 
   return true;
+}
+
+const BulkDeleteOrdersQuery = z.object({
+  createdFrom: z.string().min(1, "Start date is required"),
+  createdTo: z.string().min(1, "End date is required"),
+  categoryId: z.string().optional(),
+  branchId: z.string().optional(),
+  assignmentScope: z.string().optional(),
+});
+
+const orderUploadSelect = {
+  id: true,
+  challanImages: true,
+  photoComments: true,
+  items: { select: { customImageUrl: true, customImageUrls: true } },
+  complaints: { select: { imageUrls: true } },
+} as const;
+
+async function buildBulkDeleteOrdersWhere(
+  params: z.infer<typeof BulkDeleteOrdersQuery>,
+  authUser: { id: number; isSales?: boolean; ordersListScope?: string | null },
+): Promise<{ ok: true; where: Prisma.OrderWhereInput } | { ok: false; error: string }> {
+  const createdAt = createdAtRangeFromQuery(params.createdFrom, params.createdTo);
+  if (!createdAt?.gte || !createdAt?.lte) {
+    return { ok: false, error: "Valid start and end dates are required (YYYY-MM-DD)" };
+  }
+  if (createdAt.gte > createdAt.lte) {
+    return { ok: false, error: "Start date must be on or before end date" };
+  }
+
+  const where: Prisma.OrderWhereInput = { createdAt };
+  if (params.branchId?.trim()) {
+    const branchNum = parseInt(params.branchId.trim(), 10);
+    if (!Number.isFinite(branchNum) || branchNum <= 0) {
+      return { ok: false, error: "Invalid branch id" };
+    }
+    where.branchId = branchNum;
+  }
+
+  const clauses: Prisma.OrderWhereInput[] = [];
+  const effectiveScope = resolveOrdersAssignmentScope(authUser, params.assignmentScope);
+  if (effectiveScope) {
+    clauses.push(assignmentScopeWhere(effectiveScope, authUser.id));
+  }
+  const categoryIds = await resolveCategoryFilterIds(params.categoryId);
+  if (categoryIds) {
+    clauses.push(orderMatchesCategoryFilter(categoryIds));
+  }
+  if (clauses.length === 1) {
+    Object.assign(where, clauses[0]);
+  } else if (clauses.length > 1) {
+    where.AND = clauses;
+  }
+
+  return { ok: true, where };
+}
+
+async function bulkDeleteOrdersMatching(where: Prisma.OrderWhereInput): Promise<{ deleted: number; failed: number }> {
+  const orders = await prisma.order.findMany({ where, select: orderUploadSelect });
+  let deleted = 0;
+  let failed = 0;
+  for (const row of orders) {
+    const uploadUrls = collectOrderUploadUrls(row);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.deleteMany({ where: { orderId: row.id } });
+        await tx.invoice.deleteMany({ where: { orderId: row.id } });
+        await tx.order.delete({ where: { id: row.id } });
+      });
+      deleteUploadFilesByUrl(uploadUrls);
+      deleted += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { deleted, failed };
 }
 
 type ResolvedOrderLine = {
@@ -1054,6 +1131,74 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   };
   res.status(201).json(enriched);
 });
+
+router.get(
+  "/orders/bulk-delete/preview",
+  requireAuth,
+  requirePermission("orders", "delete"),
+  async (req, res): Promise<void> => {
+    const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null; role?: { name?: string | null } | null } }).user;
+    if (!authUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!isAdminOrSuperAdminRole(authUser)) {
+      res.status(403).json({ error: "Only Admin or Super Admin can bulk delete orders" });
+      return;
+    }
+    const parsed = BulkDeleteOrdersQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten().formErrors[0] ?? "Invalid query" });
+      return;
+    }
+    const built = await buildBulkDeleteOrdersWhere(parsed.data, authUser);
+    if (!built.ok) {
+      res.status(400).json({ error: built.error });
+      return;
+    }
+    const count = await prisma.order.count({ where: built.where });
+    res.json({ count });
+  },
+);
+
+router.post(
+  "/orders/bulk-delete",
+  requireAuth,
+  requirePermission("orders", "delete"),
+  async (req, res): Promise<void> => {
+    const authUser = (req as { user?: { id: number; isSales?: boolean; ordersListScope?: string | null; role?: { name?: string | null } | null } }).user;
+    if (!authUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!isAdminOrSuperAdminRole(authUser)) {
+      res.status(403).json({ error: "Only Admin or Super Admin can bulk delete orders" });
+      return;
+    }
+    const parsed = BulkDeleteOrdersQuery.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten().formErrors[0] ?? "Invalid body" });
+      return;
+    }
+    const built = await buildBulkDeleteOrdersWhere(parsed.data, authUser);
+    if (!built.ok) {
+      res.status(400).json({ error: built.error });
+      return;
+    }
+    try {
+      const count = await prisma.order.count({ where: built.where });
+      if (count === 0) {
+        res.status(400).json({ error: "No orders match the selected filters" });
+        return;
+      }
+      const result = await bulkDeleteOrdersMatching(built.where);
+      res.json({ ...result, total: count });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Bulk delete failed";
+      res.status(500).json({ error: msg });
+    }
+  },
+);
 
 router.get("/orders/:id", requireAuth, requirePermission("orders", "read"), async (req, res): Promise<void> => {
   const params = GetOrderParams.safeParse(req.params);

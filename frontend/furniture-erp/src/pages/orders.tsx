@@ -9,11 +9,11 @@ import {
   getListOrdersQueryKey
 } from "@/api-client";
 import { useAuth } from "@/lib/auth";
-import { assignedUserBranchIds, useBranch } from "@/lib/branch-context";
+import { assignedUserBranchIds, useBranch, isAdminOrSuperAdminUser } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
-import { patchOrderPaymentStatus } from "@/lib/order-api";
+import { bulkDeleteOrders, patchOrderPaymentStatus, previewBulkDeleteOrders } from "@/lib/order-api";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,15 +34,21 @@ import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
+import { SingleDatePicker } from "@/components/single-date-picker";
 import { type DateRangeValue, dateRangeToCreatedParams } from "@/lib/list-date-filter";
 import { ListCategoryFilter } from "@/components/list-category-filter";
-import { categoryIdToParam } from "@/lib/list-category-filter";
+import { categoryIdToParam, categoryFilterDisplayLabel } from "@/lib/list-category-filter";
 import { getSalesOrderScopeConfig } from "@/lib/sales-order-scope";
 import { DELIVERY_SLOTS_ENABLED } from "@/lib/delivery-feature";
 import { usePermissions } from "@/lib/permissions";
 import { OrdersExportDialog } from "@/components/orders-export-dialog";
 import { formatInr } from "@/lib/format-currency";
+import { useListCategories } from "@/api-client";
+import type { CategoryRoot } from "@/components/category-picker-with-manage";
+import { Label } from "@/components/ui/label";
 import { formatDisplayDate } from "@/lib/format-datetime";
+
+type DeleteDialogMode = "single" | "selected";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
@@ -64,7 +70,13 @@ export default function Orders() {
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
+  const [deleteDialogMode, setDeleteDialogMode] = useState<DeleteDialogMode>("single");
   const [singleDeleteOrderId, setSingleDeleteOrderId] = useState<number | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleteDateRange, setBulkDeleteDateRange] = useState<DateRangeValue>({});
+  const [bulkDeleteCategoryId, setBulkDeleteCategoryId] = useState<number | undefined>();
+  const [bulkDeleteConfirmInput, setBulkDeleteConfirmInput] = useState("");
   const [, setLocation] = useLocation();
 
   const queryClient = useQueryClient();
@@ -74,6 +86,7 @@ export default function Orders() {
   const canAddOrders = can("orders", "add");
   const canEditOrders = can("orders", "edit");
   const canDeleteOrders = can("orders", "delete");
+  const canBulkDeleteOrders = canDeleteOrders && isAdminOrSuperAdminUser(user);
   const canEditDeliveries = can("deliveries", "edit");
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
@@ -195,9 +208,88 @@ export default function Orders() {
 
   const openSingleDeleteDialog = (id: number) => {
     setSingleDeleteOrderId(id);
+    setDeleteDialogMode("single");
     setDeleteInput("");
     setDeleteConfirmOpen(true);
   };
+
+  const openBulkDeleteByFilterDialog = () => {
+    setBulkDeleteDateRange({});
+    setBulkDeleteCategoryId(undefined);
+    setBulkDeleteConfirmInput("");
+    setBulkDeleteConfirmOpen(false);
+    setBulkDeleteDialogOpen(true);
+  };
+
+  const proceedToBulkDeleteConfirm = () => {
+    if (!bulkDeletePreviewParams) {
+      toast({ title: "Select start and end dates", variant: "destructive" });
+      return;
+    }
+    if (bulkDeletePreviewLoading) return;
+    if ((bulkDeletePreview?.count ?? 0) === 0) {
+      toast({ title: "No orders match these filters", variant: "destructive" });
+      return;
+    }
+    setBulkDeleteConfirmInput("");
+    setBulkDeleteDialogOpen(false);
+    setBulkDeleteConfirmOpen(true);
+  };
+
+  const bulkDeleteScope = orderScopeConfig.forcedScope
+    ? orderScopeConfig.forcedScope
+    : orderScopeConfig.showScopePicker && assignmentScope !== "all"
+      ? assignmentScope
+      : undefined;
+
+  const bulkDeletePreviewParams = useMemo(() => {
+    const from = bulkDeleteDateRange.from?.trim();
+    const to = bulkDeleteDateRange.to?.trim();
+    if (!from || !to) return null;
+    return {
+      createdFrom: from,
+      createdTo: to,
+      branchId: selectedBranchId ?? undefined,
+      assignmentScope: bulkDeleteScope,
+      ...categoryIdToParam(bulkDeleteCategoryId),
+    };
+  }, [
+    bulkDeleteDateRange.from,
+    bulkDeleteDateRange.to,
+    bulkDeleteCategoryId,
+    selectedBranchId,
+    bulkDeleteScope,
+  ]);
+
+  const { data: categoriesData } = useListCategories();
+  const categoryRoots = useMemo(
+    () => (Array.isArray(categoriesData) ? (categoriesData as CategoryRoot[]) : []),
+    [categoriesData],
+  );
+
+  const { data: bulkDeletePreview, isFetching: bulkDeletePreviewLoading } = useQuery({
+    queryKey: ["orders-bulk-delete-preview", bulkDeletePreviewParams],
+    queryFn: () => previewBulkDeleteOrders(bulkDeletePreviewParams!),
+    enabled: (bulkDeleteDialogOpen || bulkDeleteConfirmOpen) && bulkDeletePreviewParams != null,
+  });
+
+  const bulkDeleteMut = useMutation({
+    mutationFn: () => bulkDeleteOrders(bulkDeletePreviewParams!),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      setSelectedOrderIds([]);
+      setBulkDeleteDialogOpen(false);
+      setBulkDeleteConfirmOpen(false);
+      setBulkDeleteConfirmInput("");
+      toast({
+        title: `${result.deleted} order(s) deleted`,
+        description:
+          result.failed > 0 ? `${result.failed} order(s) could not be deleted.` : undefined,
+      });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Bulk delete failed", description: error.message, variant: "destructive" }),
+  });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -300,6 +392,7 @@ export default function Orders() {
   const openBulkDeleteDialog = () => {
     if (selectedOrderIds.length === 0) return;
     setSingleDeleteOrderId(null);
+    setDeleteDialogMode("selected");
     setDeleteInput("");
     setDeleteConfirmOpen(true);
   };
@@ -310,7 +403,12 @@ export default function Orders() {
       return;
     }
 
-    const idsToDelete = singleDeleteOrderId != null ? [singleDeleteOrderId] : selectedOrderIds;
+    const idsToDelete =
+      deleteDialogMode === "single" && singleDeleteOrderId != null
+        ? [singleDeleteOrderId]
+        : deleteDialogMode === "selected"
+          ? selectedOrderIds
+          : [];
     if (idsToDelete.length === 0) return;
 
     const results = await Promise.allSettled(idsToDelete.map((id) => deleteOrder.mutateAsync({ id })));
@@ -318,7 +416,10 @@ export default function Orders() {
     const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     if (ok > 0) {
       setSelectedOrderIds([]);
-      toast({ title: singleDeleteOrderId != null ? "Order deleted successfully" : `${ok} order(s) deleted` });
+      toast({
+        title:
+          deleteDialogMode === "single" ? "Order deleted successfully" : `${ok} order(s) deleted`,
+      });
     }
     if (failed.length > 0) {
       const firstErr = failed[0]?.reason as { data?: { error?: string }; message?: string } | undefined;
@@ -334,6 +435,23 @@ export default function Orders() {
     setDeleteConfirmOpen(false);
     setDeleteInput("");
     setSingleDeleteOrderId(null);
+    setDeleteDialogMode("single");
+  };
+
+  const runBulkDeleteByFilter = () => {
+    if (bulkDeleteConfirmInput.trim() !== "DELETE") {
+      toast({ title: "Deletion cancelled", description: 'Type exactly "DELETE" to proceed.', variant: "destructive" });
+      return;
+    }
+    if (!bulkDeletePreviewParams) {
+      toast({ title: "Select start and end dates", variant: "destructive" });
+      return;
+    }
+    if ((bulkDeletePreview?.count ?? 0) === 0) {
+      toast({ title: "No orders match these filters", variant: "destructive" });
+      return;
+    }
+    bulkDeleteMut.mutate();
   };
 
   const columns = useMemo<ColumnDef<(typeof orders)[number]>[]>(
@@ -637,12 +755,20 @@ export default function Orders() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
-          <p className="text-muted-foreground">Manage customer sales orders</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
+            <p className="text-muted-foreground">Manage customer sales orders</p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        {canBulkDeleteOrders ? (
+            <Button variant="destructive" onClick={openBulkDeleteByFilterDialog}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Bulk delete
+            </Button>
+          ) : null}
           {can("orders", "view") ? (
             <OrdersExportDialog categoryId={categoryId} />
           ) : null}
@@ -840,6 +966,7 @@ export default function Orders() {
           if (!open) {
             setDeleteInput("");
             setSingleDeleteOrderId(null);
+            setDeleteDialogMode("single");
           }
         }}
       >
@@ -847,7 +974,7 @@ export default function Orders() {
           <DialogHeader>
             <DialogTitle>Confirm deletion</DialogTitle>
             <DialogDescription>
-              {singleDeleteOrderId != null
+              {deleteDialogMode === "single"
                 ? `To delete this order, type "DELETE" below.`
                 : `To delete ${selectedCount} selected order(s), type "DELETE" below.`}
             </DialogDescription>
@@ -865,12 +992,151 @@ export default function Orders() {
                 setDeleteConfirmOpen(false);
                 setDeleteInput("");
                 setSingleDeleteOrderId(null);
+                setDeleteDialogMode("single");
               }}
             >
               Cancel
             </Button>
             <Button variant="destructive" onClick={runConfirmedDelete}>
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setBulkDeleteDialogOpen(open);
+          if (!open) {
+            setBulkDeleteConfirmInput("");
+            setBulkDeleteDateRange({});
+            setBulkDeleteCategoryId(undefined);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bulk delete orders</DialogTitle>
+            <DialogDescription>
+              Delete all orders created between the start and end dates. Optionally limit to one category.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <SingleDatePicker
+                label="Start date"
+                required
+                value={bulkDeleteDateRange.from}
+                onChange={(from) => setBulkDeleteDateRange((prev) => ({ ...prev, from }))}
+                max={bulkDeleteDateRange.to}
+                triggerClassName="w-full"
+              />
+              <SingleDatePicker
+                label="End date"
+                required
+                value={bulkDeleteDateRange.to}
+                onChange={(to) => setBulkDeleteDateRange((prev) => ({ ...prev, to }))}
+                min={bulkDeleteDateRange.from}
+                triggerClassName="w-full"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Orders with created date from start through end (inclusive) will be deleted.
+            </p>
+            <div className="space-y-2">
+              <Label>Category (optional) : </Label>
+              <ListCategoryFilter
+                value={bulkDeleteCategoryId}
+                onChange={setBulkDeleteCategoryId}
+                triggerClassName="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave as all categories to delete every order in the date range.
+              </p>
+            </div>
+            {/* {selectedBranchId != null ? (
+              <p className="text-sm text-muted-foreground rounded-md border bg-muted/30 px-3 py-2">
+                Only orders for the currently selected branch will be deleted.
+              </p>
+            ) : null} */}
+            {bulkDeletePreviewParams ? (
+              <p className="text-sm font-medium">
+                {bulkDeletePreviewLoading
+                  ? "Counting matching orders…"
+                  : `${bulkDeletePreview?.count ?? 0} order(s) will be deleted`}
+                {bulkDeleteCategoryId != null
+                  ? ` · ${categoryFilterDisplayLabel(bulkDeleteCategoryId, categoryRoots)}`
+                  : ""}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Select start and end dates to preview the count.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkDeleteDialogOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={
+                !bulkDeletePreviewParams ||
+                (bulkDeletePreview?.count ?? 0) === 0 ||
+                bulkDeletePreviewLoading
+              }
+              onClick={proceedToBulkDeleteConfirm}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={bulkDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setBulkDeleteConfirmOpen(open);
+          if (!open) {
+            setBulkDeleteConfirmInput("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm bulk deletion</DialogTitle>
+            <DialogDescription>
+              You are about to permanently delete {bulkDeletePreview?.count ?? 0} order(s). Type
+              DELETE below to confirm. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={bulkDeleteConfirmInput}
+            onChange={(e) => setBulkDeleteConfirmInput(e.target.value)}
+            placeholder='Type "DELETE"'
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkDeleteConfirmOpen(false);
+                setBulkDeleteConfirmInput("");
+                setBulkDeleteDialogOpen(true);
+              }}
+            >
+              Back
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDeleteMut.isPending}
+              onClick={runBulkDeleteByFilter}
+            >
+              {bulkDeleteMut.isPending ? "Deleting…" : "Confirm delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
