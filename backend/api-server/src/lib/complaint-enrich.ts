@@ -177,7 +177,21 @@ export async function enrichComplaint(complaint: {
   const customerAddress = order?.customerAddress ?? complaint.customerAddress ?? null;
 
   return {
-    ...complaint,
+    id: complaint.id,
+    complaintNumber: complaint.complaintNumber,
+    kind: complaint.kind,
+    orderId: complaint.orderId,
+    purchaseOrderId: complaint.purchaseOrderId,
+    productId: complaint.productId,
+    branchId: complaint.branchId,
+    createdById: complaint.createdById,
+    subject: complaint.subject,
+    area: complaint.area ?? "",
+    description: complaint.description,
+    status: complaint.status,
+    resolvedAt: complaint.resolvedAt,
+    createdAt: complaint.createdAt,
+    updatedAt: complaint.updatedAt,
     customerName,
     customerMobile,
     customerAddress,
