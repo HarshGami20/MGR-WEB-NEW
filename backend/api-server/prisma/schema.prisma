@@ -412,6 +412,8 @@ model Complaint {
   branchId        Int?            @map("branch_id")
   createdById     Int?            @map("created_by_id")
   subject         String?
+  /** Locality / area name (e.g. Motavaracha, Saroli, Vesu) */
+  area            String          @default("")
   description     String
   status          ComplaintStatus @default(open)
   /** Customer details when sales complaint is not linked to an order */

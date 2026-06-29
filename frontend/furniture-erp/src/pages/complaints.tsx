@@ -134,6 +134,7 @@ export default function ComplaintsPage() {
   const [formCustomerAddress, setFormCustomerAddress] = useState("");
   const [formProductId, setFormProductId] = useState("none");
   const [formSubject, setFormSubject] = useState("");
+  const [formArea, setFormArea] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formImages, setFormImages] = useState<string[]>([]);
   const [formAssigneeIds, setFormAssigneeIds] = useState<number[]>([]);
@@ -239,6 +240,7 @@ export default function ComplaintsPage() {
           ...(Number.isFinite(poIdNum) && poIdNum > 0 ? { purchaseOrderId: poIdNum } : {}),
           productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
           subject: formSubject.trim() || null,
+          area: formArea.trim(),
           description: formDescription.trim(),
           imageUrls: formImages.length > 0 ? formImages : undefined,
           assigneeUserIds: formAssigneeIds.length > 0 ? formAssigneeIds : undefined,
@@ -258,6 +260,7 @@ export default function ComplaintsPage() {
           : {}),
         productId: formProductId !== "none" ? parseInt(formProductId, 10) : null,
         subject: formSubject.trim() || null,
+        area: formArea.trim(),
         description: formDescription.trim(),
         imageUrls: formImages.length > 0 ? formImages : undefined,
         assigneeUserIds: formAssigneeIds.length > 0 ? formAssigneeIds : undefined,
@@ -281,6 +284,7 @@ export default function ComplaintsPage() {
     setFormCustomerAddress("");
     setFormProductId("none");
     setFormSubject("");
+    setFormArea("");
     setFormDescription("");
     setFormImages([]);
     setFormAssigneeIds([]);
@@ -334,7 +338,9 @@ export default function ComplaintsPage() {
 
   const isPoTab = partnerUser || activeTab === "purchase_order";
   const createDisabled =
-    !formDescription.trim() || (!isPoTab && !formOrderId && !formCustomerName.trim());
+    !formArea.trim() ||
+    !formDescription.trim() ||
+    (!isPoTab && !formOrderId && !formCustomerName.trim());
 
   const salesColumns = useMemo<ColumnDef<Complaint>[]>(
     () => [
@@ -374,6 +380,16 @@ export default function ComplaintsPage() {
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground line-clamp-2" title={row.original.product?.name ?? "All items"}>
             {row.original.product?.name ?? "All items"}
+          </span>
+        ),
+      },
+      {
+        id: "area",
+        header: "Area",
+        meta: { cellClassName: "max-w-[140px]" },
+        cell: ({ row }) => (
+          <span className="text-sm line-clamp-2" title={row.original.area || undefined}>
+            {row.original.area || "—"}
           </span>
         ),
       },
@@ -849,6 +865,15 @@ export default function ComplaintsPage() {
                 </div>
               </>
             )}
+
+            <div className="space-y-2">
+              <Label>Area *</Label>
+              <Input
+                value={formArea}
+                onChange={(e) => setFormArea(e.target.value)}
+                placeholder="e.g. Motavaracha, Saroli, Vesu"
+              />
+            </div>
 
             <div className="space-y-2">
               <Label>Subject</Label>

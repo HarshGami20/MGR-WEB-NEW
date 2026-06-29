@@ -298,6 +298,12 @@ export default function ComplaintDetailPage() {
 
             <DetailSection title="Issue details">
               <div className="space-y-4 text-sm">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Area</p>
+                  <p className="font-medium text-foreground whitespace-pre-wrap leading-relaxed mt-0.5">
+                    {complaint.area || "—"}
+                  </p>
+                </div>
                 {complaint.subject ? (
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Subject</p>

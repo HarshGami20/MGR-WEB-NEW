@@ -78,6 +78,7 @@ export type Complaint = {
   branchId: number | null;
   createdById: number | null;
   subject: string | null;
+  area: string;
   description: string;
   status: ComplaintStatus;
   imageUrls: string[];
@@ -160,6 +161,7 @@ export async function createComplaint(body: {
   customerMobile?: string | null;
   customerAddress?: string | null;
   subject?: string | null;
+  area: string;
   description: string;
   imageUrls?: string[];
   assigneeUserIds?: number[];
@@ -176,6 +178,7 @@ export async function updateComplaint(
   body: {
     productId?: number | null;
     subject?: string | null;
+    area?: string;
     description?: string;
     imageUrls?: string[];
     assigneeUserIds?: number[];

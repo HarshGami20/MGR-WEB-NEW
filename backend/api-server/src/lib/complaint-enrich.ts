@@ -78,6 +78,7 @@ export async function enrichComplaint(complaint: {
   customerMobile: string | null;
   customerAddress: string | null;
   subject: string | null;
+  area: string;
   description: string;
   status: ComplaintStatus;
   imageUrls: string | null;

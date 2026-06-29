@@ -60,6 +60,7 @@ const CreateComplaintBody = z
     customerMobile: z.string().max(20).optional().nullable(),
     customerAddress: z.string().max(500).optional().nullable(),
     subject: z.string().max(200).optional().nullable(),
+    area: z.string().min(1, "Area is required").max(200),
     description: z.string().min(1, "Issue description is required"),
     imageUrls: z.array(z.string()).optional(),
     assigneeUserIds: z.array(z.coerce.number().int().positive()).optional(),
@@ -107,6 +108,7 @@ const CreateComplaintBody = z
 const UpdateComplaintBody = z.object({
   productId: z.union([z.coerce.number().int().positive(), z.null()]).optional(),
   subject: z.string().max(200).optional().nullable(),
+  area: z.string().min(1, "Area is required").max(200).optional(),
   description: z.string().min(1).optional(),
   imageUrls: z.array(z.string()).optional(),
   assigneeUserIds: z.array(z.coerce.number().int().positive()).optional(),
@@ -252,6 +254,7 @@ router.get("/complaints", requireAuth, requirePermission("complaints", "read"), 
       OR: [
         { complaintNumber: { contains: q, mode: "insensitive" } },
         { subject: { contains: q, mode: "insensitive" } },
+        { area: { contains: q, mode: "insensitive" } },
         { description: { contains: q, mode: "insensitive" } },
         { order: { orderNumber: { contains: q, mode: "insensitive" } } },
         { order: { customerName: { contains: q, mode: "insensitive" } } },
@@ -401,6 +404,7 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
           customerMobile,
           customerAddress,
           subject: parsed.data.subject?.trim() || null,
+          area: parsed.data.area.trim(),
           description: parsed.data.description.trim(),
           imageUrls,
         },
@@ -484,6 +488,7 @@ router.post("/complaints", requireAuth, requirePermission("complaints", "create"
         branchId,
         createdById: authUser.id,
         subject: parsed.data.subject?.trim() || null,
+        area: parsed.data.area.trim(),
         description: parsed.data.description.trim(),
         imageUrls,
       },
@@ -550,6 +555,7 @@ router.put("/complaints/:id", requireAuth, requirePermission("complaints", "upda
       parsed.data.productId == null ? { disconnect: true } : { connect: { id: parsed.data.productId } };
   }
   if (parsed.data.subject !== undefined) data.subject = parsed.data.subject?.trim() || null;
+  if (parsed.data.area !== undefined) data.area = parsed.data.area.trim();
   if (parsed.data.description !== undefined) data.description = parsed.data.description.trim();
   if (parsed.data.imageUrls !== undefined) {
     data.imageUrls = parsed.data.imageUrls.length > 0 ? JSON.stringify(parsed.data.imageUrls) : null;
