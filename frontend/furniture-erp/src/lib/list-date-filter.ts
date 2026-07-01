@@ -1,4 +1,4 @@
-import { endOfMonth, startOfMonth } from "date-fns";
+import { endOfMonth, startOfMonth, subDays } from "date-fns";
 import {
   type DateRangeValue,
   dateToYmd,
@@ -47,6 +47,16 @@ export function dateRangeToCreatedParams(value: DateRangeValue): {
     ...(from ? { createdFrom: from } : {}),
     ...(to ? { createdTo: to } : {}),
   };
+}
+
+/** Default range for booked deliveries: last 7 days (inclusive). */
+export function getLast7DaysDateRange(): DateRangeValue {
+  const preset = getDefaultDateRangePresets().find((p) => p.id === "last7");
+  return preset?.getValue() ?? (() => {
+    const today = localTodayYmd();
+    const d = ymdToDate(today)!;
+    return { from: dateToYmd(subDays(d, 6)), to: today };
+  })();
 }
 
 /** Default range for revenue reports: current calendar month. */

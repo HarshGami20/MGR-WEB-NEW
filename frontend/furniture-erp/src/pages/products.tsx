@@ -45,7 +45,7 @@ function ProductNameCell({ product }: { product: ProductRow }) {
         urls={previewUrls}
         caption={String(product.name ?? "")}
         size="sm"
-        className="h-11 w-11"
+        className="h-11 w-11 "
       />
       <div className="min-w-0">
         <Link href={`/products/${product.id}`}>

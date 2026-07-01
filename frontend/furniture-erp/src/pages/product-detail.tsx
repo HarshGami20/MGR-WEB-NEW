@@ -196,7 +196,7 @@ function ProductDetailGallery({
             aria-label="View product photo full screen"
           >
             {current ? (
-              <img src={current} alt="" className="h-full w-full object-cover p-0" loading="lazy" />
+              <img src={current} alt="" className="h-full w-full object-contain p-0" loading="lazy" />
             ) : null}
           </button>
           {resolved.length > 1 ? (
@@ -231,7 +231,7 @@ function ProductDetailGallery({
                   i === active ? "border-primary/70 ring-1 ring-primary/30" : "border-border/60 opacity-85 hover:opacity-100",
                 )}
               >
-                <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img src={src} alt="" className="h-full w-full object-contain" loading="lazy" />
               </button>
             ))}
           </div>

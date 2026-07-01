@@ -98,7 +98,7 @@ export function CatalogLineImageThumb({
         )}
         aria-label={count > 1 ? `View ${count} product photos` : "View product photo"}
       >
-        <img src={thumbSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
+        <img src={thumbSrc} alt="" className="h-full w-full object-contain" loading="lazy" />
         {count > 1 ? (
           <span className="absolute bottom-0.5 right-0.5 rounded bg-black/65 px-1 py-px text-[9px] font-semibold text-white">
             {count}

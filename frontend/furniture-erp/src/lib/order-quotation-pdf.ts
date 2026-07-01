@@ -311,7 +311,7 @@ async function buildSitePhotoGrid(photos: OrderQuotationPhoto[]): Promise<Conten
 }
 
 async function buildCompanyHeader(settings?: QuotationCompanySettings): Promise<Content[]> {
-  const lines: Content[] = [{ text: "QUOTATION", style: "subHeader" }];
+  const lines: Content[] = [];
   const contact: string[] = [];
   if (settings?.address?.trim()) contact.push(settings.address.trim());
   if (settings?.phone?.trim()) contact.push(`Ph: ${settings.phone.trim()}`);

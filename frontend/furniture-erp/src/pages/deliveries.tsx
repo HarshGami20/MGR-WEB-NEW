@@ -7,7 +7,7 @@ import { DeliveryProgressKpi } from "@/components/delivery-progress-kpi";
 import { DeliveryScheduleList } from "@/components/delivery-schedule-list";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
 import { ListCategoryFilter } from "@/components/list-category-filter";
-import { type DateRangeValue } from "@/lib/list-date-filter";
+import { type DateRangeValue, getLast7DaysDateRange } from "@/lib/list-date-filter";
 import { isDateRangeActive } from "@/lib/date-range";
 import { categoryIdToParam } from "@/lib/list-category-filter";
 import {
@@ -223,7 +223,7 @@ export default function DeliveriesPage() {
   const [filterPincode, setFilterPincode] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
   const [location] = useLocation();
-  const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>({});
+  const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>(() => getLast7DaysDateRange());
   const [categoryId, setCategoryId] = useState<number | undefined>();
 
   useEffect(() => {
