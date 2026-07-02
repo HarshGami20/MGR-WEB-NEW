@@ -13,6 +13,7 @@ import {
 import { formatUploadErrorMessage, validateImageFile } from "@/lib/upload-error-message";
 import { canUpdateComplaintStatus } from "@/lib/complaint-status-access";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
+import { resolveCustomProductName } from "@/lib/custom-line-item";
 import { useBranch, assignedUserBranchIds, isSuperAdminUser } from "@/lib/branch-context";
 import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
@@ -600,7 +601,7 @@ export default function ComplaintDetailPage() {
                         <TableRow key={item.id}>
                           <TableCell>
                             {"isCustom" in item && item.isCustom
-                              ? item.customName ?? "Custom item"
+                              ? resolveCustomProductName(item.customName)
                               : item.product?.name ?? `Product #${item.productId}`}
                           </TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>

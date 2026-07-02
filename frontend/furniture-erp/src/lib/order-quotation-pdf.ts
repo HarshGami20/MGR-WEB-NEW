@@ -12,6 +12,7 @@ export type OrderQuotationLineItem = {
   totalPrice: number;
   gstPercent?: number;
   imageUrls: string[];
+  photoComments?: OrderQuotationPhoto[];
 };
 
 export type OrderQuotationPhoto = {
@@ -511,44 +512,78 @@ async function buildChallanImagesSection(urls: string[]): Promise<Content[]> {
 
 async function buildProductImagesSection(order: OrderQuotationInput): Promise<Content[]> {
   const labeledUrls: { label: string; url: string }[] = [];
+  const commentedPhotos: OrderQuotationPhoto[] = [];
+
   for (const item of order.items) {
+    if (item.photoComments?.length) {
+      for (const row of item.photoComments) {
+        if (row.imageUrl?.trim()) {
+          commentedPhotos.push({
+            imageUrl: row.imageUrl.trim(),
+            comment: row.comment?.trim() || item.description?.trim() || "",
+          });
+        }
+      }
+      continue;
+    }
+    const comment = item.description?.trim();
     for (const url of item.imageUrls) {
-      if (url.trim()) labeledUrls.push({ label: item.label, url: url.trim() });
+      if (!url.trim()) continue;
+      if (comment) {
+        commentedPhotos.push({ imageUrl: url.trim(), comment });
+      } else {
+        labeledUrls.push({ label: item.label, url: url.trim() });
+      }
     }
   }
-  if (labeledUrls.length === 0) return [];
 
-  const blocks: Content[] = [
-    { text: "Product images", style: "sectionTitle", pageBreak: "before" as const },
-  ];
-  const pages = chunk(labeledUrls, IMAGES_PER_PAGE);
+  const blocks: Content[] = [];
+  if (labeledUrls.length > 0) {
+    blocks.push({ text: "Product images", style: "sectionTitle", pageBreak: "before" as const });
+    const pages = chunk(labeledUrls, IMAGES_PER_PAGE);
 
-  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
-    const pageItems = pages[pageIndex];
-    if (pageIndex > 0) {
-      blocks.push({ text: "", pageBreak: "before" as const });
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      const pageItems = pages[pageIndex];
+      if (pageIndex > 0) {
+        blocks.push({ text: "", pageBreak: "before" as const });
+      }
+
+      const labels = [...new Set(pageItems.map((item) => item.label))];
+      if (labels.length === 1) {
+        blocks.push({ text: labels[0], bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] });
+      } else if (labels.length > 1) {
+        blocks.push({
+          text: labels.join(" · "),
+          bold: true,
+          fontSize: 8.5,
+          margin: [0, 0, 0, 2],
+        });
+      }
+
+      blocks.push(
+        await buildCoverImageGrid(
+          pageItems.map((item) => item.url),
+          IMAGE_GRID_COLS,
+          IMAGE_CELL_W,
+          PRODUCT_IMAGE_CELL_H,
+        ),
+      );
     }
+  }
 
-    const labels = [...new Set(pageItems.map((item) => item.label))];
-    if (labels.length === 1) {
-      blocks.push({ text: labels[0], bold: true, fontSize: 8.5, margin: [0, 0, 0, 2] });
-    } else if (labels.length > 1) {
-      blocks.push({
-        text: labels.join(" · "),
-        bold: true,
-        fontSize: 8.5,
-        margin: [0, 0, 0, 2],
-      });
+  if (commentedPhotos.length > 0) {
+    blocks.push({
+      text: "Custom item images & comments",
+      style: "sectionTitle",
+      pageBreak: "before" as const,
+    });
+    const pages = chunk(commentedPhotos, IMAGES_PER_PAGE);
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      if (pageIndex > 0) {
+        blocks.push({ text: "", pageBreak: "before" as const });
+      }
+      blocks.push(await buildSitePhotoGrid(pages[pageIndex]));
     }
-
-    blocks.push(
-      await buildCoverImageGrid(
-        pageItems.map((item) => item.url),
-        IMAGE_GRID_COLS,
-        IMAGE_CELL_W,
-        PRODUCT_IMAGE_CELL_H,
-      ),
-    );
   }
 
   return blocks;

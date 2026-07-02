@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseImageUrlsList } from "@/lib/image-urls";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { FIELD_LIMITS, sanitizeAttributeText } from "@/lib/form-validation";
+import { resolveCustomProductName } from "@/lib/custom-line-item";
 
 const ATTRIBUTE_TEXT_REGEX = /^[a-zA-Z0-9\s-]*$/;
 
@@ -24,6 +25,14 @@ export const lineItemFormSchema = z
     customColour: attributeTextField("Colour"),
     customFabric: attributeTextField("Fabric"),
     customImageUrls: z.array(z.string()).default([]),
+    customImageComments: z
+      .array(
+        z.object({
+          imageUrl: z.string().default(""),
+          comment: z.string().optional().default(""),
+        }),
+      )
+      .default([]),
     description: z.string().optional().default(""),
     quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
     unitPrice: z.coerce.number().min(0, "Price must be ≥ 0").default(0),
@@ -31,13 +40,6 @@ export const lineItemFormSchema = z
   })
   .superRefine((data, ctx) => {
     if (data.isCustom) {
-      if (!data.customName?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Product name is required",
-          path: ["customName"],
-        });
-      }
       return;
     }
     const pid = data.productId != null ? Number(data.productId) : 0;
@@ -54,15 +56,25 @@ export type LineItemFormValues = z.infer<typeof lineItemFormSchema>;
 
 export function lineItemToApiPayload(item: LineItemFormValues) {
   if (item.isCustom) {
+    const photoRows =
+      item.customImageComments?.filter((row) => row.imageUrl?.trim()) ??
+      item.customImageUrls.map((url) => ({ imageUrl: url, comment: "" }));
+    const urls = photoRows.map((row) => row.imageUrl.trim()).filter(Boolean);
     return {
       isCustom: true,
       productId: null,
       variantId: null,
-      customName: item.customName.trim(),
+      customName: resolveCustomProductName(item.customName),
       customSize: item.customSize?.trim() || "",
       customColour: item.customColour?.trim() || "",
       customFabric: item.customFabric?.trim() || "",
-      customImageUrls: item.customImageUrls?.length ? item.customImageUrls : undefined,
+      customImageUrls: urls.length ? urls : undefined,
+      customImageComments: urls.length
+        ? photoRows.map((row) => ({
+            imageUrl: row.imageUrl.trim(),
+            comment: row.comment?.trim() || undefined,
+          }))
+        : undefined,
       description: item.description?.trim() || undefined,
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
@@ -87,6 +99,7 @@ export function apiItemToFormValues(
     customName?: string | null;
     customImageUrl?: string | null;
     customImageUrls?: string[] | null;
+    customImageComments?: Array<{ imageUrl?: string; comment?: string }> | null;
     customAttributes?: string | null;
     description?: string | null;
     quantity?: number;
@@ -132,6 +145,18 @@ export function apiItemToFormValues(
       customColour: colour,
       customFabric: fabric,
       customImageUrls: parseImageUrlsList(item.customImageUrls, item.customImageUrl),
+      customImageComments: (() => {
+        const urls = parseImageUrlsList(item.customImageUrls, item.customImageUrl);
+        const byUrl = new Map(
+          (Array.isArray(item.customImageComments) ? item.customImageComments : [])
+            .filter((row) => row?.imageUrl?.trim())
+            .map((row) => [String(row.imageUrl).trim(), row.comment?.trim() ?? ""]),
+        );
+        return urls.map((imageUrl) => ({
+          imageUrl,
+          comment: byUrl.get(imageUrl) ?? "",
+        }));
+      })(),
       description: item.description ?? "",
       quantity: item.quantity ?? 1,
       unitPrice: displayUnit,
@@ -147,6 +172,7 @@ export function apiItemToFormValues(
     customColour: "",
     customFabric: "",
     customImageUrls: [],
+    customImageComments: [],
     description: item.description ?? "",
     quantity: item.quantity ?? 1,
     unitPrice: displayUnit,

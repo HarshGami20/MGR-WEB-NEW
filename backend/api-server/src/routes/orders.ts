@@ -49,6 +49,8 @@ import {
   buildCustomAttributesJson,
   resolveCustomLineImages,
   normalizeLineDescription,
+  parseCustomImageCommentsJson,
+  resolveCustomProductName,
   type IncomingLineItem,
 } from "../lib/custom-line-item";
 import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
@@ -436,6 +438,7 @@ type ResolvedOrderLine = {
   customName: string | null;
   customImageUrl: string | null;
   customImageUrls: string | null;
+  customImageComments: string | null;
   customAttributes: string | null;
   description: string | null;
   quantity: number;
@@ -457,8 +460,7 @@ async function resolveOrderLineItems(
     const qty = Number(item.quantity);
     const enteredUnitPrice = Number(item.unitPrice);
     if (isCustomLineItem(item)) {
-      const name = item.customName?.trim();
-      if (!name) throw new Error("Custom line item name is required");
+      const name = resolveCustomProductName(item.customName);
       const gstPercent = isGst ? defaultGst : 0;
       const breakdown = isGst
         ? breakdownGstInclusiveLine(enteredUnitPrice, qty, gstPercent)
@@ -471,6 +473,7 @@ async function resolveOrderLineItems(
         customName: name,
         customImageUrl: imgs.customImageUrl,
         customImageUrls: imgs.customImageUrls,
+        customImageComments: imgs.customImageComments,
         customAttributes: buildCustomAttributesJson(item),
         description: normalizeLineDescription(item.description),
         quantity: qty,
@@ -515,6 +518,7 @@ async function resolveOrderLineItems(
       customName: null,
       customImageUrl: null,
       customImageUrls: null,
+      customImageComments: null,
       customAttributes: null,
       description: normalizeLineDescription(item.description),
       quantity: qty,
@@ -542,6 +546,7 @@ async function enrichOrder(order: any) {
       customName: item.customName,
       customImageUrl: customImageUrls[0] ?? null,
       customImageUrls,
+      customImageComments: parseCustomImageCommentsJson(item.customImageComments),
       customAttributes: item.customAttributes,
       unitPrice: toNumber(item.unitPrice),
       gstPercent: toNumber(item.gstPercent),
@@ -745,6 +750,7 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
       OR: [
         { customerName: { contains: search, mode: "insensitive" } },
         { orderNumber: { contains: search, mode: "insensitive" } },
+        { customerMobile: { contains: search, mode: "insensitive" } },
       ],
     });
   }
@@ -1031,6 +1037,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
             customName: item.customName,
             customImageUrl: item.customImageUrl,
             customImageUrls: item.customImageUrls,
+            customImageComments: item.customImageComments,
             customAttributes: item.customAttributes,
             description: item.description,
             quantity: item.quantity,
@@ -1308,7 +1315,9 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         customName: item.customName,
         customImageUrl: item.customImageUrl,
         customImageUrls: parseImageUrlsJson(item.customImageUrls, item.customImageUrl),
+        customImageComments: parseCustomImageCommentsJson(item.customImageComments),
         customAttributes: item.customAttributes,
+        description: item.description,
         quantity: item.quantity,
         unitPrice: toNumber(item.unitPrice),
       }));
@@ -1445,6 +1454,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           customName: item.customName,
           customImageUrl: item.customImageUrl,
           customImageUrls: item.customImageUrls,
+          customImageComments: item.customImageComments,
           customAttributes: item.customAttributes,
           description: item.description,
           quantity: item.quantity,

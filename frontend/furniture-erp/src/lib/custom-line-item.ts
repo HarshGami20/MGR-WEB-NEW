@@ -1,5 +1,12 @@
 /** Custom line item fields stored only on order/PO — not in product catalog. */
 
+export const DEFAULT_CUSTOM_PRODUCT_NAME = "Custom product";
+
+export function resolveCustomProductName(name?: string | null): string {
+  const trimmed = name?.trim();
+  return trimmed || DEFAULT_CUSTOM_PRODUCT_NAME;
+}
+
 export type CustomLineSpec = {
   size?: string;
   colour?: string;
@@ -43,8 +50,9 @@ export const defaultCatalogLineItem = {
   customSize: "",
   customColour: "",
   customFabric: "",
-  customImageUrls: [] as string[],
-  description: "",
+    customImageUrls: [] as string[],
+    customImageComments: [] as Array<{ imageUrl: string; comment: string }>,
+    description: "",
   gstPercent: 0,
   quantity: 1,
   unitPrice: 0,
@@ -58,8 +66,9 @@ export const defaultCustomLineItem = {
   customSize: "",
   customColour: "",
   customFabric: "",
-  customImageUrls: [] as string[],
-  description: "",
+    customImageUrls: [] as string[],
+    customImageComments: [] as Array<{ imageUrl: string; comment: string }>,
+    description: "",
   gstPercent: 0,
   quantity: 1,
   unitPrice: 0,

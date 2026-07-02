@@ -53,7 +53,8 @@ type DeleteDialogMode = "single" | "selected";
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
 export default function Orders() {
-  const [search, setSearch] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
   const [paymentStatus, setPaymentStatus] = useState<
@@ -110,14 +111,28 @@ export default function Orders() {
   useEffect(() => {
     const q = sessionStorage.getItem(ORDERS_SEARCH_PREFILL_KEY);
     if (q) {
-      setSearch(q);
+      setSearchDraft(q);
+      setAppliedSearch(q);
       sessionStorage.removeItem(ORDERS_SEARCH_PREFILL_KEY);
     }
   }, []);
 
+  const submitSearch = () => {
+    setAppliedSearch(searchDraft.trim());
+    setPage(1);
+  };
+
+  const onSearchDraftChange = (value: string) => {
+    setSearchDraft(value);
+    if (!value.trim()) {
+      setAppliedSearch("");
+      setPage(1);
+    }
+  };
+
   const listOrdersParams = useMemo(
     () => ({
-      search: search || undefined,
+      search: appliedSearch || undefined,
       status: status !== "all" ? (status as any) : undefined,
       isGst: isGst !== "all" ? isGst === "true" : undefined,
       paymentStatus: paymentStatus !== "all" ? (paymentStatus as any) : undefined,
@@ -134,7 +149,7 @@ export default function Orders() {
       limit: 10,
     }),
     [
-      search,
+      appliedSearch,
       status,
       isGst,
       paymentStatus,
@@ -788,10 +803,16 @@ export default function Orders() {
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search orders..."
+                placeholder="Search by name, order no., or mobile…"
                 className="pl-8"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchDraft}
+                onChange={(e) => onSearchDraftChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitSearch();
+                  }
+                }}
               />
             </div>
           </div>

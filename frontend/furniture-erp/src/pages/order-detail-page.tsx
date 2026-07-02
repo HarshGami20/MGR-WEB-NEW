@@ -26,11 +26,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -50,6 +56,7 @@ import { remainingInrPaymentAmount, roundInrPaymentAmount } from "@/lib/payment-
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
 import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
+import { resolveCustomProductName } from "@/lib/custom-line-item";
 import { cn } from "@/lib/utils";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import {
@@ -65,6 +72,7 @@ type OrderLineItemRow = {
   customName?: string | null;
   customImageUrl?: string | null;
   customImageUrls?: string[] | string | null;
+  customImageComments?: Array<{ imageUrl?: string; comment?: string }> | null;
   description?: string | null;
   productId?: number | null;
   product?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
@@ -99,7 +107,7 @@ function buildQuotationFromOrder(order: {
       const row = item as OrderLineItemRow;
       return {
         label: row.isCustom
-          ? row.customName ?? "Custom item"
+          ? resolveCustomProductName(row.customName)
           : row.product?.name ?? `Product #${row.productId}`,
         description: row.description,
         quantity: Number(item.quantity),
@@ -107,6 +115,12 @@ function buildQuotationFromOrder(order: {
         totalPrice: Number(item.totalPrice),
         gstPercent: (item as { gstPercent?: number }).gstPercent,
         imageUrls: orderLineImageUrls(row),
+        photoComments: row.isCustom
+          ? orderLinePhotoComments(row).map((entry) => ({
+              imageUrl: entry.imageUrl,
+              comment: entry.comment?.trim() || row.description?.trim() || "",
+            }))
+          : undefined,
       };
     }),
     subtotal: Number(orderAny.subtotal ?? 0),
@@ -132,6 +146,78 @@ function orderLineImageUrls(item: OrderLineItemRow): string[] {
       ? productImageList(item.product)
       : [];
   return raw.map((u) => resolvedProductImageUrl(u)).filter((u): u is string => Boolean(u));
+}
+
+function orderLinePhotoComments(item: OrderLineItemRow): Array<{ imageUrl?: string; comment?: string }> {
+  const urls = parseImageUrlsList(item.customImageUrls, item.customImageUrl);
+  const byUrl = new Map(
+    (Array.isArray(item.customImageComments) ? item.customImageComments : [])
+      .filter((row) => row?.imageUrl?.trim())
+      .map((row) => [String(row.imageUrl).trim(), row.comment?.trim() ?? ""]),
+  );
+  return urls.map((imageUrl) => ({
+    imageUrl: resolvedProductImageUrl(imageUrl) ?? imageUrl,
+    comment: byUrl.get(imageUrl) ?? "",
+  }));
+}
+
+function customLineGallerySlides(item: OrderLineItemRow): GallerySlide[] {
+  return orderLinePhotoComments(item)
+    .filter((row) => row.imageUrl?.trim())
+    .map((row) => ({
+      src: row.imageUrl!,
+      caption: row.comment?.trim() || null,
+    }));
+}
+
+function CustomLinePhotosAccordion({
+  itemId,
+  label,
+  photos,
+  onOpenGallery,
+}: {
+  itemId: number;
+  label: string;
+  photos: GallerySlide[];
+  onOpenGallery: (index: number) => void;
+}) {
+  if (photos.length === 0) return null;
+
+  return (
+    <Accordion type="single" collapsible className="w-full">
+      <AccordionItem value={`custom-photos-${itemId}`} className="border-none">
+        <AccordionTrigger className="py-2 text-sm font-medium text-muted-foreground hover:no-underline">
+          Custom images ({photos.length})
+        </AccordionTrigger>
+        <AccordionContent className="pb-1 pt-0">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {photos.map((entry, photoIndex) => (
+              <div
+                key={`${itemId}-photo-${photoIndex}`}
+                className="flex min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-background p-2.5"
+              >
+                <button
+                  type="button"
+                  className="h-20 w-20 shrink-0 overflow-hidden rounded-md border cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onOpenGallery(photoIndex)}
+                  aria-label={
+                    entry.caption ? `View photo: ${entry.caption}` : `View photo of ${label}`
+                  }
+                >
+                  <img src={entry.src} alt="" className="h-full w-full object-cover" />
+                </button>
+                {entry.caption ? (
+                  <p className="min-w-0 flex-1 text-sm text-muted-foreground whitespace-pre-wrap pt-0.5">
+                    {entry.caption}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
 }
 
 function getStatusBadge(status: string) {
@@ -185,6 +271,7 @@ function formatPaymentModeLabel(mode: string): string {
     upi: "UPI Wallet",
     bank_transfer: "Bank Transfer",
     cheque: "Cheque",
+    discount: "Discount",
   };
   return labels[mode] ?? mode.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -213,6 +300,7 @@ type OrderPaymentRow = {
   id: number;
   mode: string;
   amount: number;
+  discountAmount?: number;
   chequeNumber?: string | null;
   notes?: string | null;
   recordedBy?: string | null;
@@ -340,6 +428,7 @@ export default function OrderDetailPage() {
   const [paymentStatus, setPaymentStatus] = useState("due");
   const [paymentMode, setPaymentMode] = useState("cash");
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDiscount, setPaymentDiscount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentChequeNumber, setPaymentChequeNumber] = useState("");
   const [newStaffComment, setNewStaffComment] = useState("");
@@ -428,6 +517,7 @@ export default function OrderDetailPage() {
         const id = data.orderId;
         void refreshOrderDetail(id);
         setPaymentAmount("");
+        setPaymentDiscount("");
         setPaymentNote("");
         setPaymentChequeNumber("");
         toast({ title: "Payment added" });
@@ -735,11 +825,13 @@ export default function OrderDetailPage() {
                           const custom = !!row.isCustom;
                           const lineDesc = row.description?.trim();
                           const label = custom
-                            ? row.customName ?? "Custom item"
+                            ? resolveCustomProductName(row.customName)
                             : row.product?.name || `Product #${row.productId}`;
                           const lineImages = orderLineImageUrls(row);
+                          const customPhotos = custom ? customLineGallerySlides(row) : [];
                           return (
-                            <TableRow key={item.id}>
+                            <Fragment key={item.id}>
+                            <TableRow>
                               <TableCell>
                                 <div className="flex items-start gap-3 min-w-[200px]">
                                   {lineImages.length > 0 ? (
@@ -747,10 +839,9 @@ export default function OrderDetailPage() {
                                       type="button"
                                       className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                       onClick={() =>
-                                        openUrlGallery(
-                                          lineImages,
-                                          0,
-                                        )
+                                        custom
+                                          ? openImageGallery(customPhotos, 0)
+                                          : openUrlGallery(lineImages, 0)
                                       }
                                       aria-label={
                                         lineImages.length > 1
@@ -805,6 +896,21 @@ export default function OrderDetailPage() {
                                 {formatInr(item.totalPrice)}
                               </TableCell>
                             </TableRow>
+                            {customPhotos.length > 0 ? (
+                              <TableRow className="hover:bg-transparent">
+                                <TableCell colSpan={4} className="bg-muted/10 py-2">
+                                  <CustomLinePhotosAccordion
+                                    itemId={item.id}
+                                    label={label}
+                                    photos={customPhotos}
+                                    onOpenGallery={(photoIndex) =>
+                                      openImageGallery(customPhotos, photoIndex)
+                                    }
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            ) : null}
+                            </Fragment>
                           );
                         })}
                       </TableBody>
@@ -1101,8 +1207,8 @@ export default function OrderDetailPage() {
               <div className="space-y-3">
                 <div
                   className={cn(
-                    "grid grid-cols-1 gap-3",
-                    paymentMode === "cheque" ? "sm:grid-cols-2" : "sm:grid-cols-1",
+                    "grid grid-cols-1 gap-3 sm:grid-cols-2",
+                    paymentMode === "cheque" ? "sm:grid-cols-2" : "sm:grid-cols-2",
                   )}
                 >
                   <Input
@@ -1121,6 +1227,24 @@ export default function OrderDetailPage() {
                       const n = Number(raw);
                       if (!Number.isFinite(n)) return;
                       setPaymentAmount(String(Math.max(0, roundInrPaymentAmount(n))));
+                    }}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Discount (whole ₹)"
+                    className="rounded-xl"
+                    value={paymentDiscount}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "" || raw === "-") {
+                        setPaymentDiscount(raw);
+                        return;
+                      }
+                      const n = Number(raw);
+                      if (!Number.isFinite(n)) return;
+                      setPaymentDiscount(String(Math.max(0, roundInrPaymentAmount(n))));
                     }}
                   />
                   <Select value={paymentMode} onValueChange={setPaymentMode}>
@@ -1158,14 +1282,20 @@ export default function OrderDetailPage() {
                       return;
                     }
                     const amount = roundInrPaymentAmount(Number(paymentAmount || 0));
-                    if (amount <= 0) {
-                      toast({ title: "Enter a valid amount", variant: "destructive" });
+                    const discountAmount = roundInrPaymentAmount(Number(paymentDiscount || 0));
+                    const totalCredit = amount + discountAmount;
+                    if (totalCredit <= 0) {
+                      toast({ title: "Enter payment amount and/or discount", variant: "destructive" });
                       return;
                     }
-                    if (amount > balance) {
+                    if (paymentMode === "cheque" && amount < 1) {
+                      toast({ title: "Cheque payments require an amount", variant: "destructive" });
+                      return;
+                    }
+                    if (totalCredit > balance) {
                       toast({
                         title: "Amount too high",
-                        description: `Maximum payment is ${formatInr(balance)}`,
+                        description: `Payment + discount cannot exceed ${formatInr(balance)}`,
                         variant: "destructive",
                       });
                       return;
@@ -1173,6 +1303,7 @@ export default function OrderDetailPage() {
                     const payload: Record<string, unknown> = {
                       orderId: order.id,
                       amount,
+                      discountAmount,
                       mode: paymentMode,
                       notes: paymentNote || null,
                     };
@@ -1180,7 +1311,7 @@ export default function OrderDetailPage() {
                     createPayment.mutate({ data: payload as any });
                   }}
                   disabled={
-                    !paymentAmount ||
+                    (!paymentAmount && !paymentDiscount) ||
                     createPayment.isPending ||
                     (paymentMode === "cheque" && !paymentChequeNumber.trim())
                   }
@@ -1212,6 +1343,8 @@ export default function OrderDetailPage() {
                           payment.mode === "cheque" && payment.chequeNumber
                             ? `${formatPaymentModeLabel(payment.mode)} · ${payment.chequeNumber}`
                             : formatPaymentModeLabel(payment.mode);
+                        const discount = Number(payment.discountAmount ?? 0);
+                        const totalCredit = Number(payment.amount) + discount;
                         return (
                           <div
                             key={payment.id}
@@ -1230,8 +1363,13 @@ export default function OrderDetailPage() {
                                   <span>{sequenceLabel}</span>
                                 </div>
                                 <p className="text-base font-semibold tracking-tight tabular-nums text-foreground">
-                                  {formatInr(payment.amount)}
+                                  {formatInr(totalCredit)}
                                 </p>
+                                {discount > 0 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatInr(payment.amount)} paid · {formatInr(discount)} discount
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="space-y-1">
                                 <div className="flex text-xs items-center gap-2 text-sm text-muted-foreground">

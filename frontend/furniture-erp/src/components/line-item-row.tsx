@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import type { Product } from "@/api-client";
 import { useListProductVariants } from "@/api-client";
 import ProductVariantSelect from "@/components/product-variant-select";
-import { ProductImagesField } from "@/components/product-images-field";
+import { CustomLinePhotosField } from "@/components/custom-line-photos-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -135,22 +135,24 @@ export function LineItemRow({
 
       {isCustom ? (
         <div className="space-y-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
-          <p className="text-xs text-muted-foreground">
-            Not added to the product catalog — details apply to this {onlyForLabel} only.
-          </p>
-          <FormField
-            control={form.control}
-            name={`items.${index}.customName`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-xs">Product name *</FormLabel>
-                <FormControl>
-                  <Input placeholder="e.g. Bespoke sofa" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Not added to the product catalog — details apply to this {onlyForLabel} only.
+            </p>
+            <FormField
+              control={form.control}
+              name={`items.${index}.customName`}
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="text-xs">Product name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Optional — defaults to Custom product" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <FormField
               control={form.control}
@@ -193,14 +195,21 @@ export function LineItemRow({
           </div>
           <FormField
             control={form.control}
-            name={`items.${index}.customImageUrls`}
+            name={`items.${index}.customImageComments`}
             render={({ field }) => (
               <FormItem>
                 <FormControl>
-                  <ProductImagesField
+                  <CustomLinePhotosField
+                    label="Photos with comments (optional)"
                     value={field.value ?? []}
-                    onChange={field.onChange}
-                    label="Photos (optional)"
+                    onChange={(next) => {
+                      field.onChange(next);
+                      form.setValue(
+                        `items.${index}.customImageUrls`,
+                        next.map((row) => row.imageUrl).filter(Boolean),
+                        { shouldDirty: true },
+                      );
+                    }}
                   />
                 </FormControl>
               </FormItem>

@@ -1,8 +1,10 @@
-import { useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, Loader2 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { downloadImageFromUrl } from "@/lib/download-image";
+import { useToast } from "@/hooks/use-toast";
 
 export type GallerySlide = {
   src: string;
@@ -24,6 +26,8 @@ export function OrderImageGalleryDialog({
   onIndexChange,
   onClose,
 }: OrderImageGalleryDialogProps) {
+  const { toast } = useToast();
+  const [downloading, setDownloading] = useState(false);
   const slide = slides[index];
   const hasMultiple = slides.length > 1;
   const caption = slide?.caption?.trim();
@@ -47,28 +51,33 @@ export function OrderImageGalleryDialog({
 
   if (!slide) return null;
 
+  const handleDownload = async () => {
+    if (!slide.src || downloading) return;
+    setDownloading(true);
+    try {
+      await downloadImageFromUrl(slide.src, index);
+      toast({ title: "Download started" });
+    } catch {
+      toast({ title: "Download failed", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent
         className={cn(
           "fixed left-3 top-3 z-50 flex h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-none translate-x-0 translate-y-0",
           "flex-col gap-0 overflow-hidden border-0 bg-zinc-950 p-0 text-white shadow-2xl sm:rounded-xl",
-          "[&>button]:right-3 [&>button]:top-3 [&>button]:z-40 [&>button]:text-white [&>button]:opacity-90",
+          "[&>button]:right-3 [&>button]:top-3 [&>button]:z-[60] [&>button]:text-white [&>button]:opacity-90",
           "[&>button]:hover:bg-white/10 [&>button]:hover:opacity-100",
         )}
         aria-describedby={caption ? "gallery-caption" : undefined}
       >
-        {/* Main stage — image + absolute overlays */}
-        <div className="relative min-h-0 flex-1 bg-black">
-          <img
-            src={slide.src}
-            alt={caption ? `Photo ${index + 1}: ${caption}` : `Photo ${index + 1}`}
-            className="absolute inset-0 h-full w-full select-none object-contain p-4 pb-28 pt-14 sm:p-8 sm:pb-32 sm:pt-16"
-            draggable={false}
-          />
-
-          {/* Counter — absolute top-left */}
-          <div className="absolute left-4 top-4 z-30 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm sm:text-sm">
+        {/* Top bar — counter + download (close is rendered by DialogContent) */}
+        <div className="absolute inset-x-0 top-0 z-[55] flex items-center justify-between gap-3 px-4 py-3 pointer-events-none">
+          <div className="pointer-events-auto rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm sm:text-sm">
             {hasMultiple ? (
               <>
                 <span className="tabular-nums">{index + 1}</span>
@@ -78,6 +87,34 @@ export function OrderImageGalleryDialog({
               "Photo"
             )}
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(
+              "pointer-events-auto mr-10 h-9 gap-2 rounded-full border border-white/25 bg-black/70 px-3",
+              "text-white shadow-lg backdrop-blur-sm hover:bg-black/90 hover:text-white",
+            )}
+            onClick={() => void handleDownload()}
+            disabled={downloading}
+            aria-label="Download image"
+          >
+            {downloading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 shrink-0" />
+            )}
+            <span className="text-sm font-medium">Download</span>
+          </Button>
+        </div>
+
+        {/* Main stage — image + absolute overlays */}
+        <div className="relative min-h-0 flex-1 bg-black">
+          <img
+            src={slide.src}
+            alt={caption ? `Photo ${index + 1}: ${caption}` : `Photo ${index + 1}`}
+            className="absolute inset-0 h-full w-full select-none object-contain p-4 pb-28 pt-14 sm:p-8 sm:pb-32 sm:pt-16"
+            draggable={false}
+          />
 
           {/* Comment — absolute above nav buttons */}
           {caption ? (

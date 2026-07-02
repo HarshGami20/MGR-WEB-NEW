@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { orderHasProductInCategories } from "./category-filter";
+import { resolveCustomProductName } from "./custom-line-item";
 import { formatInr } from "./format-currency";
 import { prisma, toNumber } from "./prisma";
 
@@ -48,7 +49,7 @@ function formatLineItems(
   return items
     .map((item) => {
       const name = item.isCustom
-        ? item.customName ?? "Custom item"
+        ? resolveCustomProductName(item.customName)
         : item.product?.name ?? "Product";
       const cat = item.product?.category?.name;
       const label = cat ? `${name} (${cat})` : name;

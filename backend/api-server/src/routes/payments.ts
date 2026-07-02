@@ -94,6 +94,7 @@ router.get("/payments", requireAuth, async (req, res): Promise<void> => {
   const data = payments.map((p) => ({
     ...p,
     amount: toNumber(p.amount),
+    discountAmount: toNumber(p.discountAmount),
     recordedBy: p.createdBy?.name ?? null,
   }));
   res.json({ data, total, page: pageNum, limit: limitNum });
@@ -107,8 +108,10 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
   const paymentAmount = roundInrPaymentAmount(Number(parsed.data.amount ?? 0));
-  if (paymentAmount <= 0) {
-    res.status(400).json({ error: "Payment amount must be greater than 0" });
+  const discountAmount = roundInrPaymentAmount(Number(parsed.data.discountAmount ?? 0));
+  const totalCredit = paymentAmount + discountAmount;
+  if (totalCredit <= 0) {
+    res.status(400).json({ error: "Enter a payment amount and/or discount greater than 0" });
     return;
   }
 
@@ -119,22 +122,33 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     res.status(400).json({ error: "Order is already fully paid" });
     return;
   }
-  if (paymentAmount > maxPayment) {
-    res.status(400).json({ error: `Payment amount cannot exceed remaining amount (${maxPayment})` });
+  if (totalCredit > maxPayment) {
+    res.status(400).json({
+      error: `Payment + discount cannot exceed remaining amount (${maxPayment})`,
+    });
     return;
   }
 
-  const payingRoundedRemainder = paymentAmount >= maxPayment;
-  const appliedAmount = payingRoundedRemainder ? maxPayment : paymentAmount;
+  const payingRoundedRemainder = totalCredit >= maxPayment;
+  const appliedCash = payingRoundedRemainder
+    ? Math.max(0, maxPayment - discountAmount)
+    : paymentAmount;
+  const appliedDiscount = payingRoundedRemainder
+    ? Math.max(0, maxPayment - appliedCash)
+    : discountAmount;
+  const appliedTotal = appliedCash + appliedDiscount;
   const nextPaidAmount = payingRoundedRemainder
     ? totalAmount
-    : Math.min(totalAmount, paidAmount + paymentAmount);
+    : Math.min(totalAmount, paidAmount + appliedTotal);
   if (nextPaidAmount <= paidAmount) {
     res.status(400).json({ error: "Order is already fully paid" });
     return;
   }
 
-  const mode = parsed.data.mode ?? "cash";
+  let mode = typeof parsed.data.mode === "string" ? parsed.data.mode.trim().toLowerCase() : "cash";
+  if (appliedCash <= 0 && appliedDiscount > 0) {
+    mode = "discount";
+  }
   const rawCheque = typeof parsed.data.chequeNumber === "string" ? parsed.data.chequeNumber.trim() : "";
   const chequeNumber = mode === "cheque" ? rawCheque || null : null;
   if (mode === "cheque" && !chequeNumber) {
@@ -146,7 +160,8 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
   const payment = await prisma.payment.create({
     data: {
       orderId: parsed.data.orderId,
-      amount: String(appliedAmount),
+      amount: String(appliedCash),
+      discountAmount: String(appliedDiscount),
       mode,
       chequeNumber,
       notes: parsed.data.notes ?? null,
@@ -159,7 +174,7 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     where: { id: parsed.data.orderId },
     data: {
       paidAmount: String(nextPaidAmount),
-      paymentMode: parsed.data.mode,
+      paymentMode: mode === "discount" ? order.paymentMode : mode,
       paymentStatus: derivePaymentStatus(toNumber(order.totalAmount), nextPaidAmount),
     },
   });
@@ -168,12 +183,14 @@ router.post("/payments", requireAuth, requirePermission("payments", "create"), a
     orderId: parsed.data.orderId,
     paymentId: payment.id,
     amount: payment.amount,
+    discountAmount: payment.discountAmount,
     recordedById: actor?.id ?? null,
   });
 
   res.status(201).json({
     ...payment,
     amount: toNumber(payment.amount),
+    discountAmount: toNumber(payment.discountAmount),
     recordedBy: payment.createdBy?.name ?? null,
   });
 });

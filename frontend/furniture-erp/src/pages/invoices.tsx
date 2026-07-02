@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { customFetch } from "@/api-client/custom-fetch";
 import { useToast } from "@/hooks/use-toast";
 import { formatInr } from "@/lib/format-currency";
+import { resolveCustomProductName } from "@/lib/custom-line-item";
 
 export default function Invoices() {
   const [page, setPage] = useState(1);
@@ -287,7 +288,7 @@ export default function Invoices() {
                 <TableBody>
                   {selectedInvoice.order?.items?.map((item: any) => {
                     const label = item.isCustom
-                      ? item.customName ?? "Custom item"
+                      ? resolveCustomProductName(item.customName)
                       : item.product?.name ?? `Product #${item.productId}`;
                     return (
                     <TableRow key={item.id}>

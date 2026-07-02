@@ -41,16 +41,37 @@ const paymentSchema = z
     orderId: z.coerce.number().min(1, "Order is required"),
     amount: z
       .string()
-      .min(1, "Amount is required")
-      .regex(/^\d+$/, "Enter whole rupees only")
-      .refine((s) => Number(s) >= 1, "Amount must be positive"),
+      .regex(/^\d*$/, "Enter whole rupees only")
+      .optional()
+      .default(""),
+    discountAmount: z
+      .string()
+      .regex(/^\d*$/, "Enter whole rupees only")
+      .optional()
+      .default(""),
     mode: z.enum(["cash", "bank_transfer", "upi", "cheque"]),
     chequeNumber: zodFields.chequeNumberOptional(),
     notes: z.string().optional().nullable(),
   })
   .superRefine((data, ctx) => {
+    const amount = Number(data.amount || 0);
+    const discount = Number(data.discountAmount || 0);
+    if (amount + discount < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter a payment amount and/or discount greater than 0",
+        path: ["amount"],
+      });
+    }
     if (data.mode === "cheque" && !data.chequeNumber?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Cheque number is required", path: ["chequeNumber"] });
+    }
+    if (data.mode === "cheque" && amount < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cheque payments require an amount greater than 0",
+        path: ["amount"],
+      });
     }
   });
 
@@ -149,6 +170,7 @@ export default function Payments() {
     defaultValues: {
       orderId: 0,
       amount: "",
+      discountAmount: "",
       mode: "cash",
       chequeNumber: "",
       notes: "",
@@ -161,6 +183,7 @@ export default function Payments() {
     form.reset({
       orderId: 0,
       amount: "",
+      discountAmount: "",
       mode: "cash",
       chequeNumber: "",
       notes: "",
@@ -177,16 +200,19 @@ export default function Payments() {
           Number(selectedOrderDetails.paidAmount || 0),
         )
       : 0;
-    const amount = roundInrPaymentAmount(Number(data.amount));
-    if (selectedOrderDetails && amount > maxPayment) {
+    const amount = roundInrPaymentAmount(Number(data.amount || 0));
+    const discountAmount = roundInrPaymentAmount(Number(data.discountAmount || 0));
+    const totalCredit = amount + discountAmount;
+    if (selectedOrderDetails && totalCredit > maxPayment) {
       form.setError("amount", {
-        message: `Amount cannot be greater than remaining amount (${formatInr(maxPayment)})`,
+        message: `Payment + discount cannot exceed remaining amount (${formatInr(maxPayment)})`,
       });
       return;
     }
     const payload: Record<string, unknown> = {
       orderId: data.orderId,
       amount,
+      discountAmount,
       mode: data.mode,
       notes: data.notes ?? null,
     };
@@ -216,6 +242,7 @@ export default function Payments() {
       case "bank_transfer": return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Bank Transfer</Badge>;
       case "upi": return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">UPI</Badge>;
       case "cheque": return <Badge variant="outline" className="bg-orange-50 text-orange-800 border-orange-200">Cheque</Badge>;
+      case "discount": return <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">Discount</Badge>;
       default: return <Badge variant="outline">{mode}</Badge>;
     }
   }, []);
@@ -279,7 +306,20 @@ export default function Payments() {
         accessorKey: "amount",
         header: () => <span className="text-right block w-full">Amount (₹)</span>,
         meta: { headerClassName: "text-right", cellClassName: "text-right font-bold text-green-600" },
-        cell: ({ row }) => `+${formatInr(row.original.amount)}`,
+        cell: ({ row }) => {
+          const discount = Number(row.original.discountAmount ?? 0);
+          const total = Number(row.original.amount ?? 0) + discount;
+          return (
+            <div className="space-y-0.5">
+              <span>+{formatInr(total)}</span>
+              {discount > 0 ? (
+                <p className="text-xs font-normal text-muted-foreground">
+                  {formatInr(row.original.amount)} paid · {formatInr(discount)} discount
+                </p>
+              ) : null}
+            </div>
+          );
+        },
       },
     ],
     [getModeBadge],
@@ -571,10 +611,9 @@ export default function Payments() {
                       <FormLabel>
                         {selectedOrderDetails
                           ? `Amount (₹) - Remaining: ${formatInr(
-                              Math.max(
-                                0,
-                                Number(selectedOrderDetails.totalAmount || 0) -
-                                  Number(selectedOrderDetails.paidAmount || 0),
+                              remainingInrPaymentAmount(
+                                Number(selectedOrderDetails.totalAmount || 0),
+                                Number(selectedOrderDetails.paidAmount || 0),
                               ),
                             )}`
                           : "Amount (₹)"}
@@ -583,27 +622,39 @@ export default function Payments() {
                         <Input
                           type="text"
                           inputMode="numeric"
-                          placeholder="Amount"
+                          placeholder="Cash received"
                           value={field.value}
                           onBlur={field.onBlur}
                           name={field.name}
                           ref={field.ref}
                           onChange={(e) => {
                             const digitsOnly = e.target.value.replace(/\D/g, "");
-                            if (digitsOnly === "") {
-                              field.onChange("");
-                              return;
-                            }
-                            const rounded = roundInrPaymentAmount(Number(digitsOnly));
-                            if (!selectedOrderDetails) {
-                              field.onChange(String(rounded));
-                              return;
-                            }
-                            const maxPayment = remainingInrPaymentAmount(
-                              Number(selectedOrderDetails.totalAmount || 0),
-                              Number(selectedOrderDetails.paidAmount || 0),
-                            );
-                            field.onChange(String(Math.min(rounded, maxPayment)));
+                            field.onChange(digitsOnly);
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="discountAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Discount (₹)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Discount amount"
+                          value={field.value}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                          onChange={(e) => {
+                            const digitsOnly = e.target.value.replace(/\D/g, "");
+                            field.onChange(digitsOnly);
                           }}
                         />
                       </FormControl>
@@ -615,7 +666,7 @@ export default function Payments() {
                   control={form.control}
                   name="mode"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="col-span-2">
                       <FormLabel>Payment Mode</FormLabel>
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl>
