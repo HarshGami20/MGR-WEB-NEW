@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { isSuperAdminRole } from "./permissions";
+import { assignedCategoryIds } from "./user-categories";
 
 async function slimSupplier(id: number) {
   const s = await prisma.supplier.findUnique({
@@ -25,12 +26,15 @@ export async function loadUserPublicById(userId: number) {
       userBranches: {
         include: { branch: true },
       },
+      userCategories: {
+        include: { category: true },
+      },
     },
   });
   if (!u) return null;
   const supplier = u.supplierId ? await slimSupplier(u.supplierId) : null;
   const manufacturer = u.manufacturerId ? await slimManufacturer(u.manufacturerId) : null;
-  const { passwordHash: _omit, userBranches, ...rest } = u;
+  const { passwordHash: _omit, userBranches, userCategories, ...rest } = u;
   if (isSuperAdminRole(u)) {
     return {
       ...rest,
@@ -38,6 +42,9 @@ export async function loadUserPublicById(userId: number) {
       branch: null,
       branchIds: [],
       branches: [],
+      allCategories: true,
+      categoryIds: [],
+      categories: [],
       supplier,
       manufacturer,
     };
@@ -54,5 +61,23 @@ export async function loadUserPublicById(userId: number) {
   const branchesForDisplay = ubRows.map((ub) => ub.branch).filter((b): b is NonNullable<typeof b> => !!b);
   const branch = branchIds.length === 1 ? branchesForDisplay.find((b) => b.id === branchIds[0]) ?? null : null;
   const branchId = branchIds.length === 1 ? branchIds[0]! : null;
-  return { ...rest, branchId, branch, branchIds, branches: branchesForDisplay, supplier, manufacturer };
+  const ucRows = userCategories ?? [];
+  const categoryIdsFromJoin = assignedCategoryIds({
+    allCategories: u.allCategories,
+    userCategories: ucRows,
+    role: u.role,
+  });
+  const categoriesForDisplay = ucRows.map((uc) => uc.category).filter((c): c is NonNullable<typeof c> => !!c);
+  return {
+    ...rest,
+    branchId,
+    branch,
+    branchIds,
+    branches: branchesForDisplay,
+    allCategories: Boolean(u.allCategories),
+    categoryIds: categoryIdsFromJoin,
+    categories: categoriesForDisplay,
+    supplier,
+    manufacturer,
+  };
 }

@@ -66,6 +66,7 @@ import {
   loadOrderAssigneeUserIdsTx,
   loadOrderAutoAssigneeUserIds,
   mergeOrderAssigneeUserIds,
+  ORDER_AUTO_ASSIGNEE_ROLE_NAMES,
 } from "../lib/order-assignees";
 import { parseDeliveryCharge, resolveDriverIdForOrder } from "../lib/drivers";
 import multer from "multer";
@@ -168,8 +169,19 @@ function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+function normalizePaymentStatusValue(requested?: string | null): "due" | "partially_paid" | "paid" | undefined {
+  if (!requested || typeof requested !== "string") return undefined;
+  const v = requested.trim().toLowerCase().replace(/\s+/g, "_");
+  if (v === "paid" || v === "received") return "paid";
+  if (v === "partially_paid" || v === "partial") return "partially_paid";
+  if (v === "due" || v === "unpaid") return "due";
+  if (PAYMENT_STATUSES.has(v)) return v as "due" | "partially_paid" | "paid";
+  return undefined;
+}
+
 function normalizePaymentStatus(totalAmount: number, paidAmount: number, requested?: string | null) {
-  if (requested && PAYMENT_STATUSES.has(requested)) return requested;
+  const normalized = normalizePaymentStatusValue(requested);
+  if (normalized) return normalized;
   return derivePaymentStatusFromAmounts(totalAmount, paidAmount);
 }
 
@@ -798,10 +810,13 @@ router.get(
     const branchId = await requireWriteBranchId(req, res, user);
     if (branchId == null) return;
 
-    const { search } = req.query as Record<string, string>;
+    const { search, categoryId: categoryIdRaw } = req.query as Record<string, string>;
     const limitRaw = (req.query as Record<string, string>).limit;
     const limitNum = Math.min(2000, Math.max(1, parseInt(limitRaw || "1000", 10) || 1000));
     const searchTrim = search?.trim() ?? "";
+    const filterCategoryId = categoryIdRaw ? parseInt(categoryIdRaw, 10) : NaN;
+    const categoryFilter =
+      Number.isFinite(filterCategoryId) && filterCategoryId > 0 ? filterCategoryId : null;
 
     const branchScope: Prisma.UserWhereInput = {
       OR: [
@@ -820,6 +835,23 @@ router.get(
       isActive: true,
       AND: [
         branchScope,
+        ...(categoryFilter != null
+          ? [
+              {
+                OR: [
+                  { allCategories: true },
+                  { userCategories: { some: { categoryId: categoryFilter } } },
+                  {
+                    role: {
+                      OR: ORDER_AUTO_ASSIGNEE_ROLE_NAMES.map((name) => ({
+                        name: { equals: name, mode: "insensitive" },
+                      })),
+                    },
+                  },
+                ],
+              } satisfies Prisma.UserWhereInput,
+            ]
+          : []),
         ...(searchTrim
           ? [
               {
@@ -840,7 +872,9 @@ router.get(
         id: true,
         name: true,
         mobile: true,
+        allCategories: true,
         role: { select: { name: true } },
+        userCategories: { select: { categoryId: true } },
       },
       orderBy: [{ name: "asc" }],
     });
@@ -851,6 +885,8 @@ router.get(
         name: u.name,
         mobile: u.mobile,
         roleName: u.role?.name ?? null,
+        allCategories: Boolean(u.allCategories) || u.role?.name === "Super Admin",
+        categoryIds: u.userCategories.map((row) => row.categoryId),
       })),
     });
   },
@@ -932,7 +968,10 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
       ? [Number(clientAssignedToId)]
       : [];
 
-  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds();
+  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds({
+    categoryId: parsedCategoryId,
+    branchId,
+  });
   const finalAssigneeIds = mergeOrderAssigneeUserIds(assigneeIdsFromBody, autoAssigneeIds);
 
   const deliveryAssigneeIdsFromBody = Array.isArray(inputDeliveryAssigneeUserIds)
@@ -1382,7 +1421,25 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     }
   }
 
-  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds();
+  const categoryIdProvidedForAssign = Object.prototype.hasOwnProperty.call(payload, "categoryId");
+  let resolvedCategoryIdForAssign = (existingOrder as { categoryId?: number | null }).categoryId ?? null;
+  if (categoryIdProvidedForAssign) {
+    const parsedCat = await parseOrderCategoryId(payload.categoryId);
+    if (parsedCat === "invalid") {
+      res.status(400).json({ error: "Invalid order category. Choose a main category." });
+      return;
+    }
+    if (parsedCat === null) {
+      res.status(400).json({ error: "Order category is required." });
+      return;
+    }
+    resolvedCategoryIdForAssign = parsedCat;
+  }
+
+  const autoAssigneeIds = await loadOrderAutoAssigneeUserIds({
+    categoryId: resolvedCategoryIdForAssign,
+    branchId: nextOrderBranchId ?? existingOrder.branchId,
+  });
 
   let order;
   try {
@@ -1648,9 +1705,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         });
         nextAdvanceAmount = synced.advanceAmount;
         nextPaidAmount = synced.paidAmount;
-        nextPaymentStatus = advanceAmountProvided
-          ? synced.paymentStatus
-          : normalizePaymentStatus(totalAmount, synced.paidAmount, payload.paymentStatus);
+        nextPaymentStatus = normalizePaymentStatus(totalAmount, synced.paidAmount, payload.paymentStatus);
         if (paymentModeProvided && typeof payload.paymentMode === "string") {
           nextPaymentMode = payload.paymentMode;
         }

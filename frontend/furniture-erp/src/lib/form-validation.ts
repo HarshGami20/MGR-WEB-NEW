@@ -398,6 +398,8 @@ export const userFormSchema = z
     password: zodFields.passwordOptional(),
     roleId: z.coerce.number().min(1, "Role is required"),
     branchIds: z.array(z.coerce.number()).default([]),
+    allCategories: z.boolean().default(false),
+    categoryIds: z.array(z.coerce.number()).default([]),
     isSales: z.boolean().default(false),
     ordersListScope: z.enum(["all", "own", "assigned_to_me", "created_by_me"]).nullable().optional(),
   })

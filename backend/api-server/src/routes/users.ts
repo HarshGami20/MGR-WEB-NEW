@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma";
 import { loadUserPublicById } from "../lib/public-user";
 import { salesUserFieldsFromBody } from "../lib/sales-order-scope";
 import { assignedBranchIds } from "../lib/user-branches";
+import { assignedCategoryIds } from "../lib/user-categories";
 import {
   assertStaffAssignableRoleId,
   isPortalLinkedUser,
@@ -120,6 +121,33 @@ async function assertBranchesExist(branchIds: number[]): Promise<string | null> 
   return null;
 }
 
+function normalizeCategoryIds(categoryIdsRaw: unknown): number[] {
+  const ids = new Set<number>();
+  if (Array.isArray(categoryIdsRaw)) {
+    for (const x of categoryIdsRaw) {
+      const n = typeof x === "number" ? x : parseInt(String(x), 10);
+      if (Number.isFinite(n) && n > 0) ids.add(n);
+    }
+  }
+  return [...ids].sort((a, b) => a - b);
+}
+
+function parseAllCategoriesFlag(raw: unknown): boolean {
+  return raw === true || raw === "true" || raw === 1 || raw === "1";
+}
+
+async function assertRootCategoriesExist(categoryIds: number[]): Promise<string | null> {
+  if (categoryIds.length === 0) return null;
+  const rows = await prisma.category.findMany({
+    where: { id: { in: categoryIds }, parentId: null },
+    select: { id: true },
+  });
+  if (rows.length !== categoryIds.length) {
+    return "One or more categories are invalid or not a main category";
+  }
+  return null;
+}
+
 router.get("/users", requireAuth, requirePermission("users", "read"), async (req, res): Promise<void> => {
   const { search, roleId, branchId, isActive, page = "1", limit = "20" } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
@@ -129,6 +157,7 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   let allUsers = await prisma.user.findMany({
     include: {
       userBranches: { select: { branchId: true } },
+      userCategories: { select: { categoryId: true } },
       role: { select: { name: true } },
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -163,11 +192,17 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
   const branches = await prisma.branch.findMany();
   for (const b of branches) branchesMap[b.id] = b;
 
+  const categoriesMap: Record<number, { id: number; name: string }> = {};
+  const categories = await prisma.category.findMany({ where: { parentId: null } });
+  for (const c of categories) categoriesMap[c.id] = { id: c.id, name: c.name };
+
   const data = allUsers.map(u => {
     const role = u.roleId ? rolesMap[u.roleId] : null;
     const uWithRole = { ...u, role };
     const branchIds = assignedBranchIds(uWithRole);
     const branchList = branchIds.map((id) => branchesMap[id]).filter(Boolean);
+    const categoryIds = assignedCategoryIds(uWithRole);
+    const categoryList = categoryIds.map((id) => categoriesMap[id]).filter(Boolean);
     return {
       ...u,
       passwordHash: undefined,
@@ -175,6 +210,9 @@ router.get("/users", requireAuth, requirePermission("users", "read"), async (req
       branchIds,
       branches: branchList,
       branch: branchList[0] ?? null,
+      allCategories: Boolean(u.allCategories) || role?.name === "Super Admin",
+      categoryIds,
+      categories: categoryList,
     };
   });
 
@@ -196,6 +234,8 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
   }
   const password = b.password;
   let branchIds = normalizeBranchIds(b.branchIds, b.branchId);
+  let categoryIds = normalizeCategoryIds(b.categoryIds);
+  let allCategories = parseAllCategoriesFlag(b.allCategories);
   const roleId = b.roleId as number | undefined;
   const portalRoleErr = await assertStaffAssignableRoleId(roleId);
   if (portalRoleErr) {
@@ -203,12 +243,23 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
     return;
   }
   if (await isSuperAdminRoleId(roleId)) {
-    branchIds = []; 
+    branchIds = [];
+    categoryIds = [];
+    allCategories = true;
   } else {
     const branchErr = await assertBranchesExist(branchIds);
     if (branchErr) {
       res.status(400).json({ error: branchErr });
       return;
+    }
+    if (allCategories) {
+      categoryIds = [];
+    } else {
+      const categoryErr = await assertRootCategoriesExist(categoryIds);
+      if (categoryErr) {
+        res.status(400).json({ error: categoryErr });
+        return;
+      }
     }
   }
   if (!password || typeof password !== "string") {
@@ -221,6 +272,10 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
   delete userFields.branchIds;
   delete userFields.branchId;
   delete userFields.userBranches;
+  delete userFields.categoryIds;
+  delete userFields.categories;
+  delete userFields.userCategories;
+  delete userFields.allCategories;
   delete userFields.supplierId;
   delete userFields.manufacturerId;
   const salesFields = salesUserFieldsFromBody(userFields);
@@ -233,11 +288,19 @@ router.post("/users", requireAuth, requirePermission("users", "create"), async (
           ...userFields,
           ...salesFields,
           passwordHash,
+          allCategories,
           branchId: branchIds[0] ?? null,
           ...(branchIds.length > 0
             ? {
                 userBranches: {
                   create: branchIds.map((branchId: number) => ({ branchId })),
+                },
+              }
+            : {}),
+          ...(categoryIds.length > 0
+            ? {
+                userCategories: {
+                  create: categoryIds.map((categoryId: number) => ({ categoryId })),
                 },
               }
             : {}),
@@ -304,11 +367,17 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
   const password = body.password;
   const bidRaw = body.branchIds;
   const legacyBid = body.branchId;
+  const cidRaw = body.categoryIds;
+  const allCategoriesRaw = body.allCategories;
   const rest = { ...body };
   delete rest.password;
   delete rest.branchIds;
   delete rest.branchId;
   delete rest.userBranches;
+  delete rest.categoryIds;
+  delete rest.categories;
+  delete rest.userCategories;
+  delete rest.allCategories;
   delete rest.role;
   delete rest.branch;
   delete rest.branches;
@@ -344,8 +413,13 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
   const superAdmin = await isSuperAdminRoleId(scalarRest.roleId ?? existing.roleId);
 
   let branchIdsUpdate = bidRaw !== undefined ? normalizeBranchIds(bidRaw, legacyBid) : null;
+  let categoryIdsUpdate = cidRaw !== undefined ? normalizeCategoryIds(cidRaw) : null;
+  let allCategoriesUpdate =
+    allCategoriesRaw !== undefined ? parseAllCategoriesFlag(allCategoriesRaw) : null;
   if (superAdmin) {
     branchIdsUpdate = [];
+    categoryIdsUpdate = [];
+    allCategoriesUpdate = true;
   }
 
   if (branchIdsUpdate !== null && branchIdsUpdate.length > 0) {
@@ -353,6 +427,19 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
     if (branchErr) {
       res.status(400).json({ error: branchErr });
       return;
+    }
+  }
+
+  if (!superAdmin) {
+    if (allCategoriesUpdate === true) {
+      categoryIdsUpdate = [];
+    } else if (categoryIdsUpdate !== null && categoryIdsUpdate.length > 0) {
+      const categoryErr = await assertRootCategoriesExist(categoryIdsUpdate);
+      if (categoryErr) {
+        res.status(400).json({ error: categoryErr });
+        return;
+      }
+      allCategoriesUpdate = false;
     }
   }
 
@@ -366,8 +453,12 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
 
   if (superAdmin) {
     updateData.branchId = null;
+    updateData.allCategories = true;
   } else if (branchIdsUpdate !== null) {
     updateData.branchId = branchIdsUpdate[0] ?? null;
+  }
+  if (!superAdmin && allCategoriesUpdate !== null) {
+    updateData.allCategories = allCategoriesUpdate;
   }
 
   try {
@@ -378,11 +469,21 @@ router.put("/users/:id", requireAuth, requirePermission("users", "update"), asyn
       });
       if (superAdmin) {
         await tx.userBranch.deleteMany({ where: { userId: id } });
+        await tx.userCategory.deleteMany({ where: { userId: id } });
       } else if (branchIdsUpdate !== null) {
         await tx.userBranch.deleteMany({ where: { userId: id } });
         if (branchIdsUpdate.length > 0) {
           await tx.userBranch.createMany({
             data: branchIdsUpdate.map((branchId) => ({ userId: id, branchId })),
+            skipDuplicates: true,
+          });
+        }
+      }
+      if (!superAdmin && (categoryIdsUpdate !== null || allCategoriesUpdate !== null)) {
+        await tx.userCategory.deleteMany({ where: { userId: id } });
+        if (allCategoriesUpdate !== true && categoryIdsUpdate && categoryIdsUpdate.length > 0) {
+          await tx.userCategory.createMany({
+            data: categoryIdsUpdate.map((categoryId) => ({ userId: id, categoryId })),
             skipDuplicates: true,
           });
         }

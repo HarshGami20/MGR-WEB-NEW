@@ -292,8 +292,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   }, [categoriesData]);
   const { data: settingsData } = useGetSettings();
   const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
+  const watchedCategoryId = useWatch({ control: form.control, name: "categoryId" });
   const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
-    writeBranchId != null ? { branchId: writeBranchId, limit: 1000 } : undefined,
+    writeBranchId != null
+      ? ({
+          branchId: writeBranchId,
+          limit: 1000,
+          ...(watchedCategoryId ? { categoryId: watchedCategoryId } : {}),
+        } as { branchId: number; limit: number; categoryId?: number })
+      : undefined,
     { query: { enabled: writeBranchId != null } },
   );
   const { data: order, isLoading: orderLoading, isError: orderError } = useGetOrder(orderId, {
@@ -446,7 +453,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   useEffect(() => {
     if (isEdit || writeBranchId == null) return;
     if (assignableUsers.length === 0) return;
-    const key = String(writeBranchId);
+    const key = `${writeBranchId}:${watchedCategoryId ?? "none"}`;
     if (defaultAssigneesAppliedRef.current === key) return;
     defaultAssigneesAppliedRef.current = key;
 
@@ -457,11 +464,16 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     for (const u of assignableUsers) {
       const role = u.roleName?.trim().toLowerCase() ?? "";
       if (role === "super admin" || role === "admin") ids.add(u.id);
+      const allCats = (u as { allCategories?: boolean }).allCategories;
+      const catIds = (u as { categoryIds?: number[] }).categoryIds ?? [];
+      if (watchedCategoryId && (allCats || catIds.includes(watchedCategoryId))) {
+        ids.add(u.id);
+      }
     }
     if (ids.size > 0) {
       setValue("assigneeUserIds", [...ids], { shouldDirty: false, shouldTouch: false, shouldValidate: false });
     }
-  }, [isEdit, writeBranchId, assignableUsers, user?.id, setValue]);
+  }, [isEdit, writeBranchId, watchedCategoryId, assignableUsers, user?.id, setValue]);
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });

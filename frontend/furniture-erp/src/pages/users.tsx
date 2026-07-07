@@ -9,6 +9,7 @@ import {
   useToggleUserActive,
   useListRoles,
   useListBranches,
+  useListCategories,
   getListUsersQueryKey,
   getListRolesQueryKey,
 } from "@/api-client";
@@ -64,6 +65,8 @@ const emptyForm: UserFormValues = {
   password: "",
   roleId: 0,
   branchIds: [],
+  allCategories: false,
+  categoryIds: [],
   isSales: false,
   ordersListScope: null,
 };
@@ -97,6 +100,11 @@ export default function Users() {
     query: { staleTime: 0 },
   });
   const { data: branchesData } = useListBranches({ isActive: true, limit: 100 });
+  const { data: categoriesData } = useListCategories();
+  const mainCategories = useMemo(
+    () => (categoriesData ?? []).filter((c) => c.parentId == null),
+    [categoriesData],
+  );
 
   const createUser = useCreateUser({
     mutation: {
@@ -191,6 +199,8 @@ export default function Users() {
   useEffect(() => {
     if (selectedRoleIsSuperAdmin) {
       form.setValue("branchIds", [], { shouldDirty: true });
+      form.setValue("allCategories", true, { shouldDirty: true });
+      form.setValue("categoryIds", [], { shouldDirty: true });
     }
   }, [selectedRoleIsSuperAdmin, form]);
 
@@ -223,6 +233,13 @@ export default function Users() {
         const fromBranches = (user.branches as { id: number }[] | undefined)?.map((b) => b.id).filter(Boolean);
         if (fromBranches && fromBranches.length > 0) return fromBranches;
         if (user.branchId != null) return [user.branchId];
+        return [];
+      })(),
+      allCategories: Boolean(user.allCategories),
+      categoryIds: (() => {
+        if (Array.isArray(user.categoryIds) && user.categoryIds.length > 0) return user.categoryIds;
+        const fromCategories = (user.categories as { id: number }[] | undefined)?.map((c) => c.id).filter(Boolean);
+        if (fromCategories && fromCategories.length > 0) return fromCategories;
         return [];
       })(),
       isSales:
@@ -589,6 +606,73 @@ export default function Users() {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <FormField
+                control={form.control}
+                name="categoryIds"
+                render={() => {
+                  const scopeValue = selectedRoleIsSuperAdmin
+                    ? "__all__"
+                    : form.watch("allCategories")
+                      ? "__all__"
+                      : (form.watch("categoryIds")?.[0]
+                          ? String(form.watch("categoryIds")[0])
+                          : "__none__");
+                  return (
+                    <FormItem>
+                      <FormLabel>Order category</FormLabel>
+                      {selectedRoleIsSuperAdmin ? (
+                        <p className="text-sm text-muted-foreground rounded-md border border-dashed border-primary/25 bg-primary/5 px-3 py-2">
+                          Super Admin is auto-assigned to every order category.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            User is auto-assigned when an order uses this category (or all, if chosen).
+                          </p>
+                          <Select
+                            value={scopeValue}
+                            onValueChange={(val) => {
+                              if (val === "__all__") {
+                                form.setValue("allCategories", true, { shouldDirty: true, shouldValidate: true });
+                                form.setValue("categoryIds", [], { shouldDirty: true, shouldValidate: true });
+                                return;
+                              }
+                              form.setValue("allCategories", false, { shouldDirty: true, shouldValidate: true });
+                              if (val === "__none__") {
+                                form.setValue("categoryIds", [], { shouldDirty: true, shouldValidate: true });
+                                return;
+                              }
+                              const id = parseInt(val, 10);
+                              form.setValue(
+                                "categoryIds",
+                                Number.isFinite(id) && id > 0 ? [id] : [],
+                                { shouldDirty: true, shouldValidate: true },
+                              );
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="rounded-xl">
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">Not specified</SelectItem>
+                              <SelectItem value="__all__">All categories</SelectItem>
+                              {mainCategories.map((c) => (
+                                <SelectItem key={c.id} value={String(c.id)}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               <FormField

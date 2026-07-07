@@ -64,6 +64,17 @@ model UserBranch {
   @@map("user_branches")
 }
 
+model UserCategory {
+  userId     Int @map("user_id")
+  categoryId Int @map("category_id")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, categoryId])
+  @@map("user_categories")
+}
+
 model Role {
   id          Int      @id @default(autoincrement())
   name        String   @unique
@@ -100,11 +111,14 @@ model User {
   isSales          Boolean  @default(false) @map("is_sales")
   /// When `isSales` is true: `own` (created/assigned only) or legacy `all`. Null when not sales.
   ordersListScope  String?  @map("orders_list_scope")
+  /// When true, user is auto-assigned to orders in any main category.
+  allCategories    Boolean  @default(false) @map("all_categories")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   role           Role?         @relation(fields: [roleId], references: [id])
   branch         Branch?       @relation(fields: [branchId], references: [id])
   userBranches   UserBranch[]
+  userCategories UserCategory[]
   supplier       Supplier?     @relation(fields: [supplierId], references: [id])
   manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
   assignedOrders Order[]       @relation("OrderAssignee")
@@ -233,8 +247,9 @@ model Category {
   parentId  Int?     @map("parent_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  products Product[]
-  orders   Order[]
+  products       Product[]
+  orders         Order[]
+  userCategories UserCategory[]
 
   @@map("categories")
 }

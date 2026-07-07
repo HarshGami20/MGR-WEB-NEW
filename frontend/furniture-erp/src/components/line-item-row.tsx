@@ -269,26 +269,6 @@ export function LineItemRow({
         </>
       )}
 
-      <FormField
-        control={form.control}
-        name={`items.${index}.description`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel className="text-xs">Description</FormLabel>
-            <FormControl>
-              <Textarea
-                {...field}
-                value={field.value ?? ""}
-                placeholder="Notes, specs, or details for this line (optional)"
-                rows={2}
-                className="resize-y min-h-[60px]"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={form.control}
@@ -346,6 +326,26 @@ export function LineItemRow({
           )}
         />
       </div>
+
+      <FormField
+        control={form.control}
+        name={`items.${index}.description`}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-xs">Comment (optional)</FormLabel>
+            <FormControl>
+              <Textarea
+                {...field}
+                value={field.value ?? ""}
+                placeholder="Notes for this item"
+                rows={2}
+                className="resize-y min-h-[60px]"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

@@ -4,8 +4,35 @@ import { prisma } from "./prisma";
 /** Always included as order assignees on create and update. */
 export const ORDER_AUTO_ASSIGNEE_ROLE_NAMES = ["Super Admin", "Admin"] as const;
 
-export async function loadOrderAutoAssigneeUserIds(): Promise<number[]> {
-  const rows = await prisma.user.findMany({
+function userBranchScopeWhere(branchId: number): Prisma.UserWhereInput {
+  return {
+    OR: [
+      { role: { name: { equals: "Super Admin", mode: "insensitive" } } },
+      { userBranches: { some: { branchId } } },
+      {
+        AND: [{ userBranches: { none: {} } }, { branchId }],
+      },
+      {
+        AND: [{ userBranches: { none: {} } }, { branchId: null }],
+      },
+    ],
+  };
+}
+
+export async function loadOrderAutoAssigneeUserIds(opts?: {
+  categoryId?: number | null;
+  branchId?: number | null;
+}): Promise<number[]> {
+  const categoryId =
+    opts?.categoryId != null && Number.isFinite(opts.categoryId) && opts.categoryId > 0
+      ? opts.categoryId
+      : null;
+  const branchId =
+    opts?.branchId != null && Number.isFinite(opts.branchId) && opts.branchId > 0
+      ? opts.branchId
+      : null;
+
+  const adminRows = await prisma.user.findMany({
     where: {
       isActive: true,
       role: {
@@ -17,7 +44,29 @@ export async function loadOrderAutoAssigneeUserIds(): Promise<number[]> {
     select: { id: true },
     orderBy: [{ id: "asc" }],
   });
-  return rows.map((r) => r.id);
+
+  let categoryRows: { id: number }[] = [];
+  if (categoryId != null) {
+    const where: Prisma.UserWhereInput = {
+      isActive: true,
+      OR: [{ allCategories: true }, { userCategories: { some: { categoryId } } }],
+      ...(branchId != null ? { AND: [userBranchScopeWhere(branchId)] } : {}),
+    };
+    categoryRows = await prisma.user.findMany({
+      where,
+      select: { id: true },
+      orderBy: [{ id: "asc" }],
+    });
+  }
+
+  const merged: number[] = [];
+  const seen = new Set<number>();
+  for (const row of [...adminRows, ...categoryRows]) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    merged.push(row.id);
+  }
+  return merged;
 }
 
 /** Auto-assignees first, then user-selected ids (deduped). */
