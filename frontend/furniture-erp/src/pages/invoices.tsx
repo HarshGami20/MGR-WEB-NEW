@@ -336,6 +336,22 @@ export default function Invoices() {
                       )}
                     </>
                   )}
+
+                  {Number(selectedInvoice.order?.deliveryCharge ?? 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Delivery charge:</span>
+                      <span>{formatInr(Number(selectedInvoice.order?.deliveryCharge ?? 0))}</span>
+                    </div>
+                  )}
+
+                  {Number(selectedInvoice.order?.discountAmount ?? 0) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Discount:</span>
+                      <span className="text-green-700">
+                        -{formatInr(Number(selectedInvoice.order?.discountAmount ?? 0))}
+                      </span>
+                    </div>
+                  )}
                   
                   <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                     <span>Total:</span>

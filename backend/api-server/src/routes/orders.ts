@@ -68,7 +68,7 @@ import {
   mergeOrderAssigneeUserIds,
   ORDER_AUTO_ASSIGNEE_ROLE_NAMES,
 } from "../lib/order-assignees";
-import { parseDeliveryCharge, resolveDriverIdForOrder } from "../lib/drivers";
+import { parseDeliveryCharge, applyOrderDiscount, resolveDriverIdForOrder } from "../lib/drivers";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -647,6 +647,7 @@ async function enrichOrder(order: any) {
     advanceAmount: toNumber(order.advanceAmount ?? 0),
     deliveryDate: order.deliveryDate ?? null,
     deliveryCharge: toNumber((order as { deliveryCharge?: unknown }).deliveryCharge ?? 0),
+    discountAmount: toNumber((order as { discountAmount?: unknown }).discountAmount ?? 0),
     driver,
     addressLat: order.addressLat != null ? toNumber(order.addressLat) : null,
     addressLng: order.addressLng != null ? toNumber(order.addressLng) : null,
@@ -945,7 +946,8 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
   }
 
   const deliveryCharge = parseDeliveryCharge(orderData.deliveryCharge);
-  const totalAmount = subtotal + taxAmount + deliveryCharge;
+  const preDiscountTotal = subtotal + taxAmount + deliveryCharge;
+  const { discountAmount, totalAmount } = applyOrderDiscount(preDiscountTotal, orderData.discountAmount);
   const advanceAmount = Number(orderData.advanceAmount ?? 0);
   const safeAdvanceAmount = Number.isFinite(advanceAmount) ? Math.max(0, Math.min(totalAmount, advanceAmount)) : 0;
   const requestedStatus = normalizeMainOrderStatus(
@@ -1036,6 +1038,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           deliveryCharge: String(deliveryCharge),
+          discountAmount: String(discountAmount),
           totalAmount: String(totalAmount),
           paidAmount: String(safeAdvanceAmount),
           driverId: resolvedDriverId,
@@ -1382,7 +1385,12 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
     payload.deliveryCharge !== undefined
       ? parseDeliveryCharge(payload.deliveryCharge)
       : toNumber((existingOrder as { deliveryCharge?: unknown }).deliveryCharge ?? 0);
-  const totalAmount = subtotal + taxAmount + nextDeliveryCharge;
+  const nextDiscountAmount =
+    payload.discountAmount !== undefined
+      ? applyOrderDiscount(subtotal + taxAmount + nextDeliveryCharge, payload.discountAmount).discountAmount
+      : toNumber((existingOrder as { discountAmount?: unknown }).discountAmount ?? 0);
+  const preDiscountTotal = subtotal + taxAmount + nextDeliveryCharge;
+  const totalAmount = Math.max(0, Math.round((preDiscountTotal - nextDiscountAmount) * 100) / 100);
   const advanceAmountProvided = Object.prototype.hasOwnProperty.call(payload, "advanceAmount");
   const paymentModeProvided = Object.prototype.hasOwnProperty.call(payload, "paymentMode");
 
@@ -1535,6 +1543,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
         assignedToId: payloadAssignedToIdField,
         driverId: _payloadDriverId,
         deliveryCharge: _payloadDeliveryCharge,
+        discountAmount: _payloadDiscountAmount,
         advanceAmount: _payloadAdvanceAmount,
         paymentMode: _payloadPaymentMode,
         paymentStatus: _payloadPaymentStatus,
@@ -1727,6 +1736,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           deliveryCharge: String(nextDeliveryCharge),
+          discountAmount: String(nextDiscountAmount),
           totalAmount: String(totalAmount),
           ...(payload.driverId !== undefined ? { driverId: nextDriverId } : {}),
           challanImages: JSON.stringify(normalizedChallanImages),

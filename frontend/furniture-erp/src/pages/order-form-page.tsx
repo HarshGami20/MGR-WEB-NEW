@@ -86,6 +86,7 @@ const orderSchema = z.object({
   status: z.string().default("order_received"),
   paymentStatus: z.string().default("due"),
   advanceAmount: z.coerce.number().min(0).default(0),
+  discountAmount: z.coerce.number().min(0).default(0),
   paymentMode: z.string().default("cash"),
   assigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
   deliveryAssigneeUserIds: z.array(z.number().int().positive()).optional().default([]),
@@ -127,7 +128,16 @@ const orderSchema = z.object({
     data.isGst,
   );
   const deliveryCharge = parseDeliveryChargeFormValue(data.deliveryCharge);
-  const orderTotal = roundMoney(totals.total + deliveryCharge);
+  const discountAmount = Math.max(0, Number(data.discountAmount ?? 0));
+  const preDiscountTotal = roundMoney(totals.total + deliveryCharge);
+  const orderTotal = roundMoney(Math.max(0, preDiscountTotal - discountAmount));
+  if (discountAmount > preDiscountTotal) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["discountAmount"],
+      message: `cannot exceed order subtotal (${formatInr(preDiscountTotal)})`,
+    });
+  }
   if (Number(data.advanceAmount || 0) > orderTotal) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -196,6 +206,7 @@ const ORDER_FORM_DEFAULTS: OrderFormValues = {
   status: "order_received",
   paymentStatus: "due",
   advanceAmount: 0,
+  discountAmount: 0,
   paymentMode: "cash",
   assigneeUserIds: [],
   deliveryAssigneeUserIds: [],
@@ -292,17 +303,6 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
   }, [categoriesData]);
   const { data: settingsData } = useGetSettings();
   const defaultGstPercent = settingsData?.defaultGstPercent ?? 18;
-  const watchedCategoryId = useWatch({ control: form.control, name: "categoryId" });
-  const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
-    writeBranchId != null
-      ? ({
-          branchId: writeBranchId,
-          limit: 1000,
-          ...(watchedCategoryId ? { categoryId: watchedCategoryId } : {}),
-        } as { branchId: number; limit: number; categoryId?: number })
-      : undefined,
-    { query: { enabled: writeBranchId != null } },
-  );
   const { data: order, isLoading: orderLoading, isError: orderError } = useGetOrder(orderId, {
     query: {
       enabled: isEdit && Number.isFinite(orderId) && orderId > 0,
@@ -355,6 +355,18 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
     mode: "onBlur",
     defaultValues: ORDER_FORM_DEFAULTS,
   });
+
+  const watchedCategoryId = useWatch({ control: form.control, name: "categoryId" });
+  const { data: assignableUsersData, isError: assignableUsersError } = useListAssignableOrderUsers(
+    writeBranchId != null
+      ? ({
+          branchId: writeBranchId,
+          limit: 1000,
+          ...(watchedCategoryId ? { categoryId: watchedCategoryId } : {}),
+        } as { branchId: number; limit: number; categoryId?: number })
+      : undefined,
+    { query: { enabled: writeBranchId != null } },
+  );
 
   const { reset } = form;
 
@@ -477,6 +489,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
 
   const watchedItems = (useWatch({ control: form.control, name: "items" }) ?? []) as OrderFormValues["items"];
   const watchedAdvance = useWatch({ control: form.control, name: "advanceAmount" });
+  const watchedDiscount = useWatch({ control: form.control, name: "discountAmount" });
   const watchedPaymentStatus = useWatch({ control: form.control, name: "paymentStatus" });
   const watchedDeliverySlotId = useWatch({ control: form.control, name: "deliverySlotId" });
   const watchedDeliveryCharge = useWatch({ control: form.control, name: "deliveryCharge" });
@@ -493,13 +506,18 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       defaultGstPercent,
     );
     const advance = Number(watchedAdvance ?? 0);
-    const grandTotal = roundMoney(totals.total + deliveryChargeDisplay);
+    const discount = Math.max(0, Number(watchedDiscount ?? 0));
+    const preDiscountTotal = roundMoney(totals.total + deliveryChargeDisplay);
+    const safeDiscount = Math.min(discount, preDiscountTotal);
+    const grandTotal = roundMoney(Math.max(0, preDiscountTotal - safeDiscount));
     return {
       ...totals,
+      preDiscountTotal,
+      discountAmount: safeDiscount,
       grandTotal,
       remaining: Math.max(0, grandTotal - advance),
     };
-  }, [watchedItems, watchedAdvance, isGstInvoice, defaultGstPercent, deliveryChargeDisplay]);
+  }, [watchedItems, watchedAdvance, watchedDiscount, isGstInvoice, defaultGstPercent, deliveryChargeDisplay]);
 
   const otherPaidOnOrder = useMemo(() => {
     if (!isEdit || !order) return 0;
@@ -580,9 +598,11 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       !!data.isGst,
       defaultGstPercent,
     );
-    const orderTotal = roundMoney(
+    const preDiscountTotal = roundMoney(
       lineTotals.total + parseDeliveryChargeFormValue(data.deliveryCharge),
     );
+    const safeDiscount = Math.min(Math.max(0, Number(data.discountAmount ?? 0)), preDiscountTotal);
+    const orderTotal = roundMoney(Math.max(0, preDiscountTotal - safeDiscount));
     const nextAdvance = Number(data.advanceAmount ?? 0);
     const maxAdvanceAllowed =
       isEdit && order
@@ -634,6 +654,7 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
       status: isEdit ? data.status : "order_received",
       paymentStatus: data.paymentStatus,
       advanceAmount: Number(data.advanceAmount ?? 0),
+      discountAmount: Math.max(0, Number(data.discountAmount ?? 0)),
       paymentMode: data.paymentMode || "cash",
       assigneeUserIds: (data.assigneeUserIds ?? []).filter((id) => Number.isFinite(id) && id > 0),
       deliveryAssigneeUserIds: (data.deliveryAssigneeUserIds ?? []).filter(
@@ -1204,6 +1225,12 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     <span className="text-muted-foreground">Delivery charges</span>
                     <span className="tabular-nums">{formatInr(deliveryChargeDisplay)}</span>
                   </div>
+                  {orderSummary.discountAmount > 0 ? (
+                    <div className="flex justify-between gap-2 text-sm">
+                      <span className="text-muted-foreground">Discount</span>
+                      <span className="tabular-nums text-green-700">-{formatInr(orderSummary.discountAmount)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                       Total{isGstInvoice ? " (incl. GST)" : ""}
@@ -1273,6 +1300,15 @@ function OrderFormPage({ mode }: { mode: "create" | "edit" }) {
                     </FormItem>
                   )} />
                   <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                    <FormField control={form.control} name="discountAmount" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Discount (₹)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="0" step="0.01" className="rounded-xl" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
                     <FormField control={form.control} name="advanceAmount" render={({ field }) => (
                       <FormItem>
                         <FormLabel>{isEdit ? "Advance amount (₹)" : "Advance amount (₹)"}</FormLabel>

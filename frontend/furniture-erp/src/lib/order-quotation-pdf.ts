@@ -33,6 +33,7 @@ export type OrderQuotationInput = {
   subtotal?: number;
   taxAmount?: number;
   deliveryCharge?: number;
+  discountAmount?: number;
   totalAmount: number;
   paidAmount?: number;
   photoComments: OrderQuotationPhoto[];
@@ -441,10 +442,13 @@ function buildLineItemsTable(order: OrderQuotationInput): Content {
 }
 
 function buildPriceSummary(order: OrderQuotationInput): Content {
+  const lineSubtotal = roundMoney(Number(order.subtotal ?? 0));
+  const taxAmount = roundMoney(Number(order.taxAmount ?? 0));
+  const itemsTotal = roundMoney(lineSubtotal + taxAmount);
   const deliveryCharge = roundMoney(Number(order.deliveryCharge ?? 0));
-  const subtotal = roundMoney(order.totalAmount);
-  const total = roundMoney(subtotal + deliveryCharge);
-  const balance = Math.max(0, subtotal - (order.paidAmount ?? 0));
+  const discountAmount = roundMoney(Number(order.discountAmount ?? 0));
+  const total = roundMoney(Number(order.totalAmount));
+  const balance = Math.max(0, total - (order.paidAmount ?? 0));
   const rows: Content[][] = [];
 
   rows.push([
@@ -452,12 +456,18 @@ function buildPriceSummary(order: OrderQuotationInput): Content {
       text: order.isGst ? "Subtotal (incl. GST)" : "Subtotal",
       fontSize: 8.5,
     },
-    { text: formatInr(subtotal), fontSize: 8.5, alignment: "right" },
+    { text: formatInr(itemsTotal), fontSize: 8.5, alignment: "right" },
   ]);
   rows.push([
     { text: "Delivery charge", fontSize: 8.5 },
     { text: formatInr(deliveryCharge), fontSize: 8.5, alignment: "right" },
   ]);
+  if (discountAmount > 0) {
+    rows.push([
+      { text: "Discount", fontSize: 8.5 },
+      { text: `-${formatInr(discountAmount)}`, fontSize: 8.5, alignment: "right", color: "#166534" },
+    ]);
+  }
   rows.push([
     { text: "Order Total", bold: true, fontSize: 9 },
     { text: formatInr(total), bold: true, fontSize: 9, alignment: "right" },
@@ -673,10 +683,13 @@ export function buildWhatsAppQuotationMessage(
   settings?: QuotationCompanySettings,
 ): string {
   const company = settings?.companyName?.trim() || "MGR CASA";
+  const lineSubtotal = roundMoney(Number(order.subtotal ?? 0));
+  const taxAmount = roundMoney(Number(order.taxAmount ?? 0));
+  const itemsTotal = roundMoney(lineSubtotal + taxAmount);
   const deliveryCharge = roundMoney(Number(order.deliveryCharge ?? 0));
-  const subtotal = roundMoney(order.totalAmount);
-  const total = roundMoney(subtotal + deliveryCharge);
-  const balance = Math.max(0, subtotal - (order.paidAmount ?? 0));
+  const discountAmount = roundMoney(Number(order.discountAmount ?? 0));
+  const total = roundMoney(Number(order.totalAmount));
+  const balance = Math.max(0, total - (order.paidAmount ?? 0));
   const lines = [
     `*${company} — Quotation*`,
     "",
@@ -684,8 +697,9 @@ export function buildWhatsAppQuotationMessage(
     `Customer: ${order.customerName}`,
     order.customerMobile?.trim() ? `Mobile: ${order.customerMobile.trim()}` : "",
     "",
-    `Subtotal: ${formatInr(subtotal)}`,
+    `Subtotal: ${formatInr(itemsTotal)}`,
     `Delivery charge: ${formatInr(deliveryCharge)}`,
+    discountAmount > 0 ? `Discount: -${formatInr(discountAmount)}` : "",
     `*Total: ${formatInr(total)}*`,
     (order.paidAmount ?? 0) > 0 ? `Paid: ${formatInr(order.paidAmount!)}` : "",
     (order.paidAmount ?? 0) > 0 ? `Balance: ${formatInr(balance)}` : "",

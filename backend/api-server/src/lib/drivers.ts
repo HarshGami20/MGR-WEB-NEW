@@ -6,6 +6,25 @@ export function parseDeliveryCharge(raw: unknown): number {
   return Math.round(n * 100) / 100;
 }
 
+export function parseDiscountAmount(raw: unknown): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+export function applyOrderDiscount(preDiscountTotal: number, discountRaw: unknown): {
+  discountAmount: number;
+  totalAmount: number;
+} {
+  const preTotal = Math.max(0, Math.round(preDiscountTotal * 100) / 100);
+  const requested = parseDiscountAmount(discountRaw);
+  const discountAmount = Math.min(preTotal, requested);
+  return {
+    discountAmount,
+    totalAmount: Math.max(0, Math.round((preTotal - discountAmount) * 100) / 100),
+  };
+}
+
 export async function resolveDriverIdForOrder(
   driverId: unknown,
   branchId: number | null,

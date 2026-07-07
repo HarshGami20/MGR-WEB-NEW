@@ -46,7 +46,7 @@ async function enrichOrder(order: any) {
     const product = await prisma.product.findUnique({ where: { id: item.productId } });
     return { ...item, unitPrice: toNumber(item.unitPrice), gstPercent: toNumber(item.gstPercent), totalPrice: toNumber(item.totalPrice), product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null };
   }));
-  return { ...order, subtotal: toNumber(order.subtotal), taxAmount: toNumber(order.taxAmount), totalAmount: toNumber(order.totalAmount), paidAmount: toNumber(order.paidAmount), items: enrichedItems };
+  return { ...order, subtotal: toNumber(order.subtotal), taxAmount: toNumber(order.taxAmount), deliveryCharge: toNumber(order.deliveryCharge ?? 0), discountAmount: toNumber(order.discountAmount ?? 0), totalAmount: toNumber(order.totalAmount), paidAmount: toNumber(order.paidAmount), items: enrichedItems };
 }
 
 router.get("/invoices", requireAuth, requirePermission("invoices", "read"), async (req, res): Promise<void> => {

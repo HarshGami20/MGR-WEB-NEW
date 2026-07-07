@@ -36,6 +36,7 @@ export type OrderFormSource = {
   status?: string | null;
   paymentStatus?: string | null;
   advanceAmount?: number | string | null;
+  discountAmount?: number | string | null;
   paidAmount?: number | string | null;
   paymentMode?: string | null;
   assignees?: Array<{ id: number }>;
@@ -76,6 +77,7 @@ export function buildOrderFormValues(order: OrderFormSource) {
     status: order.status === "complete" ? "delivered" : (order.status ?? "order_received"),
     paymentStatus: order.paymentStatus ?? "due",
     advanceAmount: Number(order.advanceAmount ?? order.paidAmount ?? 0),
+    discountAmount: Number(order.discountAmount ?? 0),
     paymentMode: order.paymentMode ?? "cash",
     assigneeUserIds: Array.isArray(order.assignees)
       ? order.assignees.map((a) => a.id).filter((x) => Number.isFinite(x))

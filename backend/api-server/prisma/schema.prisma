@@ -367,6 +367,7 @@ model Order {
   subtotal          Decimal  @default(0) @db.Decimal(12, 2)
   taxAmount         Decimal  @default(0) @map("tax_amount") @db.Decimal(12, 2)
   deliveryCharge    Decimal  @default(0) @map("delivery_charge") @db.Decimal(12, 2)
+  discountAmount    Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
   totalAmount       Decimal  @default(0) @map("total_amount") @db.Decimal(12, 2)
   driverId          Int?     @map("driver_id")
   paidAmount        Decimal  @default(0) @map("paid_amount") @db.Decimal(12, 2)
