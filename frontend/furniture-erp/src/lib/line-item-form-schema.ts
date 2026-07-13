@@ -34,13 +34,27 @@ export const lineItemFormSchema = z
       )
       .default([]),
     description: z.string().optional().default(""),
-    quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
+    quantity: z.coerce.number(),
     unitPrice: z.coerce.number().min(0, "Price must be ≥ 0").default(0),
     gstPercent: z.coerce.number().min(0).max(100).default(0),
   })
   .superRefine((data, ctx) => {
     if (data.isCustom) {
+      if (!Number.isFinite(data.quantity) || data.quantity < 0.01) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Quantity must be at least 0.01",
+          path: ["quantity"],
+        });
+      }
       return;
+    }
+    if (!Number.isInteger(data.quantity) || data.quantity < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Quantity must be at least 1",
+        path: ["quantity"],
+      });
     }
     const pid = data.productId != null ? Number(data.productId) : 0;
     if (!pid || pid < 1) {

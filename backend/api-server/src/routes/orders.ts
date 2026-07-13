@@ -471,7 +471,11 @@ async function resolveOrderLineItems(
   for (const item of items) {
     const qty = Number(item.quantity);
     const enteredUnitPrice = Number(item.unitPrice);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new Error("Quantity must be a positive number");
+    }
     if (isCustomLineItem(item)) {
+      const customQty = Math.round(qty * 1000) / 1000;
       const name = resolveCustomProductName(item.customName);
       const gstPercent = isGst ? defaultGst : 0;
       const breakdown = isGst
@@ -488,12 +492,15 @@ async function resolveOrderLineItems(
         customImageComments: imgs.customImageComments,
         customAttributes: buildCustomAttributesJson(item),
         description: normalizeLineDescription(item.description),
-        quantity: qty,
+        quantity: customQty,
         unitPrice: breakdown.exclusiveUnitPrice,
         gstPercent,
         totalPrice: breakdown.lineTotal,
       });
       continue;
+    }
+    if (!Number.isInteger(qty) || qty < 1) {
+      throw new Error("Catalog quantity must be a whole number of at least 1");
     }
     const productId = Number(item.productId);
     const product = await db.product.findUnique({ where: { id: productId } });
@@ -1082,7 +1089,7 @@ router.post("/orders", requireAuth, requirePermission("orders", "create"), async
             customImageComments: item.customImageComments,
             customAttributes: item.customAttributes,
             description: item.description,
-            quantity: item.quantity,
+            quantity: String(item.quantity),
             unitPrice: String(item.unitPrice),
             gstPercent: String(item.gstPercent),
             totalPrice: String(item.totalPrice),
@@ -1522,7 +1529,7 @@ router.put("/orders/:id", requireAuth, requirePermission("orders", "update"), as
           customImageComments: item.customImageComments,
           customAttributes: item.customAttributes,
           description: item.description,
-          quantity: item.quantity,
+          quantity: String(item.quantity),
           unitPrice: String(item.unitPrice),
           gstPercent: String(item.gstPercent),
           totalPrice: String(item.totalPrice),

@@ -279,7 +279,8 @@ export function LineItemRow({
               <FormControl>
                 <Input
                   type="number"
-                  min="1"
+                  min={isCustom ? "0.01" : "1"}
+                  step={isCustom ? "0.01" : "1"}
                   name={field.name}
                   ref={field.ref}
                   value={field.value === "" || field.value == null ? "" : String(field.value)}
@@ -291,11 +292,14 @@ export function LineItemRow({
                     }
                     const n = Number(raw);
                     if (!Number.isFinite(n)) return;
-                    if (n > 0) field.onChange(n);
+                    if (n <= 0) return;
+                    if (!isCustom && !Number.isInteger(n)) return;
+                    field.onChange(n);
                   }}
                   onBlur={(e) => {
                     const n = Number(e.target.value);
-                    const final = Number.isFinite(n) && n > 0 ? n : 1;
+                    const min = isCustom ? 0.01 : 1;
+                    const final = Number.isFinite(n) && n >= min ? (isCustom ? Math.round(n * 1000) / 1000 : n) : min;
                     field.onChange(final);
                     field.onBlur();
                   }}
