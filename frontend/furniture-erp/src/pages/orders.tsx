@@ -13,6 +13,7 @@ import { assignedUserBranchIds, useBranch, isAdminOrSuperAdminUser } from "@/lib
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { bulkDeleteOrders, patchOrderPaymentStatus, previewBulkDeleteOrders } from "@/lib/order-api";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
+import { useOrdersListFilters } from "@/lib/orders-list-filters-store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,20 +54,28 @@ type DeleteDialogMode = "single" | "selected";
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
 
 export default function Orders() {
-  const [searchDraft, setSearchDraft] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [status, setStatus] = useState<string>("all");
-  const [isGst, setIsGst] = useState<"all" | "true" | "false">("all");
-  const [paymentStatus, setPaymentStatus] = useState<
-    "all" | "due" | "partially_paid" | "paid"
-  >("all");
-  const [sort, setSort] = useState<"newest" | "oldest">("newest");
-  const [assignmentScope, setAssignmentScope] = useState<
-    "all" | "created_by_me" | "assigned_to_me" | "own"
-  >("all");
-  const [createdDateRange, setCreatedDateRange] = useState<DateRangeValue>({});
-  const [categoryId, setCategoryId] = useState<number | undefined>();
-  const [page, setPage] = useState(1);
+  const {
+    searchDraft,
+    appliedSearch,
+    status,
+    isGst,
+    paymentStatus,
+    sort,
+    assignmentScope,
+    createdDateRange,
+    categoryId,
+    page,
+    setSearchDraft,
+    setAppliedSearch,
+    setStatus,
+    setIsGst,
+    setPaymentStatus,
+    setSort,
+    setAssignmentScope,
+    setCreatedDateRange,
+    setCategoryId,
+    setPage,
+  } = useOrdersListFilters();
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -106,7 +115,7 @@ export default function Orders() {
     if (orderScopeConfig.forcedScope) {
       setAssignmentScope(orderScopeConfig.forcedScope);
     }
-  }, [orderScopeConfig.forcedScope]);
+  }, [orderScopeConfig.forcedScope, setAssignmentScope]);
 
   useEffect(() => {
     const q = sessionStorage.getItem(ORDERS_SEARCH_PREFILL_KEY);
@@ -115,19 +124,22 @@ export default function Orders() {
       setAppliedSearch(q);
       sessionStorage.removeItem(ORDERS_SEARCH_PREFILL_KEY);
     }
-  }, []);
+  }, [setSearchDraft, setAppliedSearch]);
+
+  // Debounced search — apply 500ms after typing stops (Enter still applies immediately).
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedSearch(searchDraft.trim());
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, setAppliedSearch]);
 
   const submitSearch = () => {
     setAppliedSearch(searchDraft.trim());
-    setPage(1);
   };
 
   const onSearchDraftChange = (value: string) => {
     setSearchDraft(value);
-    if (!value.trim()) {
-      setAppliedSearch("");
-      setPage(1);
-    }
   };
 
   const listOrdersParams = useMemo(
@@ -823,7 +835,7 @@ export default function Orders() {
               value={createdDateRange}
               onChange={(next) => {
                 setCreatedDateRange(next);
-                setPage(1);
+                setPage(() => 1);
               }}
             />
           </div>
@@ -833,13 +845,13 @@ export default function Orders() {
               value={categoryId}
               onChange={(next) => {
                 setCategoryId(next);
-                setPage(1);
+                setPage(() => 1);
               }}
             />
           </div>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Order Status</label>
-            <Select value={status} onValueChange={(val) => { setStatus(val); setPage(1); }}>
+            <Select value={status} onValueChange={(val) => { setStatus(val); setPage(() => 1); }}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
@@ -855,7 +867,7 @@ export default function Orders() {
           </div>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">GST</label>
-            <Select value={isGst} onValueChange={(val: any) => { setIsGst(val); setPage(1); }}>
+            <Select value={isGst} onValueChange={(val: any) => { setIsGst(val); setPage(() => 1); }}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="All orders" />
               </SelectTrigger>
@@ -872,7 +884,7 @@ export default function Orders() {
               value={paymentStatus}
               onValueChange={(val: "all" | "due" | "partially_paid" | "paid") => {
                 setPaymentStatus(val);
-                setPage(1);
+                setPage(() => 1);
               }}
             >
               <SelectTrigger className="w-[180px]">
@@ -892,7 +904,7 @@ export default function Orders() {
               value={sort}
               onValueChange={(val: "newest" | "oldest") => {
                 setSort(val);
-                setPage(1);
+                setPage(() => 1);
               }}
             >
               <SelectTrigger className="w-[180px]">
@@ -911,7 +923,7 @@ export default function Orders() {
                 value={assignmentScope}
                 onValueChange={(val: "all" | "created_by_me" | "assigned_to_me") => {
                   setAssignmentScope(val);
-                  setPage(1);
+                  setPage(() => 1);
                 }}
               >
                 <SelectTrigger className="w-[200px]">

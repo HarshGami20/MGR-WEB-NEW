@@ -55,11 +55,13 @@ export async function copyOrderCreated(input: {
   createdById?: number | null;
   summary?: OrderNotificationSummary;
 }): Promise<NotificationCopy> {
-  const who = byActor(await actorName(input.createdById));
-  const message = `Order ${input.orderNumber} was created${who}. Open the order to review items and delivery.`;
+  const createdBy = (await actorName(input.createdById))?.trim() || "—";
+  const orderNumber = input.summary?.orderNumber ?? input.orderNumber;
+  const amount = input.summary?.amount ?? "—";
+  const category = input.summary?.category ?? "Not specified";
   return {
-    title: "New sales order",
-    message: input.summary ? appendOrderSummaryToMessage(message, input.summary) : message,
+    title: "New order",
+    message: `${orderNumber} · ${amount} · ${createdBy} · ${category}`,
     actionPath: orderActionPath(input.orderId),
   };
 }

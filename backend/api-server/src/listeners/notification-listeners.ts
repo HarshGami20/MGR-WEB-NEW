@@ -1,47 +1,48 @@
 import {
   appEvents,
-  type ComplaintCommentAddedPayload,
-  type ComplaintCreatedPayload,
-  type ComplaintStatusChangedPayload,
   type OrderCreatedPayload,
-  type OrderDeliveryUpdatedPayload,
-  type OrderPaymentStatusChangedPayload,
-  type OrderStatusChangedPayload,
-  type PaymentFollowUpCreatedPayload,
-  type PaymentReceivedPayload,
-  type PurchaseOrderCreatedPayload,
-  type PurchaseOrderStatusChangedPayload,
-  type PurchaseOrderUpdatedPayload,
+  // type ComplaintCommentAddedPayload,
+  // type ComplaintCreatedPayload,
+  // type ComplaintStatusChangedPayload,
+  // type OrderDeliveryUpdatedPayload,
+  // type OrderPaymentStatusChangedPayload,
+  // type OrderStatusChangedPayload,
+  // type PaymentFollowUpCreatedPayload,
+  // type PaymentReceivedPayload,
+  // type PurchaseOrderCreatedPayload,
+  // type PurchaseOrderStatusChangedPayload,
+  // type PurchaseOrderUpdatedPayload,
 } from "../lib/app-events";
 import {
-  copyComplaintCommentAdded,
-  copyComplaintCreated,
-  copyComplaintStatusChanged,
   copyOrderCreated,
-  copyOrderDeliveryUpdated,
-  copyOrderStatusChanged,
-  copyPaymentFollowUpScheduled,
-  copyPaymentReceived,
-  copyPaymentStatusChanged,
-  copyPurchaseOrderCreated,
-  copyPurchaseOrderStatusChanged,
-  copyPurchaseOrderUpdated,
   withActionMeta,
+  // copyComplaintCommentAdded,
+  // copyComplaintCreated,
+  // copyComplaintStatusChanged,
+  // copyOrderDeliveryUpdated,
+  // copyOrderStatusChanged,
+  // copyPaymentFollowUpScheduled,
+  // copyPaymentReceived,
+  // copyPaymentStatusChanged,
+  // copyPurchaseOrderCreated,
+  // copyPurchaseOrderStatusChanged,
+  // copyPurchaseOrderUpdated,
 } from "../lib/notification-copy";
 import { loadOrderNotificationSummary } from "../lib/order-notification-summary";
 import { logger } from "../lib/logger";
-import { prisma } from "../lib/prisma";
+// import { prisma } from "../lib/prisma";
 import {
-  complaintNotificationTargets,
   orderNotificationTargets,
-  purchaseOrderPartnerTargets,
-  purchaseOrderStaffTargets,
-  startOfUtcDay,
+  // complaintNotificationTargets,
+  // purchaseOrderPartnerTargets,
+  // purchaseOrderStaffTargets,
+  // startOfUtcDay,
 } from "../lib/notification-targets";
 import { notificationService } from "../services/notification-service";
 
 const evLog = logger.child({ ns: "notifications", layer: "events" });
 
+/*
 function reminderScheduledAt(followUpDateYmd: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(followUpDateYmd);
   if (!m) return startOfUtcDay(new Date());
@@ -52,9 +53,11 @@ function reminderScheduledAt(followUpDateYmd: string): Date {
   if (atNineUtc.getTime() > Date.now()) return atNineUtc;
   return new Date(Date.now() + 2000);
 }
+*/
 
 /**
  * Register once at process startup. Handlers are async and non-blocking for HTTP.
+ * Temporarily: only new order creation notifications are enabled.
  */
 export function registerNotificationEventListeners(): void {
   appEvents.on("ORDER_CREATED", (payload: OrderCreatedPayload) => {
@@ -94,6 +97,7 @@ export function registerNotificationEventListeners(): void {
     })();
   });
 
+  /*
   appEvents.on("ORDER_STATUS_CHANGED", (payload: OrderStatusChangedPayload) => {
     void (async () => {
       try {
@@ -560,4 +564,5 @@ export function registerNotificationEventListeners(): void {
       }
     })();
   });
+  */
 }

@@ -1,4 +1,4 @@
-import quotationLogoUrl from "@/assets/fulllogo.png";
+import quotationLogoUrl from "@/assets/logofull.webp";
 
 let cachedLogoDataUrl: string | null = null;
 
