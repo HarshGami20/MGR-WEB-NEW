@@ -63,7 +63,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { listDrivers } from "@/lib/driver-api";
-import { GitBranch, Plus, Pencil, Trash2, Truck, Eye } from "lucide-react";
+import { GitBranch, Plus, Pencil, Trash2, Truck, Eye, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Match backend: JS getUTCDay() — 0 Sun … 6 Sat */
@@ -224,6 +224,7 @@ export default function DeliveriesPage() {
   const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "full">("all");
   const [location] = useLocation();
   const [bookedDateRange, setBookedDateRange] = useState<DateRangeValue>(() => getLast7DaysDateRange());
+  const [bookedSearch, setBookedSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
 
   useEffect(() => {
@@ -283,6 +284,26 @@ export default function DeliveriesPage() {
     { query: { enabled: writeBranchId != null && canViewOrders } },
   );
   const deliveryOrders = (ordersData?.data ?? []) as DeliveryOrderRow[];
+
+  const filteredDeliveryOrders = useMemo(() => {
+    const q = bookedSearch.trim().toLowerCase();
+    if (!q) return deliveryOrders;
+    return deliveryOrders.filter((o) => {
+      const haystack = [
+        o.orderNumber,
+        o.customerName,
+        o.customerMobile,
+        o.driver?.name,
+        o.driver?.mobile,
+        o.deliverySlot?.label,
+        ...(o.deliveryAssignees ?? []).flatMap((a) => [a.name, a.mobile]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [deliveryOrders, bookedSearch]);
 
   const { data: driversData } = useQuery({
     queryKey: ["drivers", writeBranchId],
@@ -692,28 +713,43 @@ export default function DeliveriesPage() {
 
         <TabsContent value="booked">
           <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-              <CardTitle>Delevery Schedule</CardTitle>
-            <div className="space-y-1">
-                    <ListDateRangeFilter
-                      context="deliveries"
-                      className="max-w-md bg-background"
-                      value={bookedDateRange}
-                      onChange={setBookedDateRange}
-                      numberOfMonths={2}
+            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <CardTitle>Delivery Schedule</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+                <div className="space-y-1 w-full sm:w-auto sm:min-w-[240px] sm:max-w-sm">
+                  <label htmlFor="booked-delivery-search" className="text-xs text-muted-foreground">
+                    Search
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="booked-delivery-search"
+                      placeholder="Order no., name, mobile, or driver…"
+                      className="pl-8 bg-background"
+                      value={bookedSearch}
+                      onChange={(e) => setBookedSearch(e.target.value)}
                     />
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <ListDateRangeFilter
+                    context="deliveries"
+                    className="max-w-md bg-background"
+                    value={bookedDateRange}
+                    onChange={setBookedDateRange}
+                    numberOfMonths={2}
+                  />
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-             
-
               {!canViewOrders ? (
                 <p className="text-sm text-muted-foreground py-6 text-center">
                   Orders view permission is required to see booked deliveries.
                 </p>
               ) : (
                 <DeliveryScheduleList
-                  orders={deliveryOrders}
+                  orders={filteredDeliveryOrders}
                   slots={rows}
                   branchId={writeBranchId}
                   fromYmd={bookedRange.fromYmd}

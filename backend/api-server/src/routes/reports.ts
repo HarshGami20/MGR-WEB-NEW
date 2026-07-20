@@ -16,17 +16,30 @@ import {
   resolveProductExportCategoryIds,
 } from "../lib/product-export";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
+import { revenueReportingOrderWhere } from "../lib/order-reporting";
+import { readBranchIdFromRequest } from "../lib/branch-scope";
 
 const router: IRouter = Router();
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
-router.get("/reports/revenue-summary", requireAuth, requirePermission("reports", "read"), async (req, res): Promise<void> => {
+const revenueSummaryRead = requirePermissionAny([
+  { module: "reports", action: "read" },
+  { module: "dashboard", action: "read" },
+]);
+
+router.get("/reports/revenue-summary", requireAuth, revenueSummaryRead, async (req, res): Promise<void> => {
   const yearParam = req.query.year ? parseInt(String(req.query.year), 10) : undefined;
   const monthParam = req.query.month ? parseInt(String(req.query.month), 10) : undefined;
+  const branchIdFromReq = readBranchIdFromRequest(req);
   const branchIdParam = req.query.branchId ? parseInt(String(req.query.branchId), 10) : NaN;
-  const branchFilter =
-    Number.isFinite(branchIdParam) && branchIdParam > 0 ? { branchId: branchIdParam } : {};
+  const resolvedBranchId =
+    branchIdFromReq != null && branchIdFromReq > 0
+      ? branchIdFromReq
+      : Number.isFinite(branchIdParam) && branchIdParam > 0
+        ? branchIdParam
+        : null;
+  const branchFilter = resolvedBranchId != null ? { branchId: resolvedBranchId } : {};
   const categoryIdParam =
     typeof req.query.categoryId === "string" ? parseInt(req.query.categoryId, 10) : NaN;
   const categoryIds = await resolveCategoryFilterIds(
@@ -50,11 +63,11 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
   }
 
   const orders = await prisma.order.findMany({
-    where: {
+    where: revenueReportingOrderWhere({
       ...branchFilter,
       ...(createdAtWhere.gte || createdAtWhere.lt ? { createdAt: createdAtWhere } : {}),
       ...(categoryIds ? orderMatchesCategoryFilter(categoryIds) : {}),
-    },
+    }),
     select: {
       id: true,
       createdAt: true,
@@ -243,7 +256,7 @@ router.get("/reports/revenue-summary", requireAuth, requirePermission("reports",
     filters: {
       year: hasValidYear ? yearParam : null,
       month: hasValidMonth ? monthParam : null,
-      branchId: Number.isFinite(branchIdParam) && branchIdParam > 0 ? branchIdParam : null,
+      branchId: resolvedBranchId,
       categoryId: Number.isFinite(categoryIdParam) && categoryIdParam > 0 ? categoryIdParam : null,
     },
     totals: {

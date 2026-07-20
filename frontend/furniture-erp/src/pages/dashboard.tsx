@@ -137,7 +137,7 @@ function StaffDashboard() {
       dayEnd.setDate(day.getDate() + 1);
       const bucket = orders.filter((o) => {
         const dt = new Date(o.createdAt);
-        return dt >= day && dt < dayEnd;
+        return dt >= day && dt < dayEnd && String(o.status) !== "cancelled";
       });
       const revenue = bucket.reduce((sum, o) => sum + o.totalAmount, 0);
       return {
@@ -186,6 +186,7 @@ function StaffDashboard() {
       else if (st === "manufacturing" || st === "ready_to_ship") inProgress++;
       else if (st === "order_received") received++;
       else if (st === "cancelled") cancelled++;
+      if (st === "cancelled") continue;
       const totalAmt = (o as any).totalAmount ?? 0;
       const paidAmt = (o as any).paidAmount ?? 0;
       revenueTotal += totalAmt;

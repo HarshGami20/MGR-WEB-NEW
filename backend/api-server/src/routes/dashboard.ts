@@ -3,6 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { requireAuth } from "../middlewares/auth";
 import { requirePermission, requirePermissionAny } from "../lib/permissions";
 import { prisma, toNumber } from "../lib/prisma";
+import { readBranchIdFromRequest } from "../lib/branch-scope";
+import { isCancelledOrderStatus, revenueReportingOrderWhere } from "../lib/order-reporting";
 
 const router: IRouter = Router();
 
@@ -20,12 +22,10 @@ function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-/** Optional `branchId` query: positive integer filters orders to that branch. */
+/** Branch from `branchId` query or `X-Branch-Id` header (mobile workspace). */
 function orderWhereFromQuery(req: Request): Prisma.OrderWhereInput {
-  const raw = req.query.branchId;
-  if (raw === undefined || raw === "") return {};
-  const n = parseInt(String(raw), 10);
-  if (!Number.isFinite(n) || n <= 0) return {};
+  const n = readBranchIdFromRequest(req);
+  if (n == null || n <= 0) return {};
   return { branchId: n };
 }
 
@@ -61,8 +61,9 @@ router.get("/dashboard/summary", requireAuth, dashboardRead, async (req, res): P
   const totalProducts = products.length;
   const totalSuppliers = suppliers.length;
 
-  const totalPaid = orders.reduce((sum, o) => sum + toNumber(o.paidAmount), 0);
-  const totalRevs = orders.reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
+  const revenueEligibleOrders = orders.filter((o) => !isCancelledOrderStatus(o.status));
+  const totalPaid = revenueEligibleOrders.reduce((sum, o) => sum + toNumber(o.paidAmount), 0);
+  const totalRevs = revenueEligibleOrders.reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
   const pendingPayments = totalRevs - totalPaid;
 
   const today = new Date();
@@ -108,7 +109,10 @@ router.get("/dashboard/recent-orders", requireAuth, dashboardRead, async (req, r
 
 router.get("/dashboard/sales-report", requireAuth, dashboardRead, async (req, res): Promise<void> => {
   const orderWhere = orderWhereFromQuery(req);
-  const orders = await prisma.order.findMany({ where: orderWhere });
+  const orders = await prisma.order.findMany({
+    where: revenueReportingOrderWhere(orderWhere),
+    select: { createdAt: true, totalAmount: true },
+  });
   const year = req.query.year ? parseInt(req.query.year as string, 10) : new Date().getFullYear();
 
   const monthMap: Record<string, { revenue: number; orderCount: number }> = {};
