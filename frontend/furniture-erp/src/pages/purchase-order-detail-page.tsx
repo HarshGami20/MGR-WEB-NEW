@@ -1,4 +1,4 @@
-  import { useEffect, useState, type ReactNode } from "react";
+  import { useEffect, useState, Fragment, type ReactNode } from "react";
   import { Link, Redirect, useLocation, useRoute } from "wouter";
   import {
     getGetPurchaseOrderQueryKey,
@@ -23,6 +23,12 @@
   import { Textarea } from "@/components/ui/textarea";
   import { Input } from "@/components/ui/input";
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+  import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+  } from "@/components/ui/accordion";
   import {
     OrderImageGalleryDialog,
     type GallerySlide,
@@ -67,6 +73,7 @@
     customName?: string | null;
     customImageUrl?: string | null;
     customImageUrls?: string[] | string | null;
+    customImageComments?: Array<{ imageUrl?: string; comment?: string }> | null;
     customAttributes?: string | null;
     description?: string | null;
     productId?: number | null;
@@ -177,6 +184,80 @@
     return [...variantPhotos, ...productPhotos]
       .map((u) => resolvedProductImageUrl(u))
       .filter((u): u is string => Boolean(u));
+  }
+
+  function poLinePhotoComments(
+    item: PoLineItem,
+  ): Array<{ imageUrl?: string; comment?: string }> {
+    const urls = parseImageUrlsList(item.customImageUrls, item.customImageUrl);
+    const byUrl = new Map(
+      (Array.isArray(item.customImageComments) ? item.customImageComments : [])
+        .filter((row) => row?.imageUrl?.trim())
+        .map((row) => [String(row.imageUrl).trim(), row.comment?.trim() ?? ""]),
+    );
+    return urls.map((imageUrl) => ({
+      imageUrl: resolvedProductImageUrl(imageUrl) ?? imageUrl,
+      comment: byUrl.get(imageUrl) ?? "",
+    }));
+  }
+
+  function customLineGallerySlides(item: PoLineItem): GallerySlide[] {
+    return poLinePhotoComments(item)
+      .filter((row) => row.imageUrl?.trim())
+      .map((row) => ({
+        src: row.imageUrl!,
+        caption: row.comment?.trim() || null,
+      }));
+  }
+
+  function CustomLinePhotosAccordion({
+    itemId,
+    label,
+    photos,
+    onOpenGallery,
+  }: {
+    itemId: number;
+    label: string;
+    photos: GallerySlide[];
+    onOpenGallery: (index: number) => void;
+  }) {
+    if (photos.length === 0) return null;
+
+    return (
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value={`custom-photos-${itemId}`} className="border-none">
+          <AccordionTrigger className="py-2 text-sm font-medium text-muted-foreground hover:no-underline">
+            Custom images ({photos.length})
+          </AccordionTrigger>
+          <AccordionContent className="pb-1 pt-0">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {photos.map((entry, photoIndex) => (
+                <div
+                  key={`${itemId}-photo-${photoIndex}`}
+                  className="flex min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-background p-2.5"
+                >
+                  <button
+                    type="button"
+                    className="h-20 w-20 shrink-0 overflow-hidden rounded-md border cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => onOpenGallery(photoIndex)}
+                    aria-label={
+                      entry.caption ? `View photo: ${entry.caption}` : `View photo of ${label}`
+                    }
+                  >
+                    <img src={entry.src} alt="" className="h-full w-full object-cover" />
+                  </button>
+                  {entry.caption ? (
+                    <p className="min-w-0 flex-1 text-sm text-muted-foreground whitespace-pre-wrap pt-0.5">
+                      {entry.caption}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    );
   }
 
   export default function PurchaseOrderDetailPage() {
@@ -388,14 +469,18 @@
               </Link>
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold tracking-tight font-mono md:text-2xl">{po.poNumber}</h1>
+                  <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+                    {vendor?.name || po.poNumber}
+                  </h1>
                   <Badge variant="secondary" className="capitalize font-normal">
                     {poAny.type}
                   </Badge>
                   {getStatusBadge(po.status)}
                 </div>
                 <p className="text-sm text-muted-foreground">
-                 {formatDisplayDate(po.createdAt, { includeTime: true })}
+                  <span className="font-mono">{po.poNumber}</span>
+                  {" · "}
+                  {formatDisplayDate(po.createdAt, { includeTime: true })}
                   {poAny.branch?.name ? (
                     <>
                       {" "}
@@ -552,65 +637,86 @@
                           {items.map((item) => {
                             const isCustom = !!item.isCustom;
                             const photos = lineImageUrls(item);
+                            const customPhotos = isCustom ? customLineGallerySlides(item) : [];
                             const lineName = isCustom
                               ? item.customName ?? "Custom item"
                               : item.product?.name ?? `Product #${item.productId}`;
                             const lineDesc = item.description?.trim();
                             const lineTotal = Number(item.unitPrice) * item.quantity;
                             return (
-                              <TableRow key={item.id}>
-                                <TableCell>
-                                  <div className="flex items-start gap-3 min-w-[200px]">
-                                    {photos.length > 0 ? (
-                                      <button
-                                        type="button"
-                                        className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                        onClick={() => openUrlGallery(photos, 0)}
-                                        aria-label={
-                                          photos.length > 1
-                                            ? `View ${photos.length} product images`
-                                            : "View product image"
-                                        }
-                                      >
-                                        <img
-                                          src={photos[0]}
-                                          alt={lineName}
-                                          className="h-full w-full object-cover"
-                                        />
-                                        {photos.length > 1 ? (
-                                          <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[10px] font-medium text-white text-center leading-tight py-0.5">
-                                            +{photos.length - 1}
-                                          </span>
-                                        ) : null}
-                                      </button>
-                                    ) : (
-                                      <div className="h-12 w-12 rounded-md border bg-muted shrink-0 flex items-center justify-center">
-                                        <Package className="h-4 w-4 text-muted-foreground" />
-                                      </div>
-                                    )}
-                                    <div className="min-w-0">
-                                      <p className="font-medium text-sm">
-                                        {lineName}
-                                        {isCustom ? (
-                                          <span className="ml-2 text-xs text-muted-foreground font-normal">(custom)</span>
-                                        ) : null}
-                                      </p>
-                                      {lineDesc ? (
-                                        <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
-                                          {lineDesc}
+                              <Fragment key={item.id}>
+                                <TableRow>
+                                  <TableCell>
+                                    <div className="flex items-start gap-3 min-w-[200px]">
+                                      {photos.length > 0 ? (
+                                        <button
+                                          type="button"
+                                          className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          onClick={() =>
+                                            isCustom && customPhotos.length > 0
+                                              ? openImageGallery(customPhotos, 0)
+                                              : openUrlGallery(photos, 0)
+                                          }
+                                          aria-label={
+                                            photos.length > 1
+                                              ? `View ${photos.length} product images`
+                                              : "View product image"
+                                          }
+                                        >
+                                          <img
+                                            src={photos[0]}
+                                            alt={lineName}
+                                            className="h-full w-full object-cover"
+                                          />
+                                          {photos.length > 1 ? (
+                                            <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[10px] font-medium text-white text-center leading-tight py-0.5">
+                                              +{photos.length - 1}
+                                            </span>
+                                          ) : null}
+                                        </button>
+                                      ) : (
+                                        <div className="h-12 w-12 rounded-md border bg-muted shrink-0 flex items-center justify-center">
+                                          <Package className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-sm">
+                                          {lineName}
+                                          {isCustom ? (
+                                            <span className="ml-2 text-xs text-muted-foreground font-normal">(custom)</span>
+                                          ) : null}
                                         </p>
-                                      ) : null}
+                                        {lineDesc ? (
+                                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
+                                            {lineDesc}
+                                          </p>
+                                        ) : null}
+                                      </div>
                                     </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                                <TableCell className="text-right tabular-nums text-muted-foreground">
-                                  {formatInr(Number(item.unitPrice))}
-                                </TableCell>
-                                <TableCell className="text-right font-medium tabular-nums">
-                                  {formatInr(lineTotal)}
-                                </TableCell>
-                              </TableRow>
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+                                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                                    {formatInr(Number(item.unitPrice))}
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium tabular-nums">
+                                    {formatInr(lineTotal)}
+                                  </TableCell>
+                                </TableRow>
+                                {customPhotos.length > 0 ? (
+                                  <TableRow className="hover:bg-transparent">
+                                    <TableCell colSpan={4} className="bg-muted/10 py-2">
+                                      <CustomLinePhotosAccordion
+                                        itemId={item.id}
+                                        label={lineName}
+                                        photos={customPhotos}
+                                        onOpenGallery={(photoIndex) =>
+                                          openImageGallery(customPhotos, photoIndex)
+                                        }
+                                      />
+                                    </TableCell>
+                                  </TableRow>
+                                ) : null}
+                              </Fragment>
                             );
                           })}
                         </TableBody>

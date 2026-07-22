@@ -697,6 +697,8 @@ model PurchaseOrderItem {
   customImageUrl   String?  @map("custom_image_url")
   /** JSON string array of image URLs for custom lines */
   customImageUrls  String?  @map("custom_image_urls")
+  /** JSON array of { imageUrl, comment? } for custom line photos */
+  customImageComments String? @map("custom_image_comments")
   customAttributes String?  @map("custom_attributes")
   description      String?
   quantity         Int

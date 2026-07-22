@@ -16,6 +16,7 @@ import {
   buildCustomAttributesJson,
   resolveCustomLineImages,
   normalizeLineDescription,
+  parseCustomImageCommentsJson,
   type IncomingLineItem,
 } from "../lib/custom-line-item";
 import { parseImageUrlsJson } from "../lib/image-urls";
@@ -57,6 +58,7 @@ type PoItemWriter = {
         customName?: string | null;
         customImageUrl?: string | null;
         customImageUrls?: string | null;
+        customImageComments?: string | null;
         customAttributes?: string | null;
         description?: string | null;
         quantity: number;
@@ -87,6 +89,7 @@ async function writePurchaseOrderItems(
           customName: name,
           customImageUrl: imgs.customImageUrl,
           customImageUrls: imgs.customImageUrls,
+          customImageComments: imgs.customImageComments,
           customAttributes: buildCustomAttributesJson(raw),
           description: normalizeLineDescription(raw.description),
           quantity: raw.quantity,
@@ -157,6 +160,7 @@ async function enrichPO(po: any) {
       customName: item.customName,
       customImageUrl: customImageUrls[0] ?? null,
       customImageUrls,
+      customImageComments: parseCustomImageCommentsJson(item.customImageComments),
       customAttributes: item.customAttributes,
       unitPrice: toNumber(item.unitPrice),
       product: product
@@ -246,7 +250,11 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", 
   const q = typeof search === "string" ? search.trim() : "";
   if (q) {
     extraClauses.push({
-      poNumber: { contains: q, mode: "insensitive" },
+      OR: [
+        { poNumber: { contains: q, mode: "insensitive" } },
+        { supplier: { name: { contains: q, mode: "insensitive" } } },
+        { manufacturer: { name: { contains: q, mode: "insensitive" } } },
+      ],
     });
   }
 

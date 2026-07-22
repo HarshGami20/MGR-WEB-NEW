@@ -225,32 +225,30 @@ export default function PurchaseOrders() {
   const columns = useMemo<ColumnDef<(typeof pos)[number]>[]>(
     () => [
       {
-        accessorKey: "poNumber",
-        header: "PO #",
-        cell: ({ row }) => (
-          <div
-            className="font-mono text-sm font-medium cursor-pointer text-dark hover:underline text-left"
-            onClick={() => setLocation(`/purchase-orders/${row.original.id}`)}
-          >
-            {row.original.poNumber}
-          </div>
-        ),
+        id: "vendor",
+        header: "Vendor",
+        cell: ({ row }) => {
+          const name =
+            row.original.type === "supplier"
+              ? row.original.supplier?.name
+              : row.original.manufacturer?.name;
+          return (
+            <div
+              className="cursor-pointer text-left"
+              onClick={() => setLocation(`/purchase-orders/${row.original.id}`)}
+            >
+              <div className="font-medium text-dark hover:underline">{name || "—"}</div>
+              <div className="font-mono text-xs text-muted-foreground mt-0.5">
+                {row.original.poNumber}
+              </div>
+            </div>
+          );
+        },
       },
       {
         accessorKey: "type",
         header: "Type",
         cell: ({ row }) => <span className="capitalize">{row.original.type}</span>,
-      },
-      {
-        id: "vendor",
-        header: "Vendor",
-        cell: ({ row }) => (
-          <span className="font-medium">
-            {row.original.type === "supplier"
-              ? row.original.supplier?.name
-              : row.original.manufacturer?.name}
-          </span>
-        ),
       },
       {
         accessorKey: "status",
@@ -303,13 +301,15 @@ export default function PurchaseOrders() {
         meta: { headerClassName: "w-[100px]", cellClassName: "text-right" },
         cell: ({ row }) => {
           const po = row.original;
+          const vendorName =
+            po.type === "supplier" ? po.supplier?.name : po.manufacturer?.name;
           return (
             <div className="flex items-center justify-end gap-1">
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9"
-                aria-label={`View ${po.poNumber}`}
+                aria-label={`View ${vendorName || po.poNumber}`}
                 onClick={() => setLocation(`/purchase-orders/${po.id}`)}
               >
                 <Eye className="h-4 w-4 text-muted-foreground" />
@@ -319,12 +319,12 @@ export default function PurchaseOrders() {
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  aria-label={`Delete ${po.poNumber}`}
+                  aria-label={`Delete ${vendorName || po.poNumber}`}
                   disabled={deletePO.isPending}
                   onClick={() => {
                     if (
                       confirm(
-                        `Delete purchase order ${po.poNumber}?${
+                        `Delete purchase order for ${vendorName || po.poNumber}?${
                           po.status === "delivered"
                             ? " Stock added on delivery will be reversed."
                             : ""
@@ -366,7 +366,7 @@ export default function PurchaseOrders() {
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by PO number…"
+              placeholder="Search by vendor name or PO number…"
               className="pl-8"
               value={search}
               onChange={(e) => {
