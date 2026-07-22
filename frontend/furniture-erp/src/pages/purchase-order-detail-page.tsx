@@ -15,7 +15,8 @@
   import { isPartnerPortalUser } from "@/lib/partner";
   import { usePermissions } from "@/lib/permissions";
   import { poStatusLabel } from "@/lib/partner-po-attributes";
-  import { parseImageUrlsList, productImageList, variantImageList } from "@/lib/image-urls";
+  import { parseImageUrlsList } from "@/lib/image-urls";
+  import { catalogLineImageUrls } from "@/components/catalog-line-image-preview";
   import { resolvedProductImageUrl } from "@/lib/product-image-url";
   import { Button } from "@/components/ui/button";
   import { Badge } from "@/components/ui/badge";
@@ -177,13 +178,16 @@
         .map((u) => resolvedProductImageUrl(u))
         .filter((u): u is string => Boolean(u));
     }
-    const variantPhotos = item.variant
-      ? variantImageList(item.variant as { imageUrls?: string | string[] | null; imageUrl?: string | null })
-      : [];
-    const productPhotos = item.product ? productImageList(item.product) : [];
-    return [...variantPhotos, ...productPhotos]
-      .map((u) => resolvedProductImageUrl(u))
-      .filter((u): u is string => Boolean(u));
+    const merged = catalogLineImageUrls(item.product, item.variant);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of merged) {
+      const resolved = resolvedProductImageUrl(raw);
+      if (!resolved || seen.has(resolved)) continue;
+      seen.add(resolved);
+      out.push(resolved);
+    }
+    return out;
   }
 
   function poLinePhotoComments(
@@ -210,14 +214,16 @@
       }));
   }
 
-  function CustomLinePhotosAccordion({
+  function LinePhotosAccordion({
     itemId,
     label,
+    title,
     photos,
     onOpenGallery,
   }: {
     itemId: number;
     label: string;
+    title: string;
     photos: GallerySlide[];
     onOpenGallery: (index: number) => void;
   }) {
@@ -225,9 +231,9 @@
 
     return (
       <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value={`custom-photos-${itemId}`} className="border-none">
+        <AccordionItem value={`line-photos-${itemId}`} className="border-none">
           <AccordionTrigger className="py-2 text-sm font-medium text-muted-foreground hover:no-underline">
-            Custom images ({photos.length})
+            {title} ({photos.length})
           </AccordionTrigger>
           <AccordionContent className="pb-1 pt-0">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -638,6 +644,11 @@
                             const isCustom = !!item.isCustom;
                             const photos = lineImageUrls(item);
                             const customPhotos = isCustom ? customLineGallerySlides(item) : [];
+                            const catalogPhotos =
+                              !isCustom && photos.length > 0
+                                ? photos.map((src) => ({ src, caption: null as string | null }))
+                                : [];
+                            const accordionPhotos = isCustom ? customPhotos : catalogPhotos;
                             const lineName = isCustom
                               ? item.customName ?? "Custom item"
                               : item.product?.name ?? `Product #${item.productId}`;
@@ -653,8 +664,8 @@
                                           type="button"
                                           className="relative h-12 w-12 shrink-0 rounded-md border bg-muted overflow-hidden cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                           onClick={() =>
-                                            isCustom && customPhotos.length > 0
-                                              ? openImageGallery(customPhotos, 0)
+                                            accordionPhotos.length > 0
+                                              ? openImageGallery(accordionPhotos, 0)
                                               : openUrlGallery(photos, 0)
                                           }
                                           aria-label={
@@ -702,15 +713,16 @@
                                     {formatInr(lineTotal)}
                                   </TableCell>
                                 </TableRow>
-                                {customPhotos.length > 0 ? (
+                                {accordionPhotos.length > 0 ? (
                                   <TableRow className="hover:bg-transparent">
                                     <TableCell colSpan={4} className="bg-muted/10 py-2">
-                                      <CustomLinePhotosAccordion
+                                      <LinePhotosAccordion
                                         itemId={item.id}
                                         label={lineName}
-                                        photos={customPhotos}
+                                        title={isCustom ? "Custom images" : "Product images"}
+                                        photos={accordionPhotos}
                                         onOpenGallery={(photoIndex) =>
-                                          openImageGallery(customPhotos, photoIndex)
+                                          openImageGallery(accordionPhotos, photoIndex)
                                         }
                                       />
                                     </TableCell>

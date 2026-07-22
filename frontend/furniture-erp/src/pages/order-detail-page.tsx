@@ -54,7 +54,8 @@ import { formatPaymentStatusLabel, isPendingPaymentStatus } from "@/lib/payment-
 import { formatInr } from "@/lib/format-currency";
 import { remainingInrPaymentAmount, roundInrPaymentAmount } from "@/lib/payment-amount";
 import { inclusiveUnitFromExclusive } from "@/lib/gst-pricing";
-import { parseImageUrlsList, productImageList } from "@/lib/image-urls";
+import { parseImageUrlsList } from "@/lib/image-urls";
+import { catalogLineImageUrls } from "@/components/catalog-line-image-preview";
 import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { resolveCustomProductName } from "@/lib/custom-line-item";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,7 @@ type OrderLineItemRow = {
   description?: string | null;
   productId?: number | null;
   product?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
+  variant?: { name?: string; imageUrl?: string | null; imageUrls?: string | string[] | null } | null;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -141,12 +143,21 @@ function buildQuotationFromOrder(order: {
 }
 
 function orderLineImageUrls(item: OrderLineItemRow): string[] {
-  const raw = item.isCustom
-    ? parseImageUrlsList(item.customImageUrls, item.customImageUrl)
-    : item.product
-      ? productImageList(item.product)
-      : [];
-  return raw.map((u) => resolvedProductImageUrl(u)).filter((u): u is string => Boolean(u));
+  if (item.isCustom) {
+    return parseImageUrlsList(item.customImageUrls, item.customImageUrl)
+      .map((u) => resolvedProductImageUrl(u))
+      .filter((u): u is string => Boolean(u));
+  }
+  const merged = catalogLineImageUrls(item.product, item.variant);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of merged) {
+    const resolved = resolvedProductImageUrl(raw);
+    if (!resolved || seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
 }
 
 function orderLinePhotoComments(item: OrderLineItemRow): Array<{ imageUrl?: string; comment?: string }> {

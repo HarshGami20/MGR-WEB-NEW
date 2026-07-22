@@ -154,6 +154,12 @@ async function enrichPO(po: any) {
         ? await prisma.productVariant.findUnique({ where: { id: item.variantId } })
         : null;
     const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
+    const productImageUrls = product
+      ? parseImageUrlsJson(product.imageUrls, product.imageUrl)
+      : [];
+    const variantImageUrls = variant
+      ? parseImageUrlsJson(variant.imageUrls, variant.imageUrl)
+      : [];
     return {
       ...item,
       isCustom: item.isCustom,
@@ -164,12 +170,20 @@ async function enrichPO(po: any) {
       customAttributes: item.customAttributes,
       unitPrice: toNumber(item.unitPrice),
       product: product
-        ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) }
+        ? {
+            ...product,
+            price: toNumber(product.price),
+            gstPercent: toNumber(product.gstPercent),
+            imageUrls: productImageUrls,
+            imageUrl: productImageUrls[0] ?? null,
+          }
         : null,
       variant: variant
         ? {
             ...variant,
             price: variant.price != null ? toNumber(variant.price) : null,
+            imageUrls: variantImageUrls,
+            imageUrl: variantImageUrls[0] ?? null,
           }
         : null,
     };

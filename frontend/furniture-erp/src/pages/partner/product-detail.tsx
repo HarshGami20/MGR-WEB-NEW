@@ -4,8 +4,9 @@ import { useGetProduct, useListProductVariants } from "@/api-client";
 import { useAuth } from "@/lib/auth";
 import { isPartnerPortalUser } from "@/lib/partner";
 import { partnerBackHref } from "@/lib/partner-routes";
-import { resolvedProductImageUrl } from "@/lib/product-image-url";
+import { CatalogLineImageThumb } from "@/components/catalog-line-image-preview";
 import { productImageList, variantImageList } from "@/lib/image-urls";
+import { resolvedProductImageUrl } from "@/lib/product-image-url";
 import { formatInr } from "@/lib/format-currency";
 import { jsonToAttrs, attributesPlainLine, AttrTags } from "@/pages/products-shared";
 import { Button } from "@/components/ui/button";
@@ -211,14 +212,22 @@ export default function PartnerProductDetailPage() {
                       <TableBody>
                         {variantList.map((v) => {
                           const photos = variantImageList(v);
-                          const thumb = resolvedProductImageUrl(photos[0] ?? null);
+                          const productFallback =
+                            photos.length === 0
+                              ? productImageList(
+                                  product as { imageUrls?: string | string[] | null; imageUrl?: string | null },
+                                )
+                              : [];
+                          const urls = photos.length > 0 ? photos : productFallback;
                           return (
                             <TableRow key={v.id}>
                               <TableCell>
                                 <div className="flex items-center gap-2">
-                                  {thumb ? (
-                                    <img src={thumb} alt="" className="h-9 w-9 rounded-md object-cover border" />
-                                  ) : null}
+                                  <CatalogLineImageThumb
+                                    urls={urls}
+                                    caption={v.name}
+                                    size="sm"
+                                  />
                                   <span className="font-medium text-sm">{v.name}</span>
                                 </div>
                               </TableCell>
