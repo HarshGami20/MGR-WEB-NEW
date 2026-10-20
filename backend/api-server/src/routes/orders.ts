@@ -3,12 +3,13 @@ import { Router, IRouter } from "express";
 import { z } from "zod";
 import { CreateOrderBody, UpdateOrderBody, UpdateOrderStatusBody, GetOrderParams } from "../zod";
 import { requireAuth } from "../middlewares/auth";
-import { requirePermission, requirePermissionAny, isAdminOrSuperAdminRole } from "../lib/permissions";
+import { requirePermission, requirePermissionAny, isSuperAdminRole } from "../lib/permissions";
 import {
   pickBestDeliverySlot,
   isOrderLockedForEdit,
   normalizeMainOrderStatus,
   normalizeDeliveryStatus,
+  DELIVERY_STATUSES,
   countOrdersInSlot,
   slotServesPincode,
   parseDeliveryDateInput,
@@ -367,13 +368,38 @@ async function deleteOrderWithDependents(orderId: number): Promise<boolean> {
   return true;
 }
 
+const BULK_DELETE_ORDER_STATUSES = new Set([
+  "order_received",
+  "manufacturing",
+  "ready_to_ship",
+  "delivered",
+  "cancelled",
+]);
+
 const BulkDeleteOrdersQuery = z.object({
   createdFrom: z.string().min(1, "Start date is required"),
   createdTo: z.string().min(1, "End date is required"),
   categoryId: z.string().optional(),
   branchId: z.string().optional(),
   assignmentScope: z.string().optional(),
+  /** Main order status; "all" or empty = any. */
+  status: z.string().optional(),
+  /** pending | out_for_delivery | delivered; "all" or empty = any. */
+  deliveryStatus: z.string().optional(),
+  /** due | partially_paid | paid | unpaid; "all" or empty = any. */
+  paymentStatus: z.string().optional(),
 });
+
+const BulkDeletePreviewQuery = BulkDeleteOrdersQuery.extend({
+  page: z.string().optional(),
+  limit: z.string().optional(),
+});
+
+/** Optional filter value — blank or "all" means no filter. */
+function bulkDeleteFilterValue(raw: string | undefined): string | null {
+  const v = raw?.trim();
+  return v && v !== "all" ? v : null;
+}
 
 const orderUploadSelect = {
   id: true,
@@ -404,6 +430,33 @@ async function buildBulkDeleteOrdersWhere(
     where.branchId = branchNum;
   }
 
+  const status = bulkDeleteFilterValue(params.status);
+  if (status) {
+    if (!BULK_DELETE_ORDER_STATUSES.has(status)) {
+      return { ok: false, error: "Invalid order status" };
+    }
+    where.status = status === "delivered" ? { in: ["delivered", "complete"] } : status;
+  }
+
+  const deliveryStatus = bulkDeleteFilterValue(params.deliveryStatus);
+  if (deliveryStatus) {
+    if (!DELIVERY_STATUSES.has(deliveryStatus)) {
+      return { ok: false, error: "Invalid delivery status" };
+    }
+    where.deliveryStatus = deliveryStatus;
+  }
+
+  const paymentStatus = bulkDeleteFilterValue(params.paymentStatus);
+  if (paymentStatus) {
+    if (paymentStatus === "unpaid") {
+      where.paymentStatus = { in: ["due", "partially_paid"] };
+    } else if (PAYMENT_STATUSES.has(paymentStatus)) {
+      where.paymentStatus = paymentStatus;
+    } else {
+      return { ok: false, error: "Invalid payment status" };
+    }
+  }
+
   const clauses: Prisma.OrderWhereInput[] = [];
   const effectiveScope = resolveOrdersAssignmentScope(authUser, params.assignmentScope);
   if (effectiveScope) {
@@ -413,9 +466,7 @@ async function buildBulkDeleteOrdersWhere(
   if (categoryIds) {
     clauses.push(orderMatchesCategoryFilter(categoryIds));
   }
-  if (clauses.length === 1) {
-    Object.assign(where, clauses[0]);
-  } else if (clauses.length > 1) {
+  if (clauses.length > 0) {
     where.AND = clauses;
   }
 
@@ -1198,11 +1249,11 @@ router.get(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    if (!isAdminOrSuperAdminRole(authUser)) {
-      res.status(403).json({ error: "Only Admin or Super Admin can bulk delete orders" });
+    if (!isSuperAdminRole(authUser)) {
+      res.status(403).json({ error: "Only Super Admin can bulk delete orders" });
       return;
     }
-    const parsed = BulkDeleteOrdersQuery.safeParse(req.query);
+    const parsed = BulkDeletePreviewQuery.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten().formErrors[0] ?? "Invalid query" });
       return;
@@ -1212,8 +1263,46 @@ router.get(
       res.status(400).json({ error: built.error });
       return;
     }
-    const count = await prisma.order.count({ where: built.where });
-    res.json({ count });
+    const pageNum = Math.max(1, parseInt(parsed.data.page ?? "1", 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(parsed.data.limit ?? "20", 10) || 20));
+    const [count, totals, rows] = await Promise.all([
+      prisma.order.count({ where: built.where }),
+      prisma.order.aggregate({ where: built.where, _sum: { totalAmount: true, paidAmount: true } }),
+      prisma.order.findMany({
+        where: built.where,
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          orderNumber: true,
+          customerName: true,
+          customerMobile: true,
+          status: true,
+          deliveryStatus: true,
+          paymentStatus: true,
+          totalAmount: true,
+          paidAmount: true,
+          createdAt: true,
+          branch: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+    res.json({
+      count,
+      totalAmount: toNumber(totals._sum.totalAmount ?? 0),
+      paidAmount: toNumber(totals._sum.paidAmount ?? 0),
+      page: pageNum,
+      limit: limitNum,
+      data: rows.map((o) => ({
+        ...o,
+        status: normalizeMainOrderStatus(o.status),
+        deliveryStatus: normalizeDeliveryStatus(o.deliveryStatus),
+        paymentStatus: o.paymentStatus ?? "due",
+        totalAmount: toNumber(o.totalAmount),
+        paidAmount: toNumber(o.paidAmount),
+      })),
+    });
   },
 );
 
@@ -1227,8 +1316,8 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    if (!isAdminOrSuperAdminRole(authUser)) {
-      res.status(403).json({ error: "Only Admin or Super Admin can bulk delete orders" });
+    if (!isSuperAdminRole(authUser)) {
+      res.status(403).json({ error: "Only Super Admin can bulk delete orders" });
       return;
     }
     const parsed = BulkDeleteOrdersQuery.safeParse(req.body);

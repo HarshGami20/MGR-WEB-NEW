@@ -6,6 +6,35 @@ export type BulkDeleteOrdersParams = {
   categoryId?: number;
   branchId?: number | null;
   assignmentScope?: string;
+  /** Main order status — omit for any. */
+  status?: string;
+  /** pending | out_for_delivery | delivered — omit for any. */
+  deliveryStatus?: string;
+  /** due | partially_paid | paid — omit for any. */
+  paymentStatus?: string;
+};
+
+export type BulkDeletePreviewRow = {
+  id: number;
+  orderNumber: string;
+  customerName: string;
+  customerMobile: string | null;
+  status: string;
+  deliveryStatus: string;
+  paymentStatus: string;
+  totalAmount: number;
+  paidAmount: number;
+  createdAt: string;
+  branch: { id: number; name: string } | null;
+};
+
+export type BulkDeletePreview = {
+  count: number;
+  totalAmount: number;
+  paidAmount: number;
+  page: number;
+  limit: number;
+  data: BulkDeletePreviewRow[];
 };
 
 async function parseOrderApiError(r: Response): Promise<string> {
@@ -20,23 +49,37 @@ async function parseOrderApiError(r: Response): Promise<string> {
   return message;
 }
 
-export async function previewBulkDeleteOrders(
-  params: BulkDeleteOrdersParams,
-): Promise<{ count: number }> {
-  const q = new URLSearchParams({
+/** Shared filter fields for preview (query string) and delete (JSON body). */
+function bulkDeleteFilterFields(params: BulkDeleteOrdersParams): Record<string, string> {
+  const fields: Record<string, string> = {
     createdFrom: params.createdFrom,
     createdTo: params.createdTo,
-  });
-  if (params.categoryId != null) q.set("categoryId", String(params.categoryId));
+  };
+  if (params.categoryId != null) fields.categoryId = String(params.categoryId);
   if (params.branchId != null && Number.isFinite(params.branchId)) {
-    q.set("branchId", String(params.branchId));
+    fields.branchId = String(params.branchId);
   }
-  if (params.assignmentScope?.trim()) q.set("assignmentScope", params.assignmentScope.trim());
+  if (params.assignmentScope?.trim()) fields.assignmentScope = params.assignmentScope.trim();
+  if (params.status?.trim()) fields.status = params.status.trim();
+  if (params.deliveryStatus?.trim()) fields.deliveryStatus = params.deliveryStatus.trim();
+  if (params.paymentStatus?.trim()) fields.paymentStatus = params.paymentStatus.trim();
+  return fields;
+}
+
+export async function previewBulkDeleteOrders(
+  params: BulkDeleteOrdersParams,
+  paging: { page: number; limit: number } = { page: 1, limit: 20 },
+): Promise<BulkDeletePreview> {
+  const q = new URLSearchParams({
+    ...bulkDeleteFilterFields(params),
+    page: String(paging.page),
+    limit: String(paging.limit),
+  });
   const r = await fetch(`/api/orders/bulk-delete/preview?${q.toString()}`, {
     headers: deliveryApiHeaders(params.branchId),
   });
   if (!r.ok) throw new Error(await parseOrderApiError(r));
-  return r.json() as Promise<{ count: number }>;
+  return r.json() as Promise<BulkDeletePreview>;
 }
 
 export async function bulkDeleteOrders(
@@ -45,15 +88,7 @@ export async function bulkDeleteOrders(
   const r = await fetch("/api/orders/bulk-delete", {
     method: "POST",
     headers: { ...deliveryApiHeaders(params.branchId), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      createdFrom: params.createdFrom,
-      createdTo: params.createdTo,
-      ...(params.categoryId != null ? { categoryId: String(params.categoryId) } : {}),
-      ...(params.branchId != null && Number.isFinite(params.branchId)
-        ? { branchId: String(params.branchId) }
-        : {}),
-      ...(params.assignmentScope?.trim() ? { assignmentScope: params.assignmentScope.trim() } : {}),
-    }),
+    body: JSON.stringify(bulkDeleteFilterFields(params)),
   });
   if (!r.ok) throw new Error(await parseOrderApiError(r));
   return r.json() as Promise<{ deleted: number; failed: number; total: number }>;

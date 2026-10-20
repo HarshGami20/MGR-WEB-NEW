@@ -9,12 +9,12 @@ import {
   getListOrdersQueryKey
 } from "@/api-client";
 import { useAuth } from "@/lib/auth";
-import { assignedUserBranchIds, useBranch, isAdminOrSuperAdminUser } from "@/lib/branch-context";
+import { assignedUserBranchIds, useBranch, isSuperAdminUser } from "@/lib/branch-context";
 import { patchOrderDelivery } from "@/lib/delivery-api";
 import { bulkDeleteOrders, patchOrderPaymentStatus, previewBulkDeleteOrders } from "@/lib/order-api";
 import { isOrderLockedForEdit } from "@/lib/order-edit-lock";
 import { useOrdersListFilters } from "@/lib/orders-list-filters-store";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ListDateRangeFilter } from "@/components/list-date-range-filter";
@@ -47,11 +47,13 @@ import { formatInr } from "@/lib/format-currency";
 import { useListCategories } from "@/api-client";
 import type { CategoryRoot } from "@/components/category-picker-with-manage";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/format-datetime";
 
 type DeleteDialogMode = "single" | "selected";
 
 const ORDERS_SEARCH_PREFILL_KEY = "erp_orders_search_prefill";
+const BULK_DELETE_PREVIEW_PAGE_SIZE = 10;
 
 export default function Orders() {
   const {
@@ -86,6 +88,10 @@ export default function Orders() {
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteDateRange, setBulkDeleteDateRange] = useState<DateRangeValue>({});
   const [bulkDeleteCategoryId, setBulkDeleteCategoryId] = useState<number | undefined>();
+  const [bulkDeleteStatus, setBulkDeleteStatus] = useState("all");
+  const [bulkDeleteDeliveryStatus, setBulkDeleteDeliveryStatus] = useState("all");
+  const [bulkDeletePaymentStatus, setBulkDeletePaymentStatus] = useState("all");
+  const [bulkDeletePreviewPage, setBulkDeletePreviewPage] = useState(1);
   const [bulkDeleteConfirmInput, setBulkDeleteConfirmInput] = useState("");
   const [, setLocation] = useLocation();
 
@@ -96,7 +102,7 @@ export default function Orders() {
   const canAddOrders = can("orders", "add");
   const canEditOrders = can("orders", "edit");
   const canDeleteOrders = can("orders", "delete");
-  const canBulkDeleteOrders = canDeleteOrders && isAdminOrSuperAdminUser(user);
+  const canBulkDeleteOrders = canDeleteOrders && isSuperAdminUser(user);
   const canEditDeliveries = can("deliveries", "edit");
   const { selectedBranchId } = useBranch();
   const assigned = assignedUserBranchIds(user);
@@ -240,9 +246,17 @@ export default function Orders() {
     setDeleteConfirmOpen(true);
   };
 
-  const openBulkDeleteByFilterDialog = () => {
+  const resetBulkDeleteFilters = () => {
     setBulkDeleteDateRange({});
     setBulkDeleteCategoryId(undefined);
+    setBulkDeleteStatus("all");
+    setBulkDeleteDeliveryStatus("all");
+    setBulkDeletePaymentStatus("all");
+    setBulkDeletePreviewPage(1);
+  };
+
+  const openBulkDeleteByFilterDialog = () => {
+    resetBulkDeleteFilters();
     setBulkDeleteConfirmInput("");
     setBulkDeleteConfirmOpen(false);
     setBulkDeleteDialogOpen(true);
@@ -279,14 +293,25 @@ export default function Orders() {
       branchId: selectedBranchId ?? undefined,
       assignmentScope: bulkDeleteScope,
       ...categoryIdToParam(bulkDeleteCategoryId),
+      status: bulkDeleteStatus !== "all" ? bulkDeleteStatus : undefined,
+      deliveryStatus: bulkDeleteDeliveryStatus !== "all" ? bulkDeleteDeliveryStatus : undefined,
+      paymentStatus: bulkDeletePaymentStatus !== "all" ? bulkDeletePaymentStatus : undefined,
     };
   }, [
     bulkDeleteDateRange.from,
     bulkDeleteDateRange.to,
     bulkDeleteCategoryId,
+    bulkDeleteStatus,
+    bulkDeleteDeliveryStatus,
+    bulkDeletePaymentStatus,
     selectedBranchId,
     bulkDeleteScope,
   ]);
+
+  // Back to the first page of the preview list whenever a filter changes.
+  useEffect(() => {
+    setBulkDeletePreviewPage(1);
+  }, [bulkDeletePreviewParams]);
 
   const { data: categoriesData } = useListCategories();
   const categoryRoots = useMemo(
@@ -295,10 +320,19 @@ export default function Orders() {
   );
 
   const { data: bulkDeletePreview, isFetching: bulkDeletePreviewLoading } = useQuery({
-    queryKey: ["orders-bulk-delete-preview", bulkDeletePreviewParams],
-    queryFn: () => previewBulkDeleteOrders(bulkDeletePreviewParams!),
+    queryKey: ["orders-bulk-delete-preview", bulkDeletePreviewParams, bulkDeletePreviewPage],
+    queryFn: () =>
+      previewBulkDeleteOrders(bulkDeletePreviewParams!, {
+        page: bulkDeletePreviewPage,
+        limit: BULK_DELETE_PREVIEW_PAGE_SIZE,
+      }),
     enabled: (bulkDeleteDialogOpen || bulkDeleteConfirmOpen) && bulkDeletePreviewParams != null,
+    placeholderData: keepPreviousData,
   });
+  const bulkDeletePreviewTotalPages = Math.max(
+    1,
+    Math.ceil((bulkDeletePreview?.count ?? 0) / BULK_DELETE_PREVIEW_PAGE_SIZE),
+  );
 
   const bulkDeleteMut = useMutation({
     mutationFn: () => bulkDeleteOrders(bulkDeletePreviewParams!),
@@ -1043,20 +1077,20 @@ export default function Orders() {
           setBulkDeleteDialogOpen(open);
           if (!open) {
             setBulkDeleteConfirmInput("");
-            setBulkDeleteDateRange({});
-            setBulkDeleteCategoryId(undefined);
+            resetBulkDeleteFilters();
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Bulk delete orders</DialogTitle>
             <DialogDescription>
-              Delete all orders created between the start and end dates. Optionally limit to one category.
+              Delete all orders created between the start and end dates. Narrow down by category, order
+              status, delivery status or payment status. Payments, invoices and images are removed too.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-1">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4 py-1 overflow-y-auto min-h-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <SingleDatePicker
                 label="Start date"
                 required
@@ -1077,33 +1111,154 @@ export default function Orders() {
             <p className="text-xs text-muted-foreground">
               Orders with created date from start through end (inclusive) will be deleted.
             </p>
-            <div className="space-y-2">
-              <Label>Category (optional) : </Label>
-              <ListCategoryFilter
-                value={bulkDeleteCategoryId}
-                onChange={setBulkDeleteCategoryId}
-                triggerClassName="w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave as all categories to delete every order in the date range.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Category</Label>
+                <ListCategoryFilter
+                  value={bulkDeleteCategoryId}
+                  onChange={setBulkDeleteCategoryId}
+                  triggerClassName="w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Order status</Label>
+                <Select value={bulkDeleteStatus} onValueChange={setBulkDeleteStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="order_received">Order Received</SelectItem>
+                    <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                    <SelectItem value="ready_to_ship">Ready To Ship</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Delivery status</Label>
+                <Select value={bulkDeleteDeliveryStatus} onValueChange={setBulkDeleteDeliveryStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All deliveries</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="out_for_delivery">Out for delivery</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Payment status</Label>
+                <Select value={bulkDeletePaymentStatus} onValueChange={setBulkDeletePaymentStatus}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All payments</SelectItem>
+                    <SelectItem value="due">Due</SelectItem>
+                    <SelectItem value="partially_paid">Partial</SelectItem>
+                    <SelectItem value="paid">Received</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            {/* {selectedBranchId != null ? (
-              <p className="text-sm text-muted-foreground rounded-md border bg-muted/30 px-3 py-2">
-                Only orders for the currently selected branch will be deleted.
-              </p>
-            ) : null} */}
+
             {bulkDeletePreviewParams ? (
-              <p className="text-sm font-medium">
-                {bulkDeletePreviewLoading
-                  ? "Counting matching orders…"
-                  : `${bulkDeletePreview?.count ?? 0} order(s) will be deleted`}
-                {bulkDeleteCategoryId != null
-                  ? ` · ${categoryFilterDisplayLabel(bulkDeleteCategoryId, categoryRoots)}`
-                  : ""}
-              </p>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                  <p className="text-sm font-semibold text-destructive">
+                    {bulkDeletePreviewLoading && !bulkDeletePreview
+                      ? "Counting matching orders…"
+                      : `${bulkDeletePreview?.count ?? 0} order(s) will be deleted`}
+                    {bulkDeleteCategoryId != null
+                      ? ` · ${categoryFilterDisplayLabel(bulkDeleteCategoryId, categoryRoots)}`
+                      : ""}
+                  </p>
+                  {bulkDeletePreview && bulkDeletePreview.count > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Order value {formatInr(bulkDeletePreview.totalAmount)} · Paid{" "}
+                      {formatInr(bulkDeletePreview.paidAmount)}
+                    </p>
+                  ) : null}
+                </div>
+
+                {bulkDeletePreview && bulkDeletePreview.count > 0 ? (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Order</TableHead>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Delivery</TableHead>
+                          <TableHead>Payment</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className={bulkDeletePreviewLoading ? "opacity-60" : undefined}>
+                        {bulkDeletePreview.data.map((o) => (
+                          <TableRow key={o.id}>
+                            <TableCell className="font-medium whitespace-nowrap">{o.orderNumber}</TableCell>
+                            <TableCell>
+                              <div className="min-w-0">
+                                <div className="truncate">{o.customerName}</div>
+                                {o.customerMobile ? (
+                                  <div className="text-xs text-muted-foreground">{o.customerMobile}</div>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{formatDisplayDate(o.createdAt)}</TableCell>
+                            <TableCell>{getStatusBadge(o.status)}</TableCell>
+                            <TableCell>{getDeliveryStatusBadge(o.deliveryStatus)}</TableCell>
+                            <TableCell>{getPaymentStatusBadge(o.paymentStatus)}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap">{formatInr(o.totalAmount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Showing {(bulkDeletePreviewPage - 1) * BULK_DELETE_PREVIEW_PAGE_SIZE + 1}–
+                        {Math.min(bulkDeletePreviewPage * BULK_DELETE_PREVIEW_PAGE_SIZE, bulkDeletePreview.count)} of{" "}
+                        {bulkDeletePreview.count}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={bulkDeletePreviewPage <= 1 || bulkDeletePreviewLoading}
+                          onClick={() => setBulkDeletePreviewPage((p) => Math.max(1, p - 1))}
+                          aria-label="Previous page"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground px-1">
+                          Page {bulkDeletePreviewPage} of {bulkDeletePreviewTotalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={bulkDeletePreviewPage >= bulkDeletePreviewTotalPages || bulkDeletePreviewLoading}
+                          onClick={() =>
+                            setBulkDeletePreviewPage((p) => Math.min(bulkDeletePreviewTotalPages, p + 1))
+                          }
+                          aria-label="Next page"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Select start and end dates to preview the count.</p>
+              <p className="text-sm text-muted-foreground">
+                Select start and end dates to see the matching orders.
+              </p>
             )}
           </div>
           <DialogFooter>
@@ -1143,8 +1298,11 @@ export default function Orders() {
           <DialogHeader>
             <DialogTitle>Confirm bulk deletion</DialogTitle>
             <DialogDescription>
-              You are about to permanently delete {bulkDeletePreview?.count ?? 0} order(s). Type
-              DELETE below to confirm. This cannot be undone.
+              You are about to permanently delete {bulkDeletePreview?.count ?? 0} order(s)
+              {bulkDeletePreviewParams
+                ? ` created ${formatDisplayDate(bulkDeletePreviewParams.createdFrom)} – ${formatDisplayDate(bulkDeletePreviewParams.createdTo)}`
+                : ""}
+              . Type DELETE below to confirm. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <Input
