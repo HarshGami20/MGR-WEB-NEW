@@ -84,7 +84,10 @@ function PillBarColumn({
     >
       <div className="relative flex flex-col items-center justify-end w-full" style={{ height: CHART_HEIGHT }}>
         {row.total > 0 ? (
-          <div className="flex flex-col-reverse items-center" style={{ width: BAR_WIDTH, gap: PILL_GAP }}>
+          <div
+            className="flex flex-col-reverse items-center"
+            style={{ width: "80%", maxWidth: BAR_WIDTH, gap: PILL_GAP }}
+          >
             {row.segments.map((seg, i) => {
               const h = segmentHeights[i];
               if (h <= 0) return null;
@@ -92,7 +95,7 @@ function PillBarColumn({
                 <div
                   key={seg.name}
                   style={{
-                    width: BAR_WIDTH,
+                    width: "100%",
                     height: h,
                     borderRadius: PILL_RADIUS,
                     backgroundColor: seg.color,
@@ -105,7 +108,8 @@ function PillBarColumn({
         ) : (
           <div
             style={{
-              width: BAR_WIDTH,
+              width: "80%",
+              maxWidth: BAR_WIDTH,
               height: barHeight,
               borderRadius: PILL_RADIUS,
               backgroundColor: INACTIVE_FILL,
@@ -116,7 +120,7 @@ function PillBarColumn({
       </div>
       <span
         className={cn(
-          "mt-2 text-xs font-semibold",
+          "mt-2 text-[11px] font-semibold",
           hovered ? "text-foreground" : "text-muted-foreground",
         )}
       >
@@ -146,7 +150,8 @@ export function DashboardRevenueForecastCard({
     [matrix],
   );
 
-  const visibleRows = useMemo(() => rows.slice(0, 9), [rows]);
+  // All 12 months of the selected year (Jan–Dec).
+  const visibleRows = rows;
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
