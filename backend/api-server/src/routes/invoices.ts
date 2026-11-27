@@ -41,11 +41,14 @@ function escapeCsvField(value: unknown): string {
 }
 
 async function enrichOrder(order: any) {
-  const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
-  const enrichedItems = await Promise.all(items.map(async (item) => {
-    const product = await prisma.product.findUnique({ where: { id: item.productId } });
+  const items = await prisma.orderItem.findMany({ where: { orderId: order.id }, orderBy: [{ id: "asc" }] });
+  const productIds = [...new Set(items.map((item) => item.productId).filter((id): id is number => id != null))];
+  const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds } } }) : [];
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const enrichedItems = items.map((item) => {
+    const product = item.productId != null ? productById.get(item.productId) ?? null : null;
     return { ...item, unitPrice: toNumber(item.unitPrice), gstPercent: toNumber(item.gstPercent), totalPrice: toNumber(item.totalPrice), product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null };
-  }));
+  });
   return { ...order, subtotal: toNumber(order.subtotal), taxAmount: toNumber(order.taxAmount), deliveryCharge: toNumber(order.deliveryCharge ?? 0), discountAmount: toNumber(order.discountAmount ?? 0), totalAmount: toNumber(order.totalAmount), paidAmount: toNumber(order.paidAmount), items: enrichedItems };
 }
 

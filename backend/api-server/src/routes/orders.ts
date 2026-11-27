@@ -56,13 +56,11 @@ import {
 } from "../lib/custom-line-item";
 import { breakdownGstExclusiveLine, breakdownGstInclusiveLine } from "../lib/gst-pricing";
 import { parseImageUrlsJson } from "../lib/image-urls";
+import { groupByKey, loadByIds, mapById, uniqueIds } from "../lib/batch-load";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { ymdUtcDayEnd, ymdUtcDayStart } from "../lib/date-range";
 import { DELIVERY_SLOTS_ENABLED } from "../lib/delivery-feature";
-import {
-  loadDeliveryAssigneesForOrder,
-  replaceOrderDeliveryAssignees,
-} from "../lib/order-delivery-assignees";
+import { replaceOrderDeliveryAssignees } from "../lib/order-delivery-assignees";
 import {
   loadOrderAssigneeUserIdsTx,
   loadOrderAutoAssigneeUserIds,
@@ -600,145 +598,178 @@ async function resolveOrderLineItems(
   return resolved;
 }
 
-async function enrichOrder(order: any) {
-  const items = await prisma.orderItem.findMany({ where: { orderId: order.id } });
-  const enrichedItems = await Promise.all(items.map(async (item) => {
-    const product =
-      item.productId != null ? await prisma.product.findUnique({ where: { id: item.productId } }) : null;
-    const variant =
-      item.variantId != null
-        ? await prisma.productVariant.findUnique({ where: { id: item.variantId } })
-        : null;
-    const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
-    return {
-      ...item,
-      isCustom: item.isCustom,
-      customName: item.customName,
-      customImageUrl: customImageUrls[0] ?? null,
-      customImageUrls,
-      customImageComments: parseCustomImageCommentsJson(item.customImageComments),
-      customAttributes: item.customAttributes,
-      unitPrice: toNumber(item.unitPrice),
-      gstPercent: toNumber(item.gstPercent),
-      totalPrice: toNumber(item.totalPrice),
-      product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null,
-      variant: variant
-        ? {
-            ...variant,
-            price: variant.price != null ? toNumber(variant.price) : null,
-          }
-        : null,
-    };
-  }));
-  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
-  let assignedTo: Awaited<ReturnType<typeof prisma.user.findUnique>> = null;
-  if (order.branchId) {
-    const b = await prisma.branch.findUnique({ where: { id: order.branchId } });
-    if (b) branch = b;
-  }
-  const assigneeRows = await prisma.orderAssignee.findMany({
-    where: { orderId: order.id },
-    include: { user: { select: { id: true, name: true, mobile: true } } },
-    orderBy: [{ userId: "asc" }],
-  });
-  let assignees: Array<{ id: number; name: string; mobile: string }> = assigneeRows
-    .map((r) => r.user)
-    .filter((u): u is { id: number; name: string; mobile: string } => u != null);
-  if (assignees.length === 0 && order.assignedToId) {
-    const u = await prisma.user.findUnique({
-      where: { id: order.assignedToId },
-      select: { id: true, name: true, mobile: true },
-    });
-    if (u) {
-      assignees = [u as any];
-      assignedTo = u as any;
-    }
-  } else if (assignees.length > 0) {
-    assignedTo = assignees[0] as any;
-  } else if (order.assignedToId) {
-    const u = await prisma.user.findUnique({
-      where: { id: order.assignedToId },
-      select: { id: true, name: true, mobile: true },
-    });
-    if (u) assignedTo = u as any;
-  }
-  let createdBy: { id: number; name: string; mobile: string } | null = null;
-  const creatorId = (order as { createdById?: number | null }).createdById;
-  if (creatorId) {
-    const c = await prisma.user.findUnique({
-      where: { id: creatorId },
-      select: { id: true, name: true, mobile: true },
-    });
-    if (c) createdBy = c as any;
-  }
-  let deliverySlot: Awaited<ReturnType<typeof prisma.deliverySlot.findUnique>> = null;
-  if (DELIVERY_SLOTS_ENABLED && order.deliverySlotId) {
-    const ds = await prisma.deliverySlot.findUnique({ where: { id: order.deliverySlotId } });
-    if (ds) deliverySlot = ds;
-  }
-  const deliveryAssignees = await loadDeliveryAssigneesForOrder(order.id);
-  const eo = order as { driverId?: number | null; deliveryCharge?: unknown };
-  let driver: { id: number; name: string; mobile: string | null; vehicleInfo: string | null } | null = null;
-  if (eo.driverId) {
-    const d = await prisma.driver.findUnique({
-      where: { id: eo.driverId },
-      select: { id: true, name: true, mobile: true, vehicleInfo: true },
-    });
-    if (d) driver = d;
-  }
-  let category: { id: number; name: string } | null = null;
-  const orderCategoryId = (order as { categoryId?: number | null }).categoryId;
-  if (orderCategoryId) {
-    const c = await prisma.category.findUnique({
-      where: { id: orderCategoryId },
-      select: { id: true, name: true },
-    });
-    if (c) category = c;
-  }
+type UserSummary = { id: number; name: string; mobile: string };
+const userSummarySelect = { id: true, name: true, mobile: true } as const;
+
+function enrichOrderItem(item: any, product: any, variant: any) {
+  const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
   return {
-    ...order,
-    driverId: eo.driverId ?? null,
-    isGst: Boolean(order.isGst),
-    status: normalizeMainOrderStatus(order.status ?? "order_received"),
-    paymentStatus: order.paymentStatus ?? "due",
-    deliveryStatus: normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus),
-    advanceAmount: toNumber(order.advanceAmount ?? 0),
-    deliveryDate: order.deliveryDate ?? null,
-    deliveryCharge: toNumber((order as { deliveryCharge?: unknown }).deliveryCharge ?? 0),
-    discountAmount: toNumber((order as { discountAmount?: unknown }).discountAmount ?? 0),
-    driver,
-    addressLat: order.addressLat != null ? toNumber(order.addressLat) : null,
-    addressLng: order.addressLng != null ? toNumber(order.addressLng) : null,
-    subtotal: toNumber(order.subtotal),
-    taxAmount: toNumber(order.taxAmount),
-    totalAmount: toNumber(order.totalAmount),
-    paidAmount: toNumber(order.paidAmount),
-    challanImages: safeJsonParse<string[]>(order.challanImages, []),
-    photoComments: safeJsonParse<Array<{ imageUrl: string; comment?: string }>>(order.photoComments, []),
-    staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(order.staffComments, []),
-    deliveryComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(
-      (order as { deliveryComments?: string | null }).deliveryComments,
-      [],
-    ),
-    items: enrichedItems,
-    categoryId: orderCategoryId ?? null,
-    category,
-    branch,
-    assignedTo,
-    assignees,
-    deliveryAssignees,
-    createdBy,
-    deliverySlot: deliverySlot
+    ...item,
+    isCustom: item.isCustom,
+    customName: item.customName,
+    customImageUrl: customImageUrls[0] ?? null,
+    customImageUrls,
+    customImageComments: parseCustomImageCommentsJson(item.customImageComments),
+    customAttributes: item.customAttributes,
+    unitPrice: toNumber(item.unitPrice),
+    gstPercent: toNumber(item.gstPercent),
+    totalPrice: toNumber(item.totalPrice),
+    product: product ? { ...product, price: toNumber(product.price), gstPercent: toNumber(product.gstPercent) } : null,
+    variant: variant
       ? {
-          id: deliverySlot.id,
-          label: deliverySlot.label,
-          startTime: deliverySlot.startTime,
-          endTime: deliverySlot.endTime,
-          slotDate: deliverySlot.slotDate,
-          maxOrders: deliverySlot.maxOrders,
+          ...variant,
+          price: variant.price != null ? toNumber(variant.price) : null,
         }
       : null,
   };
+}
+
+/**
+ * Enrich a page of orders with a fixed number of queries (about 10 in total),
+ * instead of ~8 queries per order plus 2 per line item. Output matches the old per-order shape.
+ */
+async function enrichOrders(orders: any[]) {
+  if (orders.length === 0) return [];
+  const orderIds: number[] = orders.map((o) => o.id);
+  const slotIds = DELIVERY_SLOTS_ENABLED ? uniqueIds(orders.map((o) => o.deliverySlotId)) : [];
+
+  const [items, branches, assigneeRows, deliveryAssigneeRows, users, slots, drivers, categories] = await Promise.all([
+    prisma.orderItem.findMany({ where: { orderId: { in: orderIds } }, orderBy: [{ id: "asc" }] }),
+    loadByIds(uniqueIds(orders.map((o) => o.branchId)), (ids) => prisma.branch.findMany({ where: { id: { in: ids } } })),
+    prisma.orderAssignee.findMany({
+      where: { orderId: { in: orderIds } },
+      include: { user: { select: userSummarySelect } },
+      orderBy: [{ orderId: "asc" }, { userId: "asc" }],
+    }),
+    prisma.orderDeliveryAssignee.findMany({
+      where: { orderId: { in: orderIds } },
+      include: { user: { select: userSummarySelect } },
+      orderBy: [{ orderId: "asc" }, { userId: "asc" }],
+    }),
+    loadByIds(uniqueIds(orders.flatMap((o) => [o.assignedToId, o.createdById])), (ids) =>
+      prisma.user.findMany({ where: { id: { in: ids } }, select: userSummarySelect }),
+    ),
+    loadByIds(slotIds, (ids) => prisma.deliverySlot.findMany({ where: { id: { in: ids } } })),
+    loadByIds(uniqueIds(orders.map((o) => o.driverId)), (ids) =>
+      prisma.driver.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, mobile: true, vehicleInfo: true },
+      }),
+    ),
+    loadByIds(uniqueIds(orders.map((o) => o.categoryId)), (ids) =>
+      prisma.category.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+    ),
+  ]);
+
+  const [products, variants] = await Promise.all([
+    loadByIds(uniqueIds(items.map((i) => i.productId)), (ids) => prisma.product.findMany({ where: { id: { in: ids } } })),
+    loadByIds(uniqueIds(items.map((i) => i.variantId)), (ids) =>
+      prisma.productVariant.findMany({ where: { id: { in: ids } } }),
+    ),
+  ]);
+
+  const itemsByOrder = groupByKey(items, (i) => i.orderId);
+  const assigneesByOrder = groupByKey(assigneeRows, (r) => r.orderId);
+  const deliveryAssigneesByOrder = groupByKey(deliveryAssigneeRows, (r) => r.orderId);
+  const productById = mapById(products);
+  const variantById = mapById(variants);
+  const branchById = mapById(branches);
+  const userById = mapById(users);
+  const slotById = mapById(slots);
+  const driverById = mapById(drivers);
+  const categoryById = mapById(categories);
+
+  return orders.map((order) => {
+    const enrichedItems = (itemsByOrder.get(order.id) ?? []).map((item) =>
+      enrichOrderItem(
+        item,
+        item.productId != null ? productById.get(item.productId) ?? null : null,
+        item.variantId != null ? variantById.get(item.variantId) ?? null : null,
+      ),
+    );
+
+    const branch = order.branchId ? branchById.get(order.branchId) ?? null : null;
+
+    let assignees: UserSummary[] = (assigneesByOrder.get(order.id) ?? [])
+      .map((r) => r.user)
+      .filter((u): u is UserSummary => u != null);
+    let assignedTo: UserSummary | null = null;
+    if (assignees.length === 0 && order.assignedToId) {
+      const u = userById.get(order.assignedToId);
+      if (u) {
+        assignees = [u];
+        assignedTo = u;
+      }
+    } else if (assignees.length > 0) {
+      assignedTo = assignees[0];
+    }
+
+    const creatorId = (order as { createdById?: number | null }).createdById;
+    const createdBy: UserSummary | null = creatorId ? userById.get(creatorId) ?? null : null;
+
+    const deliverySlot =
+      DELIVERY_SLOTS_ENABLED && order.deliverySlotId ? slotById.get(order.deliverySlotId) ?? null : null;
+
+    const deliveryAssignees = (deliveryAssigneesByOrder.get(order.id) ?? [])
+      .map((r) => r.user)
+      .filter((u): u is UserSummary => u != null);
+
+    const eo = order as { driverId?: number | null; deliveryCharge?: unknown };
+    const driver = eo.driverId ? driverById.get(eo.driverId) ?? null : null;
+
+    const orderCategoryId = (order as { categoryId?: number | null }).categoryId;
+    const category = orderCategoryId ? categoryById.get(orderCategoryId) ?? null : null;
+
+    return {
+      ...order,
+      driverId: eo.driverId ?? null,
+      isGst: Boolean(order.isGst),
+      status: normalizeMainOrderStatus(order.status ?? "order_received"),
+      paymentStatus: order.paymentStatus ?? "due",
+      deliveryStatus: normalizeDeliveryStatus((order as { deliveryStatus?: string }).deliveryStatus),
+      advanceAmount: toNumber(order.advanceAmount ?? 0),
+      deliveryDate: order.deliveryDate ?? null,
+      deliveryCharge: toNumber((order as { deliveryCharge?: unknown }).deliveryCharge ?? 0),
+      discountAmount: toNumber((order as { discountAmount?: unknown }).discountAmount ?? 0),
+      driver,
+      addressLat: order.addressLat != null ? toNumber(order.addressLat) : null,
+      addressLng: order.addressLng != null ? toNumber(order.addressLng) : null,
+      subtotal: toNumber(order.subtotal),
+      taxAmount: toNumber(order.taxAmount),
+      totalAmount: toNumber(order.totalAmount),
+      paidAmount: toNumber(order.paidAmount),
+      challanImages: safeJsonParse<string[]>(order.challanImages, []),
+      photoComments: safeJsonParse<Array<{ imageUrl: string; comment?: string }>>(order.photoComments, []),
+      staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(order.staffComments, []),
+      deliveryComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(
+        (order as { deliveryComments?: string | null }).deliveryComments,
+        [],
+      ),
+      items: enrichedItems,
+      categoryId: orderCategoryId ?? null,
+      category,
+      branch,
+      assignedTo,
+      assignees,
+      deliveryAssignees,
+      createdBy,
+      deliverySlot: deliverySlot
+        ? {
+            id: deliverySlot.id,
+            label: deliverySlot.label,
+            startTime: deliverySlot.startTime,
+            endTime: deliverySlot.endTime,
+            slotDate: deliverySlot.slotDate,
+            maxOrders: deliverySlot.maxOrders,
+          }
+        : null,
+    };
+  });
+}
+
+async function enrichOrder(order: any) {
+  const [enriched] = await enrichOrders([order]);
+  return enriched;
 }
 
 router.post(
@@ -841,14 +872,16 @@ router.get("/orders", requireAuth, requirePermission("orders", "read"), async (r
     where.AND = clauses;
   }
 
-  const total = await prisma.order.count({ where });
-  const orders = await prisma.order.findMany({
-    where,
-    skip: offset,
-    take: limitNum,
-    orderBy: [{ createdAt: sortDirection }, { id: sortDirection }],
-  });
-  const data = await Promise.all(orders.map(enrichOrder));
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      skip: offset,
+      take: limitNum,
+      orderBy: [{ createdAt: sortDirection }, { id: sortDirection }],
+    }),
+  ]);
+  const data = await enrichOrders(orders);
   res.json({ data, total, page: pageNum, limit: limitNum });
 });
 

@@ -11,6 +11,7 @@ import { requireAuth } from "../middlewares/auth";
 import { createdAtRangeFromQuery } from "../lib/created-at-filter";
 import { purchaseOrderHasProductInCategories, resolveCategoryFilterIds } from "../lib/category-filter";
 import { prisma, toNumber } from "../lib/prisma";
+import { groupByKey, loadByIds, mapById, uniqueIds } from "../lib/batch-load";
 import {
   isCustomLineItem,
   buildCustomAttributesJson,
@@ -144,77 +145,88 @@ function expectedDeliveryInPast(value: unknown): boolean {
   return Boolean(ymd && ymd < todayYmdLocal());
 }
 
-async function enrichPO(po: any) {
-  const items = await prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } });
-  const enrichedItems = await Promise.all(items.map(async (item) => {
-    const product =
-      item.productId != null ? await prisma.product.findUnique({ where: { id: item.productId } }) : null;
-    const variant =
-      item.variantId != null
-        ? await prisma.productVariant.findUnique({ where: { id: item.variantId } })
-        : null;
-    const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
-    const productImageUrls = product
-      ? parseImageUrlsJson(product.imageUrls, product.imageUrl)
-      : [];
-    const variantImageUrls = variant
-      ? parseImageUrlsJson(variant.imageUrls, variant.imageUrl)
-      : [];
-    return {
-      ...item,
-      isCustom: item.isCustom,
-      customName: item.customName,
-      customImageUrl: customImageUrls[0] ?? null,
-      customImageUrls,
-      customImageComments: parseCustomImageCommentsJson(item.customImageComments),
-      customAttributes: item.customAttributes,
-      unitPrice: toNumber(item.unitPrice),
-      product: product
-        ? {
-            ...product,
-            price: toNumber(product.price),
-            gstPercent: toNumber(product.gstPercent),
-            imageUrls: productImageUrls,
-            imageUrl: productImageUrls[0] ?? null,
-          }
-        : null,
-      variant: variant
-        ? {
-            ...variant,
-            price: variant.price != null ? toNumber(variant.price) : null,
-            imageUrls: variantImageUrls,
-            imageUrl: variantImageUrls[0] ?? null,
-          }
-        : null,
-    };
-  }));
-  let supplier: Awaited<ReturnType<typeof prisma.supplier.findUnique>> = null;
-  let manufacturer: Awaited<ReturnType<typeof prisma.manufacturer.findUnique>> = null;
-  if (po.supplierId) {
-    const s = await prisma.supplier.findUnique({ where: { id: po.supplierId } });
-    supplier = s ?? null;
-  }
-  if (po.manufacturerId) {
-    const m = await prisma.manufacturer.findUnique({ where: { id: po.manufacturerId } });
-    manufacturer = m ?? null;
-  }
-  let branch: Awaited<ReturnType<typeof prisma.branch.findUnique>> = null;
-  if (po.branchId) {
-    const b = await prisma.branch.findUnique({ where: { id: po.branchId } });
-    if (b) branch = b;
-  }
+function enrichPOItem(item: any, product: any, variant: any) {
+  const customImageUrls = parseImageUrlsJson(item.customImageUrls, item.customImageUrl);
+  const productImageUrls = product ? parseImageUrlsJson(product.imageUrls, product.imageUrl) : [];
+  const variantImageUrls = variant ? parseImageUrlsJson(variant.imageUrls, variant.imageUrl) : [];
   return {
+    ...item,
+    isCustom: item.isCustom,
+    customName: item.customName,
+    customImageUrl: customImageUrls[0] ?? null,
+    customImageUrls,
+    customImageComments: parseCustomImageCommentsJson(item.customImageComments),
+    customAttributes: item.customAttributes,
+    unitPrice: toNumber(item.unitPrice),
+    product: product
+      ? {
+          ...product,
+          price: toNumber(product.price),
+          gstPercent: toNumber(product.gstPercent),
+          imageUrls: productImageUrls,
+          imageUrl: productImageUrls[0] ?? null,
+        }
+      : null,
+    variant: variant
+      ? {
+          ...variant,
+          price: variant.price != null ? toNumber(variant.price) : null,
+          imageUrls: variantImageUrls,
+          imageUrl: variantImageUrls[0] ?? null,
+        }
+      : null,
+  };
+}
+
+/** Enrich a page of purchase orders with a fixed number of queries instead of several per PO and item. */
+async function enrichPOs(pos: any[]) {
+  if (pos.length === 0) return [];
+  const poIds: number[] = pos.map((po) => po.id);
+  const [items, suppliers, manufacturers, branches] = await Promise.all([
+    prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: { in: poIds } }, orderBy: [{ id: "asc" }] }),
+    loadByIds(uniqueIds(pos.map((po) => po.supplierId)), (ids) => prisma.supplier.findMany({ where: { id: { in: ids } } })),
+    loadByIds(uniqueIds(pos.map((po) => po.manufacturerId)), (ids) =>
+      prisma.manufacturer.findMany({ where: { id: { in: ids } } }),
+    ),
+    loadByIds(uniqueIds(pos.map((po) => po.branchId)), (ids) => prisma.branch.findMany({ where: { id: { in: ids } } })),
+  ]);
+  const [products, variants] = await Promise.all([
+    loadByIds(uniqueIds(items.map((i) => i.productId)), (ids) => prisma.product.findMany({ where: { id: { in: ids } } })),
+    loadByIds(uniqueIds(items.map((i) => i.variantId)), (ids) =>
+      prisma.productVariant.findMany({ where: { id: { in: ids } } }),
+    ),
+  ]);
+
+  const itemsByPo = groupByKey(items, (i) => i.purchaseOrderId);
+  const productById = mapById(products);
+  const variantById = mapById(variants);
+  const supplierById = mapById(suppliers);
+  const manufacturerById = mapById(manufacturers);
+  const branchById = mapById(branches);
+
+  return pos.map((po) => ({
     ...po,
     totalAmount: toNumber(po.totalAmount),
-    items: enrichedItems,
-    supplier,
-    manufacturer,
-    branch,
+    items: (itemsByPo.get(po.id) ?? []).map((item) =>
+      enrichPOItem(
+        item,
+        item.productId != null ? productById.get(item.productId) ?? null : null,
+        item.variantId != null ? variantById.get(item.variantId) ?? null : null,
+      ),
+    ),
+    supplier: po.supplierId ? supplierById.get(po.supplierId) ?? null : null,
+    manufacturer: po.manufacturerId ? manufacturerById.get(po.manufacturerId) ?? null : null,
+    branch: po.branchId ? branchById.get(po.branchId) ?? null : null,
     staffComments: safeJsonParse<Array<{ comment: string; authorName?: string; createdAt: string }>>(
       po.staffComments,
       [],
     ),
-  };
+  }));
+}
+
+async function enrichPO(po: any) {
+  const [enriched] = await enrichPOs([po]);
+  return enriched;
 }
 
 router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", "read"), async (req, res): Promise<void> => {
@@ -288,7 +300,7 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchaseOrders", 
     }),
   ]);
 
-  const data = await Promise.all(pos.map(enrichPO));
+  const data = await enrichPOs(pos);
   res.json({ data, total: totalCount, page: pageNum, limit: limitNum });
 });
 

@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import compression from "compression";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -29,6 +30,8 @@ app.use(
   }),
 );
 app.use(cors());
+// gzip JSON responses (order lists are mostly repeated text and shrink ~5-10x — big win on mobile data).
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));

@@ -29,48 +29,54 @@ function orderWhereFromQuery(req: Request): Prisma.OrderWhereInput {
   return { branchId: n };
 }
 
+const COMPLETED_STATUSES = ["delivered", "complete"];
+
 router.get("/dashboard/summary", requireAuth, dashboardRead, async (req, res): Promise<void> => {
   const orderWhere = orderWhereFromQuery(req);
-  const orders = await prisma.order.findMany({ where: orderWhere });
-  const products = await prisma.product.findMany({ include: { _count: { select: { variants: true } } } });
-  const suppliers = await prisma.supplier.findMany();
-
-  const idsWithVariants = products.filter((p) => p._count.variants > 0).map((p) => p.id);
-  const productLowFromVariant = new Set<number>();
-  if (idsWithVariants.length) {
-    const vrows = await prisma.productVariant.findMany({
-      where: { productId: { in: idsWithVariants } },
-      select: { productId: true, stockQty: true, lowStockThreshold: true },
-    });
-    for (const v of vrows) {
-      if (v.stockQty <= v.lowStockThreshold) productLowFromVariant.add(v.productId);
-    }
-  }
-
-  const totalOrders = orders.length;
-  const totalRevenue = orders
-    .filter((o) => o.status === "delivered" || o.status === "complete")
-    .reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
-  const pendingOrders = orders.filter(
-    (o) => o.status !== "delivered" && o.status !== "complete" && o.status !== "cancelled",
-  ).length;
-  const lowStockCount = products.filter((p) => {
-    if (p._count.variants === 0) return p.stockQty <= p.lowStockThreshold;
-    return productLowFromVariant.has(p.id);
-  }).length;
-  const totalProducts = products.length;
-  const totalSuppliers = suppliers.length;
-
-  const revenueEligibleOrders = orders.filter((o) => !isCancelledOrderStatus(o.status));
-  const totalPaid = revenueEligibleOrders.reduce((sum, o) => sum + toNumber(o.paidAmount), 0);
-  const totalRevs = revenueEligibleOrders.reduce((sum, o) => sum + toNumber(o.totalAmount), 0);
-  const pendingPayments = totalRevs - totalPaid;
-
   const today = new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const completedOrdersToday = orders.filter(
-    (o) => (o.status === "delivered" || o.status === "complete") && new Date(o.updatedAt) >= startOfDay,
-  ).length;
+
+  // Totals are computed in the database (a handful of grouped rows) instead of loading every order.
+  const [statusRows, completedOrdersToday, totalProducts, lowSimpleProducts, lowVariantProducts, totalSuppliers] =
+    await Promise.all([
+      prisma.order.groupBy({
+        by: ["status"],
+        where: orderWhere,
+        _count: { _all: true },
+        _sum: { totalAmount: true, paidAmount: true },
+      }),
+      prisma.order.count({
+        where: { AND: [orderWhere, { status: { in: COMPLETED_STATUSES } }, { updatedAt: { gte: startOfDay } }] },
+      }),
+      prisma.product.count(),
+      prisma.product.count({
+        where: { variants: { none: {} }, stockQty: { lte: prisma.product.fields.lowStockThreshold } },
+      }),
+      prisma.productVariant.groupBy({
+        by: ["productId"],
+        where: { stockQty: { lte: prisma.productVariant.fields.lowStockThreshold } },
+      }),
+      prisma.supplier.count(),
+    ]);
+
+  let totalOrders = 0;
+  let totalRevenue = 0;
+  let pendingOrders = 0;
+  let totalRevs = 0;
+  let totalPaid = 0;
+  for (const row of statusRows) {
+    const count = row._count._all;
+    const amount = toNumber(row._sum.totalAmount ?? 0);
+    totalOrders += count;
+    if (COMPLETED_STATUSES.includes(row.status)) totalRevenue += amount;
+    if (!COMPLETED_STATUSES.includes(row.status) && row.status !== "cancelled") pendingOrders += count;
+    if (!isCancelledOrderStatus(row.status)) {
+      totalRevs += amount;
+      totalPaid += toNumber(row._sum.paidAmount ?? 0);
+    }
+  }
+  const pendingPayments = totalRevs - totalPaid;
+  const lowStockCount = lowSimpleProducts + lowVariantProducts.length;
 
   res.json({
     totalOrders, totalRevenue, pendingOrders, lowStockCount, totalProducts, totalSuppliers, pendingPayments, completedOrdersToday
@@ -109,11 +115,14 @@ router.get("/dashboard/recent-orders", requireAuth, dashboardRead, async (req, r
 
 router.get("/dashboard/sales-report", requireAuth, dashboardRead, async (req, res): Promise<void> => {
   const orderWhere = orderWhereFromQuery(req);
+  const year = req.query.year ? parseInt(req.query.year as string, 10) : new Date().getFullYear();
+  // Only load the requested year (previously every order ever was loaded and filtered in memory).
   const orders = await prisma.order.findMany({
-    where: revenueReportingOrderWhere(orderWhere),
+    where: revenueReportingOrderWhere({
+      AND: [orderWhere, { createdAt: { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) } }],
+    }),
     select: { createdAt: true, totalAmount: true },
   });
-  const year = req.query.year ? parseInt(req.query.year as string, 10) : new Date().getFullYear();
 
   const monthMap: Record<string, { revenue: number; orderCount: number }> = {};
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -138,13 +147,8 @@ router.get("/dashboard/sales-report", requireAuth, dashboardRead, async (req, re
 
 router.get("/dashboard/order-status-breakdown", requireAuth, dashboardRead, async (req, res): Promise<void> => {
   const orderWhere = orderWhereFromQuery(req);
-  const orders = await prisma.order.findMany({ where: orderWhere });
-  const statusMap: Record<string, number> = {};
-  for (const o of orders) {
-    statusMap[o.status] = (statusMap[o.status] || 0) + 1;
-  }
-  const result = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
-  res.json(result);
+  const rows = await prisma.order.groupBy({ by: ["status"], where: orderWhere, _count: { _all: true } });
+  res.json(rows.map((row) => ({ status: row.status, count: row._count._all })));
 });
 
 export default router;
