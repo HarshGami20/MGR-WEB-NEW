@@ -97,7 +97,8 @@ const CHALLAN_PAD = 10;
 const CARD_GAP = 12;
 const CARD_PAD = 8;
 const CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP) / 2;
-const CARD_IMAGE_BOX = { width: CARD_WIDTH - CARD_PAD * 2 - 2, height: 200 };
+/** 130pt tall photo boxes fit 3 rows of 2 cards (6 photos) on each A4 page. */
+const CARD_IMAGE_BOX = { width: CARD_WIDTH - CARD_PAD * 2 - 2, height: 130 };
 
 type Margin = [number, number, number, number];
 
