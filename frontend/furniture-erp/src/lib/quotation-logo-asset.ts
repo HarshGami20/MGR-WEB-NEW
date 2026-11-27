@@ -1,10 +1,7 @@
-import quotationLogoUrl from "@/assets/logofull.webp";
+import quotationLogoUrl from "@/assets/fulllogo.png";
+import type { QuotationPdfImage } from "@/lib/quotation-pdf-layout";
 
-let cachedLogoDataUrl: string | null = null;
-
-function isPdfSafeDataUrl(dataUrl: string): boolean {
-  return /^data:image\/(jpe?g|png);base64,/i.test(dataUrl);
-}
+let cachedLogo: QuotationPdfImage | null = null;
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -15,29 +12,31 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** MGR CASA full logo as a pdfmake-safe PNG data URL. */
-export async function getQuotationLogoDataUrl(): Promise<string | null> {
-  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+function measureImage(src: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () =>
+      resolve(img.naturalWidth && img.naturalHeight ? { width: img.naturalWidth, height: img.naturalHeight } : null);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/** MGR CASA wordmark as a pdfmake-safe PNG (keeps transparency), or null if it cannot be loaded. */
+export async function getQuotationLogo(): Promise<QuotationPdfImage | null> {
+  if (cachedLogo) return cachedLogo;
   if (typeof window === "undefined") return null;
 
   try {
     const res = await fetch(quotationLogoUrl);
     if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob.size || blob.type.startsWith("image/svg")) return null;
-
-    const dataUrl = await blobToDataUrl(blob);
-    if (!isPdfSafeDataUrl(dataUrl)) return null;
-
-    cachedLogoDataUrl = dataUrl;
-    return cachedLogoDataUrl;
+    const dataUrl = await blobToDataUrl(await res.blob());
+    if (!/^data:image\/png;base64,/i.test(dataUrl)) return null;
+    const size = await measureImage(dataUrl);
+    if (!size) return null;
+    cachedLogo = { dataUrl, ...size };
+    return cachedLogo;
   } catch {
     return null;
   }
 }
-
-/** Fixed logo height in PDF points (pdfmake). */
-export const QUOTATION_LOGO_HEIGHT = 40;
-
-/** Native logo aspect (300 x 59). */
-export const QUOTATION_LOGO_ASPECT = 59 / 300;
